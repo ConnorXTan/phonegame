@@ -92,6 +92,16 @@ final class HapticsManager {
 
     func playRespawn() { notify.notificationOccurred(.success) }
     func playGameStart() { notify.notificationOccurred(.success) }
+
+    /// Time's up: three slowing thumps, like a final buzzer.
+    func playMatchEnd() {
+        play([transient(0, intensity: 1.0, sharpness: 0.5),
+              transient(0.22, intensity: 0.9, sharpness: 0.45),
+              transient(0.55, intensity: 1.0, sharpness: 0.4)]) {
+            self.notify.notificationOccurred(.warning)
+        }
+    }
+
     func playLockTick() { impactLight.impactOccurred(intensity: 0.6) }
     func playDistantShot() { SoundManager.shared.play("pew", volume: 0.25) }
 

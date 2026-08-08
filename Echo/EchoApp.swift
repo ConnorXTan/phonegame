@@ -22,6 +22,7 @@ struct RootView: View {
             case .menu: MenuView()
             case .lobby: LobbyView()
             case .playing: GameHUDView()
+            case .summary: MatchSummaryView()
             }
         }
         .animation(.easeInOut(duration: 0.25), value: engine.phase)

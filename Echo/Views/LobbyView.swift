@@ -58,12 +58,37 @@ struct LobbyView: View {
                 VStack(spacing: 14) {
                     Picker("Mode", selection: Binding(
                         get: { engine.settings.mode },
-                        set: { engine.settings = .preset(for: $0) }
+                        set: { mode in
+                            // Swapping presets must not discard the chosen length.
+                            let duration = engine.settings.matchDuration
+                            engine.settings = .preset(for: mode)
+                            engine.settings.matchDuration = duration
+                        }
                     )) {
                         Text("Indoor").tag(GameMode.indoor)
                         Text("Outdoor").tag(GameMode.outdoor)
                     }
                     .pickerStyle(.segmented)
+
+                    VStack(spacing: 6) {
+                        HStack {
+                            Label("Match length", systemImage: "timer")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(engine.settings.matchDuration.durationLabel)
+                                .font(.caption.bold().monospacedDigit())
+                        }
+                        Picker("Match length", selection: Binding(
+                            get: { engine.settings.matchDuration },
+                            set: { engine.settings.matchDuration = $0 }
+                        )) {
+                            ForEach(GameSettings.durationChoices, id: \.self) { seconds in
+                                Text(seconds.durationLabel).tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
 
                     HStack(spacing: 20) {
                         statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
@@ -90,6 +115,9 @@ struct LobbyView: View {
                     ProgressView()
                     Text("Waiting for the host to start…")
                         .foregroundStyle(.secondary)
+                    Text("The host sets the mode and match length.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 .padding(.bottom, 12)
             }

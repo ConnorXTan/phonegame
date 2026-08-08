@@ -7,6 +7,7 @@ struct GameHUDView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showDebug = false
     @State private var showScores = false
+    @State private var clockPulse = false
 
     var body: some View {
         ZStack {
@@ -74,6 +75,7 @@ struct GameHUDView: View {
                     .font(.caption.monospacedDigit().bold())
                     .foregroundStyle(hpColor)
                 Spacer()
+                matchClock
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.white.opacity(0.75))
@@ -112,6 +114,19 @@ struct GameHUDView: View {
 
     private var hpColor: Color {
         hpFraction > 0.5 ? .green : hpFraction > 0.25 ? .orange : .red
+    }
+
+    /// Turns red and pulses over the last 30 seconds.
+    private var matchClock: some View {
+        let remaining = engine.matchRemaining
+        let urgent = remaining <= 30
+        return Label(remaining.clockString, systemImage: "timer")
+            .font(.caption.bold().monospacedDigit())
+            .foregroundStyle(urgent ? Color.red : Color.white)
+            .opacity(urgent && clockPulse ? 0.35 : 1)
+            .animation(urgent ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default,
+                       value: clockPulse)
+            .onChange(of: urgent) { _, isUrgent in clockPulse = isUrgent }
     }
 
     private var killFeedView: some View {
