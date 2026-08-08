@@ -1,6 +1,5 @@
 import AVFoundation
 import Foundation
-import MultipeerConnectivity
 import NearbyInteraction
 import UIKit
 
@@ -61,9 +60,13 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var spectators: Set<String> = []   // peers that are spectators, not targets
     @Published private(set) var joiningLobby: String?          // wire name of the host we're connecting to
     @Published private(set) var lobbyNotice: String?           // join failures ("lobby full") for the menu/browser
-    private var streamingTo: MCPeerID?                      // player side: who gets our viewfinder
+    private var streamingTo: String?                           // player side: who gets our viewfinder
 
     private(set) var network: NetworkManager?
+    /// Browse-only manager warming the peer cache while we sit on the menu.
+    /// Promoted to `network` on Host/Join if the call sign still matches.
+    private var prewarmed: NetworkManager?
+    private var prewarmDebounce: DispatchWorkItem?
     let ranging = RangingManager()
     let haptics = HapticsManager()
     let camera = AimCameraManager()
@@ -77,7 +80,7 @@ final class GameEngine: NSObject, ObservableObject {
     private var pendingSnapshots: [String: (state: PlayerState, at: Date)] = [:]
     private var dummyInvulnerableUntil: Date?   // the dummy's half of the same rule
 
-    var myName: String { network?.myPeerID.displayName ?? playerName }
+    var myName: String { network?.myName ?? playerName }
     var me: Player? { players[myName] }
     var isAlive: Bool { me?.isAlive ?? true }
 
@@ -106,30 +109,70 @@ final class GameEngine: NSObject, ObservableObject {
 
     // MARK: - Lobby
 
+    /// The call sign as it goes on the wire. Bonjour service instance names
+    /// are capped at 63 UTF-8 bytes; leave room for the "#xxxx" uniqueness
+    /// suffix. removeLast() drops whole graphemes, so emoji are never split.
+    private var sanitizedCallSign: String {
+        var name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        while name.utf8.count > 58 { name.removeLast() }
+        return name
+    }
+
+    /// Start browse-only discovery while the player is still on the menu, so
+    /// nearby peers are already cached when they tap Host/Join and the lobby
+    /// fills in a beat instead of after the multi-second Bonjour warmup.
+    /// Debounced because the call-sign field calls this per keystroke and
+    /// each name change needs a fresh manager (the name is baked into the
+    /// wire identity at init).
+    func prewarmDiscovery() {
+        prewarmDebounce?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.phase == .menu else { return }
+            let name = self.sanitizedCallSign
+            guard !name.isEmpty else {
+                self.prewarmed?.stop()
+                self.prewarmed = nil
+                return
+            }
+            guard self.prewarmed?.playerName != name else { return }
+            self.prewarmed?.stop()
+            let net = NetworkManager(playerName: name)
+            self.prewarmed = net
+            net.startDiscovery()
+        }
+        prewarmDebounce = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
+    /// Hand over the pre-warmed manager if its name still matches, else a
+    /// cold one. Either way exactly one candidate manager is left alive.
+    private func takeNetwork(named name: String) -> NetworkManager {
+        prewarmDebounce?.cancel()
+        defer { prewarmed = nil }
+        if let warm = prewarmed, warm.playerName == name { return warm }
+        prewarmed?.stop()
+        return NetworkManager(playerName: name)
+    }
+
     /// Create and host our own lobby (phone hosts).
     func enterLobby(hosting: Bool) {
         // Single entry: the menu stays tappable through the menu→lobby
         // crossfade, so a double-tap ran this twice — orphaning a live
-        // NetworkManager that kept advertising and accepting invites. Two
-        // meshes in one process discover and fight each other until
-        // MultipeerConnectivity falls over.
+        // NetworkManager that kept its service published and its links open.
+        // Two meshes in one process discover and fight each other.
         guard phase == .menu else { return }
-        var name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        // MCPeerID rejects display names over 63 UTF-8 bytes; leave room for
-        // the "#xxxx" uniqueness suffix. removeLast() drops whole graphemes,
-        // so emoji are never split.
-        while name.utf8.count > 58 { name.removeLast() }
+        let name = sanitizedCallSign
         guard !name.isEmpty else { return }
         hostEndedNotice = nil
         lobbyNotice = nil
         isHost = hosting
         network?.stop()   // there must never be two live meshes; nil here while the phase guard holds
-        let net = NetworkManager(playerName: name, role: hosting ? .host : .player)
+        let net = takeNetwork(named: name)
         net.delegate = self
         network = net
-        let wireName = net.myPeerID.displayName
+        let wireName = net.myName
         players = [wireName: Player(name: wireName, hp: settings.maxHP)]
-        net.start()
+        net.start(as: hosting ? .host : .player)
         refreshLobbyAdvertisement()
         // Ask now, not at match start — an open permission alert would race
         // the first NISession.run() and the viewfinder's first frame.
@@ -153,16 +196,16 @@ final class GameEngine: NSObject, ObservableObject {
         isSpectator = asSpectator
         isHost = false
         network?.stop()
-        let net = NetworkManager(playerName: name, role: asSpectator ? .spectator : .player)
+        let net = takeNetwork(named: name)
         net.delegate = self
         network = net
         players = [:]
         if !asSpectator {
-            let wireName = net.myPeerID.displayName
+            let wireName = net.myName
             players = [wireName: Player(name: wireName, hp: settings.maxHP)]
             camera.requestAccessIfNeeded()
         }
-        net.start()
+        net.start(as: asSpectator ? .spectator : .player)
         phase = .browsing
         UIApplication.shared.isIdleTimerDisabled = true
     }
@@ -255,11 +298,11 @@ final class GameEngine: NSObject, ObservableObject {
         while name.utf8.count > 58 { name.removeLast() }
         if name.isEmpty { name = "Spectator" }   // the name field is optional here
         network?.stop()
-        let net = NetworkManager(playerName: name, role: hosting ? .host : .spectator)
+        let net = takeNetwork(named: name)
         net.delegate = self
         network = net
         players = [:]
-        net.start()
+        net.start(as: hosting ? .host : .spectator)
         refreshLobbyAdvertisement()
         phase = .lobby
         UIApplication.shared.isIdleTimerDisabled = true
@@ -268,13 +311,13 @@ final class GameEngine: NSObject, ObservableObject {
     /// Spectator: switch whose viewfinder we're watching (nil = stop).
     func watch(_ name: String?) {
         guard isSpectator, let net = network else { return }
-        if let current = watchingPlayer, current != name, let peer = net.peer(named: current) {
-            net.send(.cameraRequest(active: false), to: [peer])
+        if let current = watchingPlayer, current != name {
+            net.send(.cameraRequest(active: false), to: [current])
         }
         watchingPlayer = name
         spectatorFrame = nil
-        if let name, let peer = net.peer(named: name) {
-            net.send(.cameraRequest(active: true), to: [peer])
+        if let name {
+            net.send(.cameraRequest(active: true), to: [name])
         }
     }
 
@@ -340,10 +383,10 @@ final class GameEngine: NSObject, ObservableObject {
         // Pairwise UWB token exchange with every connected PLAYER (spectators
         // don't range). Both sides send; ordering races are handled inside
         // RangingManager.
-        let playerPeers = (network?.connectedPeers ?? []).filter { !spectators.contains($0.displayName) }
+        let playerPeers = (network?.connectedPeers ?? []).filter { !spectators.contains($0) }
         if !playerPeers.isEmpty {
             for peer in playerPeers {
-                if let data = ranging.prepare(peerName: peer.displayName) {
+                if let data = ranging.prepare(peerName: peer) {
                     network?.send(.discoveryToken(data), to: [peer])
                 }
             }
@@ -374,8 +417,8 @@ final class GameEngine: NSObject, ObservableObject {
         guard let victim else { return }
         if victim == TargetDummy.name {
             hitDummy()
-        } else if let victimPeer = net.peer(named: victim) {
-            net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victimPeer])
+        } else if net.isConnected(victim) {
+            net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victim])
             confirmHit()
             // Optimistic: drop their bar now instead of a network round trip
             // later; the victim's authoritative .healthUpdate reconciles it.
@@ -664,6 +707,11 @@ final class GameEngine: NSObject, ObservableObject {
     /// its own row, so never overwrite ours.
     private func apply(_ state: PlayerState) {
         guard state.name != myName else { return }
+        // A snapshot is the one path that can resurrect a spectator: whoever
+        // built it may have added the Mac as a player in peerDidConnect before
+        // its .spectatorHello landed, and every receiver would then recreate it
+        // as a shootable target even after correctly removing it.
+        guard !spectators.contains(state.name) else { return }
         var player = players[state.name] ?? Player(name: state.name, hp: state.hp)
         player.hp = state.hp
         player.isAlive = state.isAlive
@@ -700,9 +748,8 @@ final class GameEngine: NSObject, ObservableObject {
 // MARK: - NetworkManagerDelegate
 
 extension GameEngine: NetworkManagerDelegate {
-    func network(_ manager: NetworkManager, peerDidConnect peer: MCPeerID) {
+    func network(_ manager: NetworkManager, peerDidConnect name: String) {
         guard manager === network else { return }   // stale callbacks after leave()
-        let name = peer.displayName
         // Joiner: the host we picked answered — we're in, pending its
         // capacity check (a .joinDenied would bounce us back out).
         if phase == .browsing, name == joiningLobby {
@@ -714,12 +761,11 @@ extension GameEngine: NetworkManagerDelegate {
         }
         // Roster rows are created when the peer declares itself via
         // .hello/.spectatorHello — a bare connection isn't membership.
-        manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName), to: [peer])
+        manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName), to: [name])
     }
 
-    func network(_ manager: NetworkManager, peerDidDisconnect peer: MCPeerID) {
+    func network(_ manager: NetworkManager, peerDidDisconnect name: String) {
         guard manager === network else { return }
-        let name = peer.displayName
         if name == externalHostName { clearExternalMatch() }   // its match can't hold our lock
         if spectators.contains(name) {
             spectators.remove(name)
@@ -737,7 +783,7 @@ extension GameEngine: NetworkManagerDelegate {
             }
         }
         ranging.removePeer(name)
-        if streamingTo == peer {
+        if streamingTo == name {
             streamingTo = nil
             camera.frameTap = nil
         }
@@ -747,7 +793,7 @@ extension GameEngine: NetworkManagerDelegate {
         }
     }
 
-    func network(_ manager: NetworkManager, didReceive message: GameMessage, from peer: MCPeerID) {
+    func network(_ manager: NetworkManager, didReceive message: GameMessage, from peerName: String) {
         guard manager === network else { return }
         switch message {
         case .hello(let name):
@@ -755,7 +801,7 @@ extension GameEngine: NetworkManagerDelegate {
             // (already in players) always pass.
             if isHost, players[name] == nil,
                players.keys.filter({ $0 != TargetDummy.name }).count >= settings.maxPlayers {
-                manager.send(.joinDenied(reason: "Lobby is full (\(settings.maxPlayers) players)."), to: [peer])
+                manager.send(.joinDenied(reason: "Lobby is full (\(settings.maxPlayers) players)."), to: [peerName])
                 return
             }
             if players[name] == nil {
@@ -773,26 +819,26 @@ extension GameEngine: NetworkManagerDelegate {
                 // state (host), our own authoritative row (everyone), and
                 // pair up UWB. Ordered unicasts land after .startGame.
                 if isHost {
-                    manager.send(.startGame(settings: settings), to: [peer])
-                    manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peer])
+                    manager.send(.startGame(settings: settings), to: [peerName])
+                    manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peerName])
                     if let deadline = matchDeadline {
-                        manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peer])
+                        manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peerName])
                     }
                 } else if let mine = me {
-                    manager.send(.stateSnapshot([PlayerState(mine)]), to: [peer])
+                    manager.send(.stateSnapshot([PlayerState(mine)]), to: [peerName])
                 }
                 if !isSpectator, let data = ranging.prepare(peerName: name) {
-                    manager.send(.discoveryToken(data), to: [peer])
+                    manager.send(.discoveryToken(data), to: [peerName])
                 }
             }
 
         case .discoveryToken(let data):
-            if let reply = ranging.receiveToken(data, from: peer.displayName) {
-                manager.send(.discoveryToken(reply), to: [peer])
+            if let reply = ranging.receiveToken(data, from: peerName) {
+                manager.send(.discoveryToken(reply), to: [peerName])
             }
 
         case .startGame(let settings):
-            let fromSpectator = spectators.contains(peer.displayName)
+            let fromSpectator = spectators.contains(peerName)
             if phase == .playing {
                 if fromSpectator, isHost, !isSpectator {
                     // The game master started a real match while we were host
@@ -813,7 +859,7 @@ extension GameEngine: NetworkManagerDelegate {
                 // snapshot that follows tells us whether it's a real game
                 // (2+ players, locks our setup) or abandoned solo practice.
                 if isSpectator, isHost {
-                    externalHostName = peer.displayName
+                    externalHostName = peerName
                     return
                 }
                 // Someone else's match is starting — whoever started it calls
@@ -828,7 +874,7 @@ extension GameEngine: NetworkManagerDelegate {
             if phase == .playing {
                 states.forEach(apply)
             } else {
-                if isSpectator, isHost, peer.displayName == externalHostName {
+                if isSpectator, isHost, peerName == externalHostName {
                     externalMatchPlayers = states.count
                 }
                 // Can arrive before .startGame from independent senders; stash
@@ -862,7 +908,7 @@ extension GameEngine: NetworkManagerDelegate {
             players[player]?.isAlive = true
 
         case .endMatch(let finalStates):
-            if externalMatchInProgress, peer.displayName == externalHostName {
+            if externalMatchInProgress, peerName == externalHostName {
                 clearExternalMatch()   // the running game ended; setup unlocks
                 return
             }
@@ -888,30 +934,30 @@ extension GameEngine: NetworkManagerDelegate {
 
         case .spectatorHello:
             // Not a combatant: no roster row, no HP, no UWB session, can't be shot.
-            spectators.insert(peer.displayName)
-            players[peer.displayName] = nil
-            ranging.removePeer(peer.displayName)
+            spectators.insert(peerName)
+            players[peerName] = nil
+            ranging.removePeer(peerName)
             if isHost {
                 broadcastRoster()
                 if phase == .playing {
                     // Catch the spectator up on the running match.
-                    manager.send(.startGame(settings: settings), to: [peer])
-                    manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peer])
+                    manager.send(.startGame(settings: settings), to: [peerName])
+                    manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peerName])
                     if let deadline = matchDeadline {
-                        manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peer])
+                        manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peerName])
                     }
                 }
             }
 
         case .cameraRequest(let active):
             if active {
-                streamingTo = peer
+                streamingTo = peerName
                 camera.start()   // idempotent; covers a lobby preview request
                 camera.frameTap = { [weak self] jpeg in
                     guard let self, let target = self.streamingTo else { return }
                     self.network?.sendCameraFrame(jpeg, to: target)
                 }
-            } else if streamingTo == peer {
+            } else if streamingTo == peerName {
                 streamingTo = nil
                 camera.frameTap = nil
             }
@@ -920,7 +966,7 @@ extension GameEngine: NetworkManagerDelegate {
             guard !isHost else {
                 // Two hosts: don't let one kick the other — but a phone host
                 // shutting down does unlock the game master's setup screen.
-                if peer.displayName == externalHostName { clearExternalMatch() }
+                if peerName == externalHostName { clearExternalMatch() }
                 return
             }
             leave()
@@ -947,9 +993,9 @@ extension GameEngine: NetworkManagerDelegate {
         }
     }
 
-    func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peer: MCPeerID) {
+    func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peerName: String) {
         guard manager === network, isSpectator,
-              peer.displayName == watchingPlayer,
+              peerName == watchingPlayer,
               let image = UIImage(data: jpeg) else { return }
         spectatorFrame = image
     }
@@ -959,8 +1005,8 @@ extension GameEngine: NetworkManagerDelegate {
 
 extension GameEngine: RangingManagerDelegate {
     func ranging(_ manager: RangingManager, resendToken tokenData: Data, to peerName: String) {
-        guard let net = network, let peer = net.peer(named: peerName) else { return }
-        net.send(.discoveryToken(tokenData), to: [peer])
+        guard let net = network, net.isConnected(peerName) else { return }
+        net.send(.discoveryToken(tokenData), to: [peerName])
     }
 
     func ranging(_ manager: RangingManager, raiseAlert reason: String, forPeer peerName: String?) {
