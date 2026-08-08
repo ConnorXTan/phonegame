@@ -36,7 +36,11 @@ struct SpectatorView: View {
                             .frame(width: 280)
                         Divider().overlay(Color.echoHairline)
                         if engine.phase == .lobby {
-                            setupPanel
+                            if engine.externalMatchInProgress {
+                                matchInProgressPanel
+                            } else {
+                                setupPanel
+                            }
                         } else {
                             feedPanel
                         }
@@ -187,6 +191,27 @@ struct SpectatorView: View {
             .frame(maxWidth: .infinity)
             .padding(Space.xxl)
         }
+    }
+
+    /// A real match was already running when this screen opened. The laptop
+    /// never joins or takes over a live game — it waits for the end.
+    private var matchInProgressPanel: some View {
+        VStack(spacing: Space.lg) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: emptyGlyphSize, weight: .thin))
+                .foregroundStyle(Color.echoTextTertiary)
+                .accessibilityHidden(true)
+            Text("MATCH IN PROGRESS")
+                .font(.caption.bold())
+                .tracking(3)
+                .foregroundStyle(Color.echoTextSecondary)
+            Text("A game with \(engine.externalMatchPlayers) players is already running on the phones. The laptop can't join or take over a live match — this screen unlocks the moment it ends.")
+                .font(.callout)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color.echoTextSecondary)
+                .frame(maxWidth: 400)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func settingRow(label: String, icon: String, @ViewBuilder control: () -> some View) -> some View {

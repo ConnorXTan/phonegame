@@ -49,6 +49,12 @@ final class GameEngine: NSObject, ObservableObject {
     var magazineSize: Int { settings.magazineSize }
 
     // Spectator mode (the laptop): watches the mesh, never plays.
+    // A match already running when the game master arrives locks its setup
+    // screen — the laptop must never take over a live game. Solo practice
+    // (a one-player "match") doesn't count; it yields on Start instead.
+    @Published private(set) var externalMatchPlayers = 0
+    private var externalHostName: String?
+    var externalMatchInProgress: Bool { isSpectator && isHost && externalMatchPlayers >= 2 }
     @Published private(set) var isSpectator = false
     @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
     @Published private(set) var spectatorFrame: UIImage?
@@ -159,6 +165,7 @@ final class GameEngine: NSObject, ObservableObject {
         watchingPlayer = nil
         spectatorFrame = nil
         spectators = []
+        clearExternalMatch()
         streamingTo = nil
         phase = .menu
         UIApplication.shared.isIdleTimerDisabled = false
@@ -195,11 +202,17 @@ final class GameEngine: NSObject, ObservableObject {
         }
     }
 
-    /// Host taps Start: broadcast settings, then start locally.
+    /// Host taps Start: broadcast settings, then start locally. The game
+    /// master can't start while somebody else's real match is running.
     func startGame() {
-        guard phase == .lobby, let net = network else { return }
+        guard phase == .lobby, !externalMatchInProgress, let net = network else { return }
         net.send(.startGame(settings: settings))
         beginMatch(with: settings)
+    }
+
+    private func clearExternalMatch() {
+        externalHostName = nil
+        externalMatchPlayers = 0
     }
 
     private func beginMatch(with settings: GameSettings) {
@@ -646,6 +659,7 @@ extension GameEngine: NetworkManagerDelegate {
     func network(_ manager: NetworkManager, peerDidDisconnect peer: MCPeerID) {
         guard manager === network else { return }
         let name = peer.displayName
+        if name == externalHostName { clearExternalMatch() }   // its match can't hold our lock
         if phase == .playing, players[name] != nil {
             // Might be a transient blip — keep stats so reconnect doesn't
             // resurrect them at full HP with zeroed kills.
@@ -695,8 +709,13 @@ extension GameEngine: NetworkManagerDelegate {
             } else {
                 // The game master (spectator-host) is never dragged into
                 // someone else's match — it opens on its setup screen and
-                // starts matches itself.
-                if isSpectator, isHost { return }
+                // starts matches itself. Note who runs the live match; the
+                // snapshot that follows tells us whether it's a real game
+                // (2+ players, locks our setup) or abandoned solo practice.
+                if isSpectator, isHost {
+                    externalHostName = peer.displayName
+                    return
+                }
                 // Someone else's match is starting — whoever started it calls
                 // time. Without dropping the flag, a lobby host pulled into a
                 // running match would broadcast rival .endMatch tallies when
@@ -709,6 +728,9 @@ extension GameEngine: NetworkManagerDelegate {
             if phase == .playing {
                 states.forEach(apply)
             } else {
+                if isSpectator, isHost, peer.displayName == externalHostName {
+                    externalMatchPlayers = states.count
+                }
                 // Can arrive before .startGame from independent senders; stash
                 // and apply after beginMatch resets.
                 for state in states where state.name != myName {
@@ -740,6 +762,10 @@ extension GameEngine: NetworkManagerDelegate {
             players[player]?.isAlive = true
 
         case .endMatch(let finalStates):
+            if externalMatchInProgress, peer.displayName == externalHostName {
+                clearExternalMatch()   // the running game ended; setup unlocks
+                return
+            }
             guard phase == .playing else { return }
             // Host's tallies are authoritative for the summary; fall back to
             // our own row if the host somehow never saw us.
@@ -780,7 +806,12 @@ extension GameEngine: NetworkManagerDelegate {
             }
 
         case .hostEnded:
-            guard !isHost else { return }   // two hosts: don't let one kick the other
+            guard !isHost else {
+                // Two hosts: don't let one kick the other — but a phone host
+                // shutting down does unlock the game master's setup screen.
+                if peer.displayName == externalHostName { clearExternalMatch() }
+                return
+            }
             leave()
             hostEndedNotice = "The host ended the game."
         }
