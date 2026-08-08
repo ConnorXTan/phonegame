@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "swiftui-pro@swiftui-agent-skill": true,
+    "apple-skills@indie-apple-stack": true
+  }
+}
