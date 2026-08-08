@@ -24,12 +24,29 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var lastFireTime: Date?
     @Published private(set) var respawnRemaining: TimeInterval = 0
     @Published private(set) var lastKilledBy: String?
+    /// Wall-clock end of our damage immunity. Enforced victim-side because each
+    /// phone is authoritative for its own HP — shooters resolve independently
+    /// and can't see each other, so this is the only place a crossfire can be
+    /// collapsed into one hit.
+    @Published private(set) var invulnerableUntil: Date?
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
     @Published private(set) var rangingAlert: String?
     @Published private(set) var aimHint: String?
     @Published private(set) var matchRemaining: TimeInterval = 0
     @Published private(set) var matchResult: MatchResult?
+    @Published private(set) var ammo: Int = 0
+    @Published private(set) var reloadRemaining: TimeInterval = 0
+
+    var isReloading: Bool { reloadRemaining > 0 }
+    var magazineSize: Int { settings.magazineSize }
+
+    // Spectator mode (the laptop): watches the mesh, never plays.
+    @Published private(set) var isSpectator = false
+    @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
+    @Published private(set) var spectatorFrame: UIImage?
+    private var spectators: Set<String> = []                // peers that are spectators, not targets
+    private var streamingTo: MCPeerID?                      // player side: who gets our viewfinder
 
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
@@ -41,11 +58,21 @@ final class GameEngine: NSObject, ObservableObject {
     private var respawnTimer: Timer?
     private var matchTimer: Timer?
     private var matchDeadline: Date?
+    private var reloadTimer: Timer?
     private var pendingSnapshots: [String: (state: PlayerState, at: Date)] = [:]
+    private var dummyInvulnerableUntil: Date?   // the dummy's half of the same rule
 
     var myName: String { network?.myPeerID.displayName ?? playerName }
     var me: Player? { players[myName] }
     var isAlive: Bool { me?.isAlive ?? true }
+
+    /// Takes the date so the HUD can drive a countdown off a TimelineView tick
+    /// — `invulnerableUntil` publishes when the window opens, never when it
+    /// lapses, so nothing would repaint on expiry otherwise.
+    func isInvulnerable(at date: Date = Date()) -> Bool {
+        guard let until = invulnerableUntil else { return false }
+        return date < until
+    }
 
     var opponents: [Player] {
         players.values.filter { $0.name != myName }.sorted { $0.name < $1.name }
@@ -90,6 +117,7 @@ final class GameEngine: NSObject, ObservableObject {
         network = nil
         despawnDummy()
         ranging.stopAll()
+        camera.frameTap = nil
         camera.stop()   // after the NI sessions that were using it
         stopTimers()
         players = [:]
@@ -97,13 +125,47 @@ final class GameEngine: NSObject, ObservableObject {
         aimedTarget = nil
         lastFireTime = nil
         lastKilledBy = nil
+        invulnerableUntil = nil
         damageFlash = false
         rangingAlert = nil
         pendingSnapshots = [:]
         matchResult = nil
         isHost = false
+        isSpectator = false
+        watchingPlayer = nil
+        spectatorFrame = nil
+        spectators = []
+        streamingTo = nil
         phase = .menu
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// Join the mesh as a pure observer — no Player entry, no ranging, no
+    /// camera. The laptop's mode: it can still host (Start button, settings,
+    /// authoritative match end) because "host" is only a protocol convention.
+    func enterSpectator(hosting: Bool) {
+        isSpectator = true
+        isHost = hosting
+        let net = NetworkManager(playerName: "Spectator")
+        net.delegate = self
+        network = net
+        players = [:]
+        net.start()
+        phase = .lobby
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    /// Spectator: switch whose viewfinder we're watching (nil = stop).
+    func watch(_ name: String?) {
+        guard isSpectator, let net = network else { return }
+        if let current = watchingPlayer, current != name, let peer = net.peer(named: current) {
+            net.send(.cameraRequest(active: false), to: [peer])
+        }
+        watchingPlayer = name
+        spectatorFrame = nil
+        if let name, let peer = net.peer(named: name) {
+            net.send(.cameraRequest(active: true), to: [peer])
+        }
     }
 
     /// Host taps Start: broadcast settings, then start locally.
@@ -124,10 +186,12 @@ final class GameEngine: NSObject, ObservableObject {
         killFeed = []
         lastKilledBy = nil
         lastFireTime = nil
+        invulnerableUntil = nil
         rangingAlert = nil
         // U2 iPhones (15/16) aim exclusively through the camera; if its
         // permission was denied, direction data can never arrive.
-        if !NISession.deviceCapabilities.supportsDirectionMeasurement,
+        if !isSpectator,
+           !NISession.deviceCapabilities.supportsDirectionMeasurement,
            NISession.deviceCapabilities.supportsCameraAssistance,
            AVCaptureDevice.authorizationStatus(for: .video) == .denied {
             rangingAlert = "Camera access is off — this iPhone aims through the camera. Enable it: Settings → Apps → Echo → Camera."
@@ -139,22 +203,29 @@ final class GameEngine: NSObject, ObservableObject {
         }
         pendingSnapshots = [:]
         matchResult = nil
+        cancelReload()
+        ammo = settings.magazineSize
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
+        startMatchClock(seconds: settings.matchDuration)
+        guard !isSpectator else { return }   // observers need only the clock and the mirror
+
         // Before any NISession.run() below, so ranging attaches to a session
         // that's already delivering frames. Also covers solo practice, where
         // there are no peers and so no NI session to start it.
         camera.start()
         startAimTimer()
-        startMatchClock(seconds: settings.matchDuration)
+        haptics.prepare()
         haptics.playGameStart()
 
-        // Pairwise UWB token exchange with every connected peer. Both sides
-        // send; ordering races are handled inside RangingManager.
-        if let net = network, !net.connectedPeers.isEmpty {
-            for peer in net.connectedPeers {
+        // Pairwise UWB token exchange with every connected PLAYER (spectators
+        // don't range). Both sides send; ordering races are handled inside
+        // RangingManager.
+        let playerPeers = (network?.connectedPeers ?? []).filter { !spectators.contains($0.displayName) }
+        if !playerPeers.isEmpty {
+            for peer in playerPeers {
                 if let data = ranging.prepare(peerName: peer.displayName) {
-                    net.send(.discoveryToken(data), to: [peer])
+                    network?.send(.discoveryToken(data), to: [peer])
                 }
             }
         } else {
@@ -166,11 +237,16 @@ final class GameEngine: NSObject, ObservableObject {
 
     func fire() {
         guard phase == .playing, isAlive, let net = network else { return }
+        guard !isReloading else { return }
+        // Dry trigger on an empty mag racks the reload instead of firing.
+        guard ammo > 0 else { startReload(); return }
         let now = Date()
         if let last = lastFireTime, now.timeIntervalSince(last) < settings.fireCooldown { return }
         lastFireTime = now
+        ammo -= 1
         haptics.playFire()
         net.send(.shotFired(by: myName))
+        defer { if ammo == 0 { startReload() } }   // auto-reload on the last round
         guard let victim = resolveShot() else { return }
         if victim == TargetDummy.name {
             hitDummy()
@@ -178,6 +254,39 @@ final class GameEngine: NSObject, ObservableObject {
             net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victimPeer])
             haptics.playHitMarker()
         }
+    }
+
+    /// Manual reload (the button beside FIRE) and the auto-reload on empty.
+    func startReload() {
+        guard phase == .playing, isAlive, !isReloading, ammo < settings.magazineSize else { return }
+        reloadRemaining = settings.reloadDuration
+        haptics.playReloadStart()
+        reloadTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            self.reloadRemaining -= 0.05
+            if self.reloadRemaining <= 0 {
+                timer.invalidate()
+                self.finishReload()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)   // keeps ticking during scroll tracking
+        reloadTimer = timer
+    }
+
+    private func finishReload() {
+        reloadTimer?.invalidate()
+        reloadTimer = nil
+        reloadRemaining = 0
+        ammo = settings.magazineSize
+        haptics.playReloadComplete()
+    }
+
+    /// Cancel without loading — death, match end, leaving.
+    private func cancelReload() {
+        reloadTimer?.invalidate()
+        reloadTimer = nil
+        reloadRemaining = 0
     }
 
     /// The core algorithm: most-centered live target inside the aim cone and
@@ -203,6 +312,11 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func applyHit(from shooter: String, damage: Int) {
         guard phase == .playing, isAlive, let net = network else { return }
+        // Absorbed: no damage, no flash, no healthUpdate — as far as the rest
+        // of the mesh is concerned this shot never landed.
+        let now = Date()
+        guard !isInvulnerable(at: now) else { return }
+        invulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         let newHP = max(0, (me?.hp ?? 0) - damage)
         players[myName]?.hp = newHP
         haptics.playDamage()
@@ -222,6 +336,7 @@ final class GameEngine: NSObject, ObservableObject {
         trimFeed()
         network?.send(.death(player: myName, killedBy: killer))
         haptics.playDeath()
+        cancelReload()   // respawn hands you a fresh mag anyway
         startRespawnCountdown()
     }
 
@@ -244,6 +359,11 @@ final class GameEngine: NSObject, ObservableObject {
         respawnRemaining = 0
         players[myName]?.hp = settings.maxHP
         players[myName]?.isAlive = true
+        cancelReload()
+        ammo = settings.magazineSize
+        // Overwrites rather than extends any leftover hit i-frames: whoever
+        // killed us shouldn't get a shorter spawn window than anyone else.
+        invulnerableUntil = Date().addingTimeInterval(settings.spawnProtection)
         network?.send(.respawn(player: myName))
         haptics.playRespawn()
     }
@@ -297,6 +417,7 @@ final class GameEngine: NSObject, ObservableObject {
         respawnTimer?.invalidate()
         respawnTimer = nil
         respawnRemaining = 0
+        cancelReload()
         aimedTarget = nil
         despawnDummy()
         phase = .summary
@@ -310,6 +431,7 @@ final class GameEngine: NSObject, ObservableObject {
         killFeed = []
         lastKilledBy = nil
         lastFireTime = nil
+        invulnerableUntil = nil
         damageFlash = false
         for name in players.keys {
             players[name]?.hp = settings.maxHP
@@ -347,6 +469,7 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func spawnDummy() {
         players[TargetDummy.name] = Player(name: TargetDummy.name, hp: settings.maxHP)
+        dummyInvulnerableUntil = nil
         dummy.onReading = { [weak self] reading in
             self?.ranging.injectSyntheticReading(reading, for: TargetDummy.name)
         }
@@ -358,12 +481,18 @@ final class GameEngine: NSObject, ObservableObject {
         dummy.stop()
         ranging.removeSynthetic(TargetDummy.name)
         players[TargetDummy.name] = nil
+        dummyInvulnerableUntil = nil
     }
 
     /// Victim-side logic, played locally: the dummy takes damage, dies, and
     /// respawns at a new bearing so you have to hunt for it.
     private func hitDummy() {
         guard var target = players[TargetDummy.name], target.isAlive else { return }
+        // Unreachable while fireCooldown >= hitInvulnerability (you're the only
+        // shooter here), but it keeps practice honest if either is retuned.
+        let now = Date()
+        if let until = dummyInvulnerableUntil, now < until { return }
+        dummyInvulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         target.hp = max(0, target.hp - settings.damage)
         haptics.playHitMarker()
         if target.hp <= 0 {
@@ -379,6 +508,7 @@ final class GameEngine: NSObject, ObservableObject {
                       var revived = self.players[TargetDummy.name] else { return }
                 revived.hp = self.settings.maxHP
                 revived.isAlive = true
+                self.dummyInvulnerableUntil = Date().addingTimeInterval(self.settings.spawnProtection)
                 self.players[TargetDummy.name] = revived
             }
         }
@@ -420,6 +550,7 @@ final class GameEngine: NSObject, ObservableObject {
         matchTimer = nil
         matchDeadline = nil
         matchRemaining = 0
+        cancelReload()
     }
 }
 
@@ -429,14 +560,16 @@ extension GameEngine: NetworkManagerDelegate {
     func network(_ manager: NetworkManager, peerDidConnect peer: MCPeerID) {
         guard manager === network else { return }   // stale callbacks after leave()
         let name = peer.displayName
-        if players[name] == nil {
+        if spectators.contains(name) {
+            // A reconnecting spectator never becomes a player row.
+        } else if players[name] == nil {
             players[name] = Player(name: name, hp: settings.maxHP)
         } else {
             players[name]?.isConnected = true       // reconnect: keep their stats
         }
-        manager.send(.hello(playerName: myName), to: [peer])
+        manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName), to: [peer])
         if phase == .playing {
-            despawnDummy()   // a real target arrived — practice is over
+            if !isSpectator { despawnDummy() }   // a real target arrived — practice is over
             // Late joiner or reconnect mid-match: sync settings + full state
             // (host), our own authoritative row (everyone), and pair up UWB.
             // .reliable unicasts to one peer stay ordered, so the snapshot
@@ -451,7 +584,8 @@ extension GameEngine: NetworkManagerDelegate {
             } else if let mine = me {
                 manager.send(.stateSnapshot([PlayerState(mine)]), to: [peer])
             }
-            if let data = ranging.prepare(peerName: name) {
+            if !isSpectator, !spectators.contains(name),
+               let data = ranging.prepare(peerName: name) {
                 manager.send(.discoveryToken(data), to: [peer])
             }
         }
@@ -468,6 +602,14 @@ extension GameEngine: NetworkManagerDelegate {
             players[name] = nil
         }
         ranging.removePeer(name)
+        if streamingTo == peer {
+            streamingTo = nil
+            camera.frameTap = nil
+        }
+        if watchingPlayer == name {
+            watchingPlayer = nil
+            spectatorFrame = nil
+        }
     }
 
     func network(_ manager: NetworkManager, didReceive message: GameMessage, from peer: MCPeerID) {
@@ -544,7 +686,33 @@ extension GameEngine: NetworkManagerDelegate {
         case .matchClock(let remaining):
             guard phase == .playing, !isHost else { return }
             startMatchClock(seconds: remaining)
+
+        case .spectatorHello:
+            // Not a combatant: no roster row, no HP, no UWB session, can't be shot.
+            spectators.insert(peer.displayName)
+            players[peer.displayName] = nil
+            ranging.removePeer(peer.displayName)
+
+        case .cameraRequest(let active):
+            if active {
+                streamingTo = peer
+                camera.start()   // idempotent; covers a lobby preview request
+                camera.frameTap = { [weak self] jpeg in
+                    guard let self, let target = self.streamingTo else { return }
+                    self.network?.sendCameraFrame(jpeg, to: target)
+                }
+            } else if streamingTo == peer {
+                streamingTo = nil
+                camera.frameTap = nil
+            }
         }
+    }
+
+    func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peer: MCPeerID) {
+        guard manager === network, isSpectator,
+              peer.displayName == watchingPlayer,
+              let image = UIImage(data: jpeg) else { return }
+        spectatorFrame = image
     }
 }
 

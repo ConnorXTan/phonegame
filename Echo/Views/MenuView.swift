@@ -10,6 +10,10 @@ struct MenuView: View {
         engine.playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// A Mac can't play (no UWB — it could neither aim nor be hit), so it only
+    /// gets the spectator/game-master role.
+    private var isMac: Bool { ProcessInfo.processInfo.isiOSAppOnMac }
+
     var body: some View {
         VStack(spacing: Space.xl) {
             Spacer()
@@ -36,37 +40,62 @@ struct MenuView: View {
                     .padding(.horizontal, Space.xl)
             }
 
-            TextField("Your call sign", text: $engine.playerName)
-                .textFieldStyle(.roundedBorder)
-                .multilineTextAlignment(.center)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .frame(maxWidth: 260)
+            if !isMac {
+                TextField("Your call sign", text: $engine.playerName)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.center)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .frame(maxWidth: 260)
 
-            VStack(spacing: Space.md) {
+                VStack(spacing: Space.md) {
+                    Button {
+                        engine.enterLobby(hosting: true)
+                    } label: {
+                        Label("Host Game", systemImage: "antenna.radiowaves.left.and.right")
+                            .frame(maxWidth: 260)
+                            .foregroundStyle(Color.echoOnPrimary)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(Color.echoPrimary)
+
+                    Button {
+                        engine.enterLobby(hosting: false)
+                    } label: {
+                        Label("Join Game", systemImage: "person.3.fill")
+                            .frame(maxWidth: 260)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+                .disabled(nameEmpty)
+            }
+
+            if isMac {
                 Button {
-                    engine.enterLobby(hosting: true)
+                    engine.enterSpectator(hosting: true)
                 } label: {
-                    Label("Host Game", systemImage: "antenna.radiowaves.left.and.right")
+                    Label("Run the Game (spectate & host)", systemImage: "tv")
                         .frame(maxWidth: 260)
                         .foregroundStyle(Color.echoOnPrimary)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(Color.echoPrimary)
-
+            } else {
                 Button {
-                    engine.enterLobby(hosting: false)
+                    engine.enterSpectator(hosting: true)
                 } label: {
-                    Label("Join Game", systemImage: "person.3.fill")
+                    Label("Spectate & Host (big screen)", systemImage: "tv")
                         .frame(maxWidth: 260)
                 }
                 .buttonStyle(.bordered)
-                .controlSize(.large)
+                .controlSize(.regular)
             }
-            .disabled(nameEmpty)
 
-            Text("Pick a short call sign — it's how other players see you.")
+            Text(isMac ? "This Mac has no UWB chip, so it runs the show instead of playing."
+                       : "Pick a short call sign — it's how other players see you.")
                 .font(.caption2)
                 .foregroundStyle(Color.echoTextSecondary)
 

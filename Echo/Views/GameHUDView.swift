@@ -9,10 +9,14 @@ struct GameHUDView: View {
     @State private var showScores = false
     @State private var clockPulse = false
 
-    /// The fire control scales with Dynamic Type as a unit — button and label
-    /// together — so the label never outgrows the circle.
-    @ScaledMetric(relativeTo: .largeTitle) private var fireDiameter: CGFloat = 112
-    @ScaledMetric(relativeTo: .title2) private var fireLabelSize: CGFloat = 24
+    /// The fire cluster scales with Dynamic Type as a unit — button, ring, and
+    /// labels together — so nothing outgrows the circle it sits in.
+    @ScaledMetric(relativeTo: .largeTitle) private var fireDiameter: CGFloat = 118
+    @ScaledMetric(relativeTo: .title2) private var fireLabelSize: CGFloat = 23
+    @ScaledMetric(relativeTo: .title3) private var reloadLabelSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .caption2) private var ammoCountSize: CGFloat = 11
+    @ScaledMetric(relativeTo: .body) private var reloadGlyphSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 42
 
     var body: some View {
         ZStack {
@@ -81,6 +85,7 @@ struct GameHUDView: View {
                     .font(.caption.monospacedDigit().bold())
                     .foregroundStyle(hpColor)
                     .accessibilityLabel("\(engine.me?.hp ?? 0) hit points")
+                shieldBadge
                 Spacer()
                 matchClock
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
@@ -118,6 +123,22 @@ struct GameHUDView: View {
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
         .padding(.horizontal)
         .padding(.top, Space.sm)
+    }
+
+    /// Shield while damage immunity is running. Ticks on its own clock because
+    /// the window lapses on a wall-clock deadline, not on a state change — and
+    /// without a visible cue, absorbed shots just read as broken hit detection.
+    private var shieldBadge: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let shielded = engine.isInvulnerable(at: context.date)
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.caption)
+                .foregroundStyle(Color.echoAccent)
+                .opacity(shielded ? 1 : 0)
+                .accessibilityLabel(shielded ? "Shielded" : "")
+                .accessibilityHidden(!shielded)
+        }
+        .fixedSize()
     }
 
     private var hpFraction: CGFloat {
@@ -201,45 +222,84 @@ struct GameHUDView: View {
 
     // MARK: - Fire button
 
+    /// FIRE stays centered; the reload button rides off to the right so the
+    /// thumb target never moves.
     private var fireControl: some View {
+        ZStack {
+            fireButton
+            if engine.isAlive && engine.ammo < engine.magazineSize && !engine.isReloading {
+                reloadButton
+                    .offset(x: fireDiameter * 0.81)   // clear of the ring, tracks its scale
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: engine.isReloading)
+        .padding(.bottom, Space.xl)
+    }
+
+    private var fireButton: some View {
         Button(action: engine.fire) {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                let progress = cooldownProgress(at: context.date)
-                ZStack {
-                    Circle()
-                        .fill(engine.isAlive
-                              ? Color.echoPrimary
-                              : Color.echoInert.opacity(Alpha.strong))
-                        .shadow(color: Color.echoPrimary.opacity(progress >= 1 ? Alpha.strong : 0),
-                                radius: 12)
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(fireLabelColor.opacity(Alpha.heavy),
-                                style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .padding(Space.xs)
-                    Text("FIRE")
-                        .font(.system(size: fireLabelSize, weight: .black, design: .rounded))
-                        .foregroundStyle(fireLabelColor)
+            ZStack {
+                Circle()
+                    .fill(fireFill)
+                    .shadow(color: Color.echoPrimary.opacity(engine.ammo > 0 && engine.isAlive
+                                                             ? Alpha.strong : 0), radius: 12)
+                    .padding(9)   // inset so the ammo ring reads against the camera, not the fill
+
+                AmmoRing(ammo: engine.ammo,
+                         capacity: engine.magazineSize,
+                         reloadProgress: reloadProgress)
+
+                VStack(spacing: Space.xxs) {
+                    Text(engine.isReloading ? "RELOAD" : "FIRE")
+                        .font(.system(size: engine.isReloading ? reloadLabelSize : fireLabelSize,
+                                      weight: .black, design: .rounded))
+                    Text(engine.isReloading
+                         ? String(format: "%.1fs", max(0, engine.reloadRemaining))
+                         : "\(engine.ammo)/\(engine.magazineSize)")
+                        .font(.system(size: ammoCountSize, weight: .bold, design: .rounded).monospacedDigit())
+                        .opacity(Alpha.heavy)
                 }
+                .foregroundStyle(fireLabelColor)
             }
         }
         .buttonStyle(.plain)
         .frame(width: fireDiameter, height: fireDiameter)
-        .disabled(!engine.isAlive)
-        .padding(.bottom, Space.xl)
-        .accessibilityLabel("Fire")
+        .disabled(!engine.isAlive || engine.isReloading)
+        .accessibilityLabel(engine.isReloading ? "Reloading" : "Fire")
+        .accessibilityValue("\(engine.ammo) of \(engine.magazineSize) rounds")
     }
 
-    /// The enabled fill is a light green and the disabled fill is a dark slate,
-    /// so the label has to flip with it to stay readable.
+    private var fireFill: Color {
+        guard engine.isAlive else { return .echoInert }
+        if engine.isReloading { return .echoWarning }
+        // Empty still reads as the live control, just drained.
+        return engine.ammo > 0 ? .echoPrimary : Color.echoPrimary.opacity(Alpha.muted)
+    }
+
+    /// Live and reloading are both light fills, so the label goes dark on them
+    /// and light only on the dark disabled slate.
     private var fireLabelColor: Color {
         engine.isAlive ? .echoOnPrimary : .echoText
     }
 
-    private func cooldownProgress(at date: Date) -> CGFloat {
-        guard let last = engine.lastFireTime else { return 1 }
-        return CGFloat(min(1, date.timeIntervalSince(last) / engine.settings.fireCooldown))
+    /// 0…1 while reloading, nil otherwise — drives the ring's refill sweep.
+    private var reloadProgress: Double? {
+        guard engine.isReloading, engine.settings.reloadDuration > 0 else { return nil }
+        return 1 - (engine.reloadRemaining / engine.settings.reloadDuration)
+    }
+
+    private var reloadButton: some View {
+        Button { engine.startReload() } label: {
+            Image(systemName: "arrow.clockwise")
+                .font(.system(size: reloadGlyphSize, weight: .bold))
+                .foregroundStyle(Color.echoText)
+                .frame(width: reloadDiameter, height: reloadDiameter)
+                .background(Color.echoBackground.opacity(Alpha.strong), in: Circle())
+                .overlay(Circle().stroke(Color.echoText.opacity(Alpha.muted), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Reload")
     }
 
     // MARK: - Damage flash
@@ -250,6 +310,59 @@ struct GameHUDView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .animation(.easeOut(duration: 0.25), value: engine.damageFlash)
+    }
+}
+
+/// The ring around FIRE, one segment per round. Segments go dark left-to-right
+/// as you shoot; during a reload they sweep back in so the ring doubles as the
+/// reload progress bar.
+private struct AmmoRing: View {
+    let ammo: Int
+    let capacity: Int
+    let reloadProgress: Double?
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<max(1, capacity), id: \.self) { slot in
+                AmmoSegment(index: slot, total: max(1, capacity))
+                    .stroke(color(for: slot),
+                            style: StrokeStyle(lineWidth: 5, lineCap: .butt))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: ammo)
+    }
+
+    /// The ring sits outside the button's fill, over the camera feed, so these
+    /// read against the scrim rather than against the green.
+    private func color(for slot: Int) -> Color {
+        if let progress = reloadProgress {
+            // Refill sweep: slots light up as the reload runs.
+            let loaded = progress * Double(capacity)
+            return Double(slot) < loaded ? .echoWarning : Color.echoText.opacity(Alpha.subtle)
+        }
+        guard slot < ammo else { return Color.echoText.opacity(Alpha.subtle) }
+        // Last two rounds read as a warning without needing the number.
+        return ammo <= 2 ? .echoDanger : .echoText
+    }
+}
+
+/// One arc of the ammo ring, with a gap on each side so rounds stay countable.
+private struct AmmoSegment: Shape {
+    let index: Int
+    let total: Int
+
+    func path(in rect: CGRect) -> Path {
+        let slice = 360.0 / Double(total)
+        let gap = min(7.0, slice * 0.28)
+        let start = -90.0 + Double(index) * slice + gap / 2
+        let end = start + slice - gap
+        var path = Path()
+        path.addArc(center: CGPoint(x: rect.midX, y: rect.midY),
+                    radius: min(rect.width, rect.height) / 2 - 2.5,
+                    startAngle: .degrees(start),
+                    endAngle: .degrees(end),
+                    clockwise: false)
+        return path
     }
 }
 
