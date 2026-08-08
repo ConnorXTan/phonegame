@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "A3_hit-marker-kill.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "C3_spectate-button.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

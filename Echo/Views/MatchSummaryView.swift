@@ -7,6 +7,7 @@ struct MatchSummaryView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 40
     @ScaledMetric(relativeTo: .title) private var statSize: CGFloat = 34
+    @ScaledMetric(relativeTo: .title3) private var trophySize: CGFloat = 26
 
     private var result: MatchResult? { engine.matchResult }
 
@@ -63,11 +64,19 @@ struct MatchSummaryView: View {
         if result.isDraw {
             Text("DRAW — no clear winner")
         } else if result.didIWin {
-            Label("YOU WIN", systemImage: "trophy.fill")
+            Label { Text("YOU WIN") } icon: { trophy }
         } else {
-            Label("\(result.winner?.name.displayCallSign.uppercased() ?? "—") WINS",
-                  systemImage: "trophy.fill")
+            Label { Text("\(result.winner?.name.displayCallSign.uppercased() ?? "—") WINS") }
+                icon: { trophy }
         }
+    }
+
+    /// The hand-drawn trophy, sized to sit on the headline's cap height.
+    private var trophy: some View {
+        Image(art: .leaderboard)
+            .resizable()
+            .scaledToFit()
+            .frame(width: trophySize, height: trophySize)
     }
 
     private func tint(_ result: MatchResult) -> Color {

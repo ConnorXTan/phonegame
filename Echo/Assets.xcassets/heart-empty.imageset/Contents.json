@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "C2_empty-heart-slot.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

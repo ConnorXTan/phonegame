@@ -137,9 +137,10 @@ private struct EnemyTag: View {
     let name: String
     let hpFraction: CGFloat
 
-    /// Fixed geometry, not spacing: the bar is a gauge read at a distance over
-    /// a moving camera feed, so it keeps its size independent of type scaling.
-    private static let barWidth: CGFloat = 64
+    /// Fixed geometry, not spacing: the gauge is read at a distance over a
+    /// moving camera feed, so it keeps its size independent of type scaling.
+    /// Five hearts at this size span roughly the old 64pt bar.
+    private static let heartSize: CGFloat = 11
 
     var body: some View {
         VStack(spacing: Space.xs) {
@@ -147,14 +148,7 @@ private struct EnemyTag: View {
                 .font(.caption2.bold())
                 .foregroundStyle(Color.echoTextSecondary)
                 .lineLimit(1)
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.echoBackground.opacity(Alpha.muted))
-                Capsule()
-                    .fill(Color.echoHealth(hpFraction))
-                    .frame(width: Self.barWidth * max(0, min(1, hpFraction)))
-            }
-            .frame(width: Self.barWidth, height: 4)
-            .animation(.easeOut(duration: 0.2), value: hpFraction)
+            HeartBar(fraction: hpFraction, size: Self.heartSize)
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2, y: 1)
     }
