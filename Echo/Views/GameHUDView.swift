@@ -25,7 +25,10 @@ struct GameHUDView: View {
             CameraFeedView(camera: engine.camera)
             scrim
 
-            if engine.isAlive { aimOverlay }
+            if engine.isAlive {
+                EnemyHealthbarOverlay()
+                aimOverlay
+            }
 
             VStack(spacing: Space.sm) {
                 topBar
@@ -145,13 +148,7 @@ struct GameHUDView: View {
         CGFloat(engine.me?.hp ?? 0) / CGFloat(max(1, engine.settings.maxHP))
     }
 
-    /// Green to amber to red. The mid step is `echoWarning` rather than
-    /// `echoAccent` because accent sits 20° from secondary on the wheel — two
-    /// greens that no one can tell apart at a glance, on the one indicator
-    /// that has to be read at a glance.
-    private var hpColor: Color {
-        hpFraction > 0.5 ? .echoSecondary : hpFraction > 0.25 ? .echoWarning : .echoDanger
-    }
+    private var hpColor: Color { .echoHealth(hpFraction) }
 
     /// Turns red and pulses over the last 30 seconds.
     private var matchClock: some View {

@@ -141,7 +141,7 @@ struct SpectatorView: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.echoText.opacity(Alpha.subtle))
                         Capsule()
-                            .fill(hpColor(frac))
+                            .fill(Color.echoHealth(frac))
                             .frame(width: geo.size.width * max(0, frac))
                     }
                 }
@@ -174,12 +174,6 @@ struct SpectatorView: View {
     private func statusLabel(for player: Player) -> String {
         guard player.isConnected else { return "Disconnected" }
         return player.isAlive ? "Alive" : "Down"
-    }
-
-    /// Same green/amber/red ramp as the player's own HUD — the two greens in
-    /// the palette sit too close to carry the middle step.
-    private func hpColor(_ frac: CGFloat) -> Color {
-        frac > 0.5 ? .echoSecondary : frac > 0.25 ? .echoWarning : .echoDanger
     }
 
     // MARK: - Camera feed

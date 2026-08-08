@@ -44,6 +44,7 @@ final class RangingManager: NSObject, ObservableObject {
         var peerToken: NIDiscoveryToken?
         var peerTokenData: Data?          // for duplicate detection
         var readings: [RangingReading] = []
+        var latestObject: NINearbyObject? // for worldTransform(for:) lookups
         init(session: NISession) { self.session = session }
     }
 
@@ -158,6 +159,18 @@ final class RangingManager: NSObject, ObservableObject {
         }
     }
 
+    /// Peer's position in the shared ARSession's world coordinates — the
+    /// camera-assistance fusion result, re-projectable at frame rate. Nil
+    /// until convergence, and always nil for synthetic targets (no NISession
+    /// behind them) — callers fall back to the raw readings.
+    func worldPosition(for peerName: String) -> simd_float3? {
+        guard let pr = peers[peerName],
+              let object = pr.latestObject,
+              let transform = pr.session.worldTransform(for: object) else { return nil }
+        let t = transform.columns.3
+        return simd_float3(t.x, t.y, t.z)
+    }
+
     /// Readings per second over the last second — for the debug view.
     func sampleRate(for peerName: String) -> Int {
         let cutoff = Date().addingTimeInterval(-1)
@@ -250,6 +263,7 @@ extension RangingManager: NISessionDelegate {
                 // peer whether or not the convergence callback said so.
                 self.convergenceHints[name] = nil
             }
+            pr.latestObject = obj
             pr.readings.append(RangingReading(
                 timestamp: Date(),
                 distance: obj.distance,
@@ -266,6 +280,7 @@ extension RangingManager: NISessionDelegate {
         onMain {
             guard let name = self.peerName(for: session), let pr = self.peers[name] else { return }
             pr.readings.removeAll()
+            pr.latestObject = nil
             if reason == .timeout {
                 self.run(pr)   // retry ranging with the same tokens
             }
@@ -281,9 +296,10 @@ extension RangingManager: NISessionDelegate {
             case .notConverged(let reasons):
                 self.convergenceHints[name] = Self.hint(for: reasons)
             case .unknown:
-                // No status means no diagnosis to show. Falling through to
-                // `break` here left the previous hint asserting a specific fix
-                // ("sweep left-right") long after tracking had recovered.
+                // No status means no diagnosis to show. Leaving the hint in
+                // place here (as a bare `break` does) left it asserting a
+                // specific fix — "sweep left-right" — long after tracking
+                // had recovered.
                 self.convergenceHints[name] = nil
             @unknown default:
                 self.convergenceHints[name] = nil

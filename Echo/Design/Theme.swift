@@ -81,6 +81,17 @@ extension Color {
     /// set so status dots clear 3:1 against the background (4.3:1) — a darker
     /// slate vanished into it.
     static let echoInert = Color(h: 231, s: 0.15, l: 0.50)
+
+    /// The health ramp, shared by the player's own HUD, the spectator rail,
+    /// and the floating enemy tags, so the same HP reads the same way wherever
+    /// it appears.
+    ///
+    /// The middle step is `echoWarning` rather than `echoAccent` because
+    /// accent sits 20° from secondary on the wheel — two greens nobody can
+    /// separate at a glance, on an indicator that only gets a glance.
+    static func echoHealth(_ fraction: CGFloat) -> Color {
+        fraction > 0.5 ? .echoSecondary : fraction > 0.25 ? .echoWarning : .echoDanger
+    }
 }
 
 // MARK: - Opacity ladder
