@@ -3,8 +3,8 @@ import SwiftUI
 struct MenuView: View {
     @EnvironmentObject private var engine: GameEngine
 
-    @ScaledMetric(relativeTo: .largeTitle) private var markSize: CGFloat = 44
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var logoWidth: CGFloat = 220
+    @ScaledMetric(relativeTo: .body) private var spectateGlyph: CGFloat = 18
 
     private var nameEmpty: Bool {
         engine.playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -19,13 +19,11 @@ struct MenuView: View {
             Spacer()
 
             VStack(spacing: Space.sm) {
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: markSize))
-                    .foregroundStyle(Color.echoPrimary)
-                    .accessibilityHidden(true)
-                Text("ECHO")
-                    .font(.system(size: titleSize, weight: .black, design: .rounded))
-                    .tracking(4)
+                Image(art: .logo)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: logoWidth)
+                    .accessibilityLabel("Echo")
                 if !isMac {
                     Text("UWB laser tag · aim like a camera")
                         .foregroundStyle(Color.echoTextSecondary)
@@ -109,8 +107,16 @@ struct MenuView: View {
                     Button {
                         engine.enterBrowser(asSpectator: true)
                     } label: {
-                        Label("Spectate a Lobby", systemImage: "binoculars.fill")
-                            .frame(maxWidth: 260)
+                        Label {
+                            Text("Spectate a Lobby")
+                        } icon: {
+                            Image(art: .spectate)
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: spectateGlyph, height: spectateGlyph)
+                        }
+                        .frame(maxWidth: 260)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
