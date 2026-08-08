@@ -81,9 +81,11 @@ struct GameHUDView: View {
 
     private var topBar: some View {
         VStack(spacing: Space.xs) {
-            HStack(spacing: Space.md) {
+            HStack(spacing: Space.sm) {
                 Text(engine.myName.displayCallSign.uppercased())
                     .font(.caption.bold())
+                    .lineLimit(1)
+                    .truncationMode(.tail)   // a long call sign yields, the chrome doesn't
                 Text("\(engine.me?.hp ?? 0)")
                     .font(.caption.monospacedDigit().bold())
                     .foregroundStyle(hpColor)
@@ -94,19 +96,15 @@ struct GameHUDView: View {
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(Color.echoTextSecondary)
+                    .fixedSize()
                     .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
-                Button { showScores = true } label: {
-                    Image(systemName: "list.number")
+                // Zero spacing between them: each already carries a 44pt
+                // target, so extra gap would only push the row wider.
+                HStack(spacing: 0) {
+                    hudButton("list.number", "Scoreboard") { showScores = true }
+                    hudButton("waveform.badge.magnifyingglass", "Ranging diagnostics") { showDebug = true }
+                    hudButton("xmark.circle", "Leave match") { engine.leave() }
                 }
-                .accessibilityLabel("Scoreboard")
-                Button { showDebug = true } label: {
-                    Image(systemName: "waveform.badge.magnifyingglass")
-                }
-                .accessibilityLabel("Ranging diagnostics")
-                Button { engine.leave() } label: {
-                    Image(systemName: "xmark.circle")
-                }
-                .accessibilityLabel("Leave match")
             }
             .font(.footnote)
             .foregroundStyle(Color.echoText)
@@ -126,6 +124,21 @@ struct GameHUDView: View {
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
         .padding(.horizontal)
         .padding(.top, Space.sm)
+    }
+
+    /// A HUD chrome button: `.title3` glyph on the full 44x44 HIG target, so a
+    /// player in motion can hit it one-handed. `contentShape` makes the whole
+    /// square tappable rather than just the glyph's own bounds.
+    private func hudButton(_ symbol: String,
+                           _ label: String,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.title3)
+                .frame(width: 44, height: 44)   // HIG minimum touch target
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
     }
 
     /// Shield while damage immunity is running. Ticks on its own clock because
@@ -161,6 +174,7 @@ struct GameHUDView: View {
             .animation(urgent ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default,
                        value: clockPulse)
             .onChange(of: urgent) { _, isUrgent in clockPulse = isUrgent }
+            .fixedSize()   // never let "4:50" wrap to two lines when the row tightens
     }
 
     private var killFeedView: some View {
