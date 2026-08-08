@@ -21,6 +21,11 @@ struct GameHUDView: View {
     /// display, so it should out-rank the control in the visual hierarchy.
     @ScaledMetric(relativeTo: .largeTitle) private var miniMapDiameter: CGFloat = 150
 
+    /// How long a kill toast lingers, and how many can stack before the oldest
+    /// is dropped — a multi-kill flurry must not curtain off the viewfinder.
+    private let killToastLifetime: TimeInterval = 10
+    private let maxKillToasts = 4
+
     var body: some View {
         ZStack {
             // What the back of the phone sees — the same ARSession UWB camera
@@ -50,7 +55,7 @@ struct GameHUDView: View {
                     MiniMapView()
                         .frame(width: miniMapDiameter, height: miniMapDiameter)
                         .padding(.leading, Space.xs)   // hugs the edge to offset the smaller disc
-                    killFeedView   // carries its own trailing inset
+                    killToasts   // carries its own trailing inset
                 }
                 Spacer()
                 fireControl
@@ -188,22 +193,46 @@ struct GameHUDView: View {
             .fixedSize()   // never let "4:50" wrap to two lines when the row tightens
     }
 
-    private var killFeedView: some View {
-        VStack(alignment: .trailing, spacing: Space.xxs) {
-            ForEach(engine.killFeed.prefix(3)) { event in
-                (
-                    Text(event.killer.displayCallSign)
-                    + Text("  \(Image(systemName: "bolt.fill"))  ")
-                    + Text(event.victim.displayCallSign)
-                )
-                .font(.caption2)
-                .foregroundStyle(Color.echoTextSecondary)
-                .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2)
-                .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
+    /// Kills arrive as toasts that stack newest-on-top and retire themselves
+    /// after `killToastLifetime`. The old feed was a static list that sat there
+    /// all match, so a tag from thirty seconds ago looked exactly like one that
+    /// just landed. Expiry is computed from each event's timestamp against a
+    /// ticking clock — `killFeed` itself never changes, so nothing here can
+    /// disturb the engine's record.
+    private var killToasts: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            let live = engine.killFeed.filter {
+                context.date.timeIntervalSince($0.timestamp) < killToastLifetime
             }
+            .prefix(maxKillToasts)
+
+            VStack(alignment: .trailing, spacing: Space.xs) {
+                ForEach(Array(live.enumerated()), id: \.element.id) { index, event in
+                    killToast(event, isLatest: index == 0)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.35), value: live.map(\.id))
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .padding(.horizontal)
+    }
+
+    /// A capsule so the text survives whatever the camera is pointed at; the
+    /// newest is bold and full-strength so the freshest tag reads first.
+    private func killToast(_ event: KillEvent, isLatest: Bool) -> some View {
+        (
+            Text(event.killer.displayCallSign)
+            + Text("  \(Image(systemName: "bolt.fill"))  ")
+            + Text(event.victim.displayCallSign)
+        )
+        .font(isLatest ? .caption2.bold() : .caption2)
+        .foregroundStyle(isLatest ? Color.echoText : Color.echoTextSecondary)
+        .lineLimit(1)
+        .padding(.horizontal, Space.sm)
+        .padding(.vertical, Space.xs)
+        .background(Color.echoBackground.opacity(Alpha.heavy), in: Capsule())
+        .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
     }
 
     // MARK: - Scope
