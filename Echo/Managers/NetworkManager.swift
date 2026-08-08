@@ -76,6 +76,7 @@ final class NetworkManager: ObservableObject {
         var name: String?
         var isEstablished = false
         var cameraFrameInFlight = false
+        var frameAckTimeout: DispatchWorkItem?
         let createdAt = Date()
         init(connection: NWConnection, name: String?) {
             self.connection = connection
@@ -378,6 +379,7 @@ final class NetworkManager: ObservableObject {
     private static let kindJSON: UInt8 = 0x00
     private static let kindCameraFrame: UInt8 = 0x01
     private static let kindHello: UInt8 = 0x02
+    private static let kindFrameAck: UInt8 = 0x03   // spectator → streamer: last camera frame arrived
     private static let maxFrameBytes: UInt32 = 4 << 20   // sanity cap; largest real frame is a camera JPEG
 
     private static func frame(_ body: Data) -> Data {
@@ -413,18 +415,23 @@ final class NetworkManager: ObservableObject {
         }
     }
 
-    /// Viewfinder frame for a spectator. At most one frame in flight per
-    /// peer — a congested link skips frames instead of queueing a backlog
-    /// ahead of game messages, which is the old `.unreliable` send's
-    /// "dropped beats late" behavior on a reliable transport.
+    /// Viewfinder frame for a spectator. At most one frame in flight per peer
+    /// END-TO-END: the flag clears on the receiver's ack, not on
+    /// `.contentProcessed` — that fires when the frame is merely copied into
+    /// the TCP send buffer, so a slow radio silently queued seconds of stale
+    /// frames there. Ack pacing caps latency at ~one round trip and lets the
+    /// frame rate degrade to what the link can actually carry. A timeout
+    /// clears the flag if the ack is lost so the stream can't wedge.
     func sendCameraFrame(_ jpeg: Data, to peerName: String) {
         guard let link = links[peerName], !link.cameraFrameInFlight else { return }
         link.cameraFrameInFlight = true
+        link.frameAckTimeout?.cancel()
+        let timeout = DispatchWorkItem { [weak link] in link?.cameraFrameInFlight = false }
+        link.frameAckTimeout = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: timeout)
         var body = Data([Self.kindCameraFrame])
         body.append(jpeg)
-        link.connection.send(content: Self.frame(body), completion: .contentProcessed { [weak link] _ in
-            link?.cameraFrameInFlight = false
-        })
+        link.connection.send(content: Self.frame(body), completion: .contentProcessed { _ in })
     }
 
     func isConnected(_ peerName: String) -> Bool {
@@ -481,7 +488,14 @@ final class NetworkManager: ObservableObject {
             delegate?.network(self, didReceive: message, from: name)
         case Self.kindCameraFrame:
             guard link.isEstablished, let name = link.name else { return }
+            // Ack immediately — the streamer's next frame waits on this.
+            link.connection.send(content: Self.frame(Data([Self.kindFrameAck])),
+                                 completion: .contentProcessed { _ in })
             delegate?.network(self, didReceiveCameraFrame: payload, from: name)
+        case Self.kindFrameAck:
+            link.frameAckTimeout?.cancel()
+            link.frameAckTimeout = nil
+            link.cameraFrameInFlight = false
         default:
             print("[Network] unknown packet kind \(kind)")
         }

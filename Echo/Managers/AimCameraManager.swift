@@ -150,11 +150,11 @@ final class AimCameraManager: NSObject, ObservableObject {
     private func encodeJPEG(_ buffer: CVPixelBuffer) -> Data? {
         // Sensor frames are landscape; the game is portrait.
         var image = CIImage(cvPixelBuffer: buffer).oriented(.right)
-        let scale = 480 / image.extent.width
+        let scale = 416 / image.extent.width
         image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
-        return ciContext.jpegRepresentation(of: image, colorSpace: colorSpace, options: [quality: 0.5])
+        return ciContext.jpegRepresentation(of: image, colorSpace: colorSpace, options: [quality: 0.45])
     }
 
     /// The configuration NearbyInteraction accepts for camera assistance —
@@ -174,7 +174,7 @@ final class AimCameraManager: NSObject, ObservableObject {
 extension AimCameraManager: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard frameTap != nil, !encodingInFlight,
-              Date().timeIntervalSince(lastTapAt) >= 1.0 / 12.0 else { return }
+              Date().timeIntervalSince(lastTapAt) >= 1.0 / 20.0 else { return }   // ack pacing is the real governor
         lastTapAt = Date()
         encodingInFlight = true
         let buffer = frame.capturedImage
