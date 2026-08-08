@@ -17,7 +17,7 @@ struct GameHUDView: View {
     @ScaledMetric(relativeTo: .title3) private var reloadLabelSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption2) private var ammoCountSize: CGFloat = 11
     @ScaledMetric(relativeTo: .caption2) private var killSkullSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 42
+    @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 58
     /// Deliberately wider than the fire button — it's the situational-awareness
     /// display, so it should out-rank the control in the visual hierarchy.
     @ScaledMetric(relativeTo: .largeTitle) private var miniMapDiameter: CGFloat = 150
@@ -118,7 +118,7 @@ struct GameHUDView: View {
                 // Zero spacing between them: each already carries a 44pt
                 // target, so extra gap would only push the row wider.
                 HStack(spacing: 0) {
-                    hudButton("list.number", "Scoreboard") { showScores = true }
+                    hudArtButton(.leaderboard, "Leaderboard") { showScores = true }
                     hudButton("waveform.badge.magnifyingglass", "Ranging diagnostics") { showDebug = true }
                     hudArtButton(.exitGame, "Leave match") { engine.leave() }
                 }
@@ -317,7 +317,7 @@ struct GameHUDView: View {
             fireButton
             if engine.isAlive && engine.ammo < engine.magazineSize && !engine.isReloading {
                 reloadButton
-                    .offset(x: fireDiameter * 0.81)   // clear of the ring, tracks its scale
+                    .offset(x: fireDiameter * 0.85)   // clear of the ring, tracks its scale
                     .transition(.scale.combined(with: .opacity))
             }
         }
