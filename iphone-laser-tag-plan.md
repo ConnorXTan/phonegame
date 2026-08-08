@@ -1,4 +1,4 @@
-# Phone Tag — iPhone Laser Tag Hackathon Plan
+# Echo — iPhone Laser Tag Hackathon Plan
 
 **Verdict: Feasible.** Native iOS app (SwiftUI) using UWB (Nearby Interaction) for aiming, MultipeerConnectivity for networking (no backend server needed), Core Haptics for hit feedback. 3–6 players, works indoors and outdoors.
 

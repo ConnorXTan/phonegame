@@ -15,7 +15,7 @@ struct MenuView: View {
                 Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 44))
                     .foregroundStyle(.red)
-                Text("PHONE TAG")
+                Text("ECHO")
                     .font(.system(size: 44, weight: .black, design: .rounded))
                     .tracking(4)
                 Text("UWB laser tag · aim like a camera")

@@ -119,7 +119,7 @@ final class GameEngine: NSObject, ObservableObject {
         if !NISession.deviceCapabilities.supportsDirectionMeasurement,
            NISession.deviceCapabilities.supportsCameraAssistance,
            AVCaptureDevice.authorizationStatus(for: .video) == .denied {
-            rangingAlert = "Camera access is off — this iPhone aims through the camera. Enable it: Settings → Apps → PhoneTag → Camera."
+            rangingAlert = "Camera access is off — this iPhone aims through the camera. Enable it: Settings → Apps → Echo → Camera."
         }
         // Late join: snapshots can arrive before .startGame (different senders,
         // independent ordering). Apply any fresh ones on top of the reset.

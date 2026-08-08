@@ -1,4 +1,4 @@
-# Phone Tag
+# Echo
 
 iPhone laser tag over Ultra Wideband. Aim your phone like a camera, fire, and the other player's phone buzzes, flashes red, and loses HP. No server, no venue Wi-Fi — the phones talk directly to each other.
 
@@ -17,8 +17,8 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 
 ## Build & run
 
-1. `open PhoneTag.xcodeproj`
-2. Target **PhoneTag** → Signing & Capabilities → pick your team (automatic signing). Change the bundle ID if it collides.
+1. `open Echo.xcodeproj`
+2. Target **Echo** → Signing & Capabilities → pick your team (automatic signing). Change the bundle ID if it collides.
 3. Build to each player's phone. On first launch, allow **Local Network**, **Nearby Interaction**, and **Camera** (camera assistance makes UWB aiming noticeably more reliable).
 
 ## How to play
@@ -35,7 +35,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 | Indoor | 8 m | 15° | 25 (4-shot kill) |
 | Outdoor | 20 m | 10° | 34 (3-shot kill) |
 
-Tuning lives in `GameSettings` presets (`PhoneTag/Models/GameModels.swift`) — adjust cone/range/damage in playtesting.
+Tuning lives in `GameSettings` presets (`Echo/Models/GameModels.swift`) — adjust cone/range/damage in playtesting.
 
 ## Architecture
 

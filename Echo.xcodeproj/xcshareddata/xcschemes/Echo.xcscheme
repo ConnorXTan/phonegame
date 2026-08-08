@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A0000000000000000000005"
-               BuildableName = "PhoneTag.app"
-               BlueprintName = "PhoneTag"
-               ReferencedContainer = "container:PhoneTag.xcodeproj">
+               BuildableName = "Echo.app"
+               BlueprintName = "Echo"
+               ReferencedContainer = "container:Echo.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -44,9 +44,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000000000000000000005"
-            BuildableName = "PhoneTag.app"
-            BlueprintName = "PhoneTag"
-            ReferencedContainer = "container:PhoneTag.xcodeproj">
+            BuildableName = "Echo.app"
+            BlueprintName = "Echo"
+            ReferencedContainer = "container:Echo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -61,9 +61,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000000000000000000005"
-            BuildableName = "PhoneTag.app"
-            BlueprintName = "PhoneTag"
-            ReferencedContainer = "container:PhoneTag.xcodeproj">
+            BuildableName = "Echo.app"
+            BlueprintName = "Echo"
+            ReferencedContainer = "container:Echo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
