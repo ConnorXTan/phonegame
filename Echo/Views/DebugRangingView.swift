@@ -10,6 +10,13 @@ struct DebugRangingView: View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 List {
+                    // Lives here rather than on the HUD: the game screen is the
+                    // camera viewfinder, so the top-down view is a diagnostic.
+                    Section("Radar") {
+                        RadarView()
+                            .frame(height: 180)
+                            .listRowBackground(Color.black)
+                    }
                     if engine.opponents.isEmpty {
                         Text("No peers connected")
                             .foregroundStyle(.secondary)

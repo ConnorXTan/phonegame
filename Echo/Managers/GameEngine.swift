@@ -32,6 +32,7 @@ final class GameEngine: NSObject, ObservableObject {
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
     let haptics = HapticsManager()
+    let camera = AimCameraManager()
     private let dummy = TargetDummy()
 
     private var aimTimer: Timer?
@@ -49,6 +50,7 @@ final class GameEngine: NSObject, ObservableObject {
     override init() {
         super.init()
         ranging.delegate = self
+        ranging.camera = camera   // one ARSession: viewfinder + camera assistance
         if !RangingManager.isSupported {
             uwbWarning = "This device has no UWB chip (needs iPhone 11+, non-SE). Ranging won't work here."
         } else if !RangingManager.supportsAiming {
@@ -72,6 +74,9 @@ final class GameEngine: NSObject, ObservableObject {
         let wireName = net.myPeerID.displayName
         players = [wireName: Player(name: wireName, hp: settings.maxHP)]
         net.start()
+        // Ask now, not at match start — an open permission alert would race
+        // the first NISession.run() and the viewfinder's first frame.
+        camera.requestAccessIfNeeded()
         phase = .lobby
         UIApplication.shared.isIdleTimerDisabled = true   // auto-lock would drop the mesh
     }
@@ -81,6 +86,7 @@ final class GameEngine: NSObject, ObservableObject {
         network = nil
         despawnDummy()
         ranging.stopAll()
+        camera.stop()   // after the NI sessions that were using it
         stopTimers()
         players = [:]
         killFeed = []
@@ -129,6 +135,10 @@ final class GameEngine: NSObject, ObservableObject {
         pendingSnapshots = [:]
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
+        // Before any NISession.run() below, so ranging attaches to a session
+        // that's already delivering frames. Also covers solo practice, where
+        // there are no peers and so no NI session to start it.
+        camera.start()
         startAimTimer()
         haptics.playGameStart()
 
