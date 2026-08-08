@@ -23,8 +23,16 @@ final class NetworkManager: NSObject, ObservableObject {
     let myPeerID: MCPeerID
     private let session: MCSession
     private let advertiser: MCNearbyServiceAdvertiser
-    private let browser: MCNearbyServiceBrowser
+    private var browser: MCNearbyServiceBrowser
     weak var delegate: NetworkManagerDelegate?
+
+    // Browser refresh throttle. Restarting the browser on every dropped
+    // connection turned mesh-formation churn into rapid stop/start cycles,
+    // which double-cancels CFNetServiceBrowser's run-loop source and traps
+    // (EXC_BREAKPOINT in _BrowserCancel) — it reliably killed the host, the
+    // device with the most connection events.
+    private var browserRefreshPending = false
+    private var lastBrowserRefresh = Date.distantPast
 
     // Main-queue-confined recovery state. The browser reports each peer once,
     // so a failed handshake or dropped link would strand the pair forever
@@ -121,13 +129,32 @@ final class NetworkManager: NSObject, ObservableObject {
     /// randomized backoff so both sides don't storm.
     private func recoverConnection(to peerID: MCPeerID) {
         guard isActive else { return }
-        browser.stopBrowsingForPeers()
-        browser.startBrowsingForPeers()
+        scheduleBrowserRefresh()
         guard myPeerID.displayName < peerID.displayName else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 1.0...3.0)) { [weak self] in
             guard let self, self.isActive,
                   let cached = self.discoveredPeers[peerID.displayName] else { return }
             self.invite(cached)
+        }
+    }
+
+    /// At most one browser restart per ~5 s, coalescing bursts, and always
+    /// onto a FRESH browser instance — restarting the same one after churn is
+    /// what corrupted its run-loop source and crashed the app.
+    private func scheduleBrowserRefresh() {
+        guard isActive, !browserRefreshPending else { return }
+        browserRefreshPending = true
+        let wait = max(0.5, 5.0 - Date().timeIntervalSince(lastBrowserRefresh))
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self else { return }
+            self.browserRefreshPending = false
+            guard self.isActive else { return }
+            self.lastBrowserRefresh = Date()
+            self.browser.stopBrowsingForPeers()
+            self.browser.delegate = nil
+            self.browser = MCNearbyServiceBrowser(peer: self.myPeerID, serviceType: Self.serviceType)
+            self.browser.delegate = self
+            self.browser.startBrowsingForPeers()
         }
     }
 }
