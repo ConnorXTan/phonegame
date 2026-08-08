@@ -13,6 +13,8 @@ struct GameSettings: Codable, Equatable {
     var maxHP: Int
     var fireCooldown: TimeInterval
     var respawnDelay: TimeInterval
+    var hitInvulnerability: TimeInterval   // i-frames after taking a hit
+    var spawnProtection: TimeInterval      // i-frames after respawning
     var matchDuration: TimeInterval   // seconds; host picks, ends the match
     var magazineSize: Int             // rounds before a reload
     var reloadDuration: TimeInterval
@@ -22,11 +24,13 @@ struct GameSettings: Codable, Equatable {
     static let indoor = GameSettings(
         mode: .indoor, weaponRange: 8, aimConeDegrees: 15,
         damage: 25, maxHP: 100, fireCooldown: 0.5, respawnDelay: 5,
+        hitInvulnerability: 0.5, spawnProtection: 1,
         matchDuration: 300, magazineSize: 10, reloadDuration: 3)
 
     static let outdoor = GameSettings(
         mode: .outdoor, weaponRange: 20, aimConeDegrees: 10,
         damage: 34, maxHP: 100, fireCooldown: 0.5, respawnDelay: 5,
+        hitInvulnerability: 0.5, spawnProtection: 1,
         matchDuration: 300, magazineSize: 10, reloadDuration: 3)
 
     /// Match lengths the host can pick in the lobby.

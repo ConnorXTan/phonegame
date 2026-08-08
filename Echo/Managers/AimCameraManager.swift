@@ -2,6 +2,7 @@ import ARKit
 import AVFoundation
 import Combine
 import CoreImage
+import CoreMedia
 import Foundation
 import ImageIO
 
@@ -88,6 +89,7 @@ final class AimCameraManager: NSObject, ObservableObject {
         // ARKit raises the camera permission prompt itself if it's still
         // undetermined, and starts delivering frames once it's granted.
         session.run(Self.makeConfiguration(), options: [.resetTracking, .removeExistingAnchors])
+        applyExposureCap()
         isRunning = true
         return session
     }
@@ -97,12 +99,50 @@ final class AimCameraManager: NSObject, ObservableObject {
     func resume() {
         guard isRunning else { start(); return }
         session.run(Self.makeConfiguration())
+        applyExposureCap()
     }
 
     func stop() {
         guard isRunning else { return }
         session.pause()
         isRunning = false
+    }
+
+    // MARK: - Exposure cap (U2 aim responsiveness)
+
+    /// Ceiling on auto-exposure's shutter time, or nil to leave ARKit's
+    /// auto-exposure untouched (the original behavior — flip here to A/B).
+    ///
+    /// Why: in low light the camera holds the shutter open, which smears each
+    /// frame — and on U2 iPhones (15/16) that same blurry frame is what ARKit
+    /// fuses into the aim bearing, so the smear *is* aim lag. Capping only the
+    /// *max* means it bites solely when auto-exposure would otherwise go long
+    /// (dim light); in good light auto-exposure is already faster, so the
+    /// picture is unchanged. When it does bite, the cost is a darker/noisier
+    /// frame — the sweet spot is venue-dependent, so tune this on-device.
+    /// Too aggressive backfires: dark, noisy frames also degrade ARKit feature
+    /// tracking, making the bearing worse instead of better.
+    static let maxExposureDuration: CMTime? = CMTime(value: 1, timescale: 120)   // ≤ 1/120 s
+
+    /// ARKit owns the capture device and re-configures it on every run(), so
+    /// this is re-applied after each start()/resume(). No-op when the cap is
+    /// nil or the device can't be configured (e.g. simulator).
+    private func applyExposureCap() {
+        guard let cap = Self.maxExposureDuration,
+              let device = ARWorldTrackingConfiguration.configurableCaptureDeviceForPrimaryCamera
+        else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            // Clamp into the active format's legal range; setting an out-of-range
+            // duration throws and would leave exposure uncapped.
+            let format = device.activeFormat
+            device.activeMaxExposureDuration = CMTimeMaximum(
+                format.minExposureDuration,
+                CMTimeMinimum(cap, format.maxExposureDuration))
+        } catch {
+            print("[Camera] exposure cap failed: \(error)")
+        }
     }
 
     // MARK: - Private
