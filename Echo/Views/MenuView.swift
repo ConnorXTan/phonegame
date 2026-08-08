@@ -30,6 +30,15 @@ struct MenuView: View {
                     .foregroundStyle(Color.echoTextSecondary)
             }
 
+            if let notice = engine.hostEndedNotice {
+                Label(notice, systemImage: "flag.checkered")
+                    .font(.footnote)
+                    .foregroundStyle(.cyan)
+                    .padding(12)
+                    .background(.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 24)
+            }
+
             if let warning = engine.uwbWarning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)

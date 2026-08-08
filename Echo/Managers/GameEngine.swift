@@ -32,6 +32,7 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
     @Published private(set) var rangingAlert: String?
+    @Published private(set) var hostEndedNotice: String?   // shown on the menu after a host shutdown
     @Published private(set) var aimHint: String?
     @Published private(set) var matchRemaining: TimeInterval = 0
     @Published private(set) var matchResult: MatchResult?
@@ -101,6 +102,7 @@ final class GameEngine: NSObject, ObservableObject {
         // so emoji are never split.
         while name.utf8.count > 58 { name.removeLast() }
         guard !name.isEmpty else { return }
+        hostEndedNotice = nil
         isHost = hosting
         let net = NetworkManager(playerName: name)
         net.delegate = self
@@ -116,8 +118,16 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     func leave() {
-        network?.stop()
-        network = nil
+        if isHost, phase != .menu, let net = network {
+            // Tell everyone before tearing down, and give the reliable send a
+            // beat to flush — disconnect() right after send can drop it.
+            net.send(.hostEnded)
+            network = nil   // stale-guards drop any further callbacks
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { net.stop() }
+        } else {
+            network?.stop()
+            network = nil
+        }
         despawnDummy()
         ranging.stopAll()
         camera.frameTap = nil
@@ -147,6 +157,7 @@ final class GameEngine: NSObject, ObservableObject {
     /// camera. The laptop's mode: it can still host (Start button, settings,
     /// authoritative match end) because "host" is only a protocol convention.
     func enterSpectator(hosting: Bool) {
+        hostEndedNotice = nil
         isSpectator = true
         isHost = hosting
         let net = NetworkManager(playerName: "Spectator")
@@ -732,6 +743,11 @@ extension GameEngine: NetworkManagerDelegate {
                 streamingTo = nil
                 camera.frameTap = nil
             }
+
+        case .hostEnded:
+            guard !isHost else { return }   // two hosts: don't let one kick the other
+            leave()
+            hostEndedNotice = "The host ended the game."
         }
     }
 
