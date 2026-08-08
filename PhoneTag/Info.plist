@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSNearbyInteractionUsageDescription</key>
+	<string>Phone Tag uses Ultra Wideband ranging to know when your phone is aimed at another player.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Phone Tag connects directly to nearby players&apos; phones to run the game — no server involved.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera assists UWB aiming accuracy. Nothing is recorded.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_lasertag._tcp</string>
+		<string>_lasertag._udp</string>
+	</array>
+</dict>
+</plist>
