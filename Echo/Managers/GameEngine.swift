@@ -1,6 +1,8 @@
+import ARKit
 import AVFoundation
 import Foundation
 import NearbyInteraction
+import simd
 import UIKit
 
 enum GamePhase: Equatable {
@@ -57,6 +59,7 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var isSpectator = false
     @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
     @Published private(set) var spectatorFrame: UIImage?
+    @Published private(set) var spectatorOverlay: SpectatorOverlayState?   // their crosshair + enemy tags
     @Published private(set) var spectators: Set<String> = []   // peers that are spectators, not targets
     @Published private(set) var joiningLobby: String?          // wire name of the host we're connecting to
     @Published private(set) var lobbyNotice: String?           // join failures ("lobby full") for the menu/browser
@@ -277,6 +280,7 @@ final class GameEngine: NSObject, ObservableObject {
         isSpectator = false
         watchingPlayer = nil
         spectatorFrame = nil
+        spectatorOverlay = nil
         spectators = []
         joiningLobby = nil
         clearExternalMatch()
@@ -316,9 +320,65 @@ final class GameEngine: NSObject, ObservableObject {
         }
         watchingPlayer = name
         spectatorFrame = nil
+        spectatorOverlay = nil
         if let name {
             net.send(.cameraRequest(active: true), to: [name])
         }
+    }
+
+    /// Streamer side: the HUD elements worth mirroring on the spectator's
+    /// feed — crosshair lock and the floating enemy tags. Mirrors
+    /// EnemyHealthbarOverlay's projection, but into a fixed 3:4 viewport so
+    /// positions are normalized against the FULL portrait camera frame the
+    /// spectator receives (the phone screen shows a crop; the stream doesn't).
+    private func currentOverlayState() -> SpectatorOverlayState {
+        let viewport = CGSize(width: 300, height: 400)
+        var tags: [SpectatorOverlayState.Tag] = []
+        if let frame = camera.session.currentFrame {
+            let maxHP = Double(max(1, settings.maxHP))
+            let now = Date()
+            for player in opponents where player.isAlive && player.isConnected {
+                guard let reading = ranging.latestReading(for: player.name),
+                      now.timeIntervalSince(reading.timestamp) < 1.0 else { continue }
+                var world = ranging.worldPosition(for: player.name)
+                if world == nil,
+                   let directional = ranging.latestDirectional(for: player.name, within: 1.0) {
+                    world = Self.synthesizedWorld(from: directional, camera: frame.camera)
+                }
+                guard let world else { continue }
+                let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
+                guard inCamera.z < 0 else { continue }   // behind the lens projects to a mirrored ghost
+                let point = frame.camera.projectPoint(world, orientation: .portrait, viewportSize: viewport)
+                guard point.x > -20, point.x < viewport.width + 20,
+                      point.y > 0, point.y < viewport.height else { continue }
+                tags.append(SpectatorOverlayState.Tag(
+                    name: player.name.displayCallSign,
+                    x: point.x / viewport.width,
+                    y: point.y / viewport.height,
+                    hp: Double(player.hp) / maxHP))
+            }
+        }
+        return SpectatorOverlayState(tags: tags, lockedTarget: aimedTarget?.displayCallSign)
+    }
+
+    /// Same fallback EnemyHealthbarOverlay uses when no world transform
+    /// exists: cast the device-frame reading out from the camera pose.
+    private static func synthesizedWorld(from reading: RangingReading, camera: ARCamera) -> simd_float3? {
+        let deviceDirection: simd_float3
+        if let d = reading.direction {
+            deviceDirection = d
+        } else if let h = reading.horizontalAngle {
+            deviceDirection = simd_float3(sin(h), 0, -cos(h))
+        } else {
+            return nil
+        }
+        let deviceToCamera = simd_quatf(angle: .pi / 2, axis: simd_float3(0, 0, 1))
+        let inCamera = deviceToCamera.act(deviceDirection)
+        let t = camera.transform
+        let world4 = t * simd_float4(inCamera, 0)
+        let origin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+        let direction = simd_normalize(simd_float3(world4.x, world4.y, world4.z))
+        return origin + direction * (reading.distance ?? TargetDummy.distance)
     }
 
     /// Host taps Start: broadcast settings, then start locally. The game
@@ -790,6 +850,7 @@ extension GameEngine: NetworkManagerDelegate {
         if watchingPlayer == name {
             watchingPlayer = nil
             spectatorFrame = nil
+        spectatorOverlay = nil
         }
     }
 
@@ -956,10 +1017,18 @@ extension GameEngine: NetworkManagerDelegate {
                 camera.frameTap = { [weak self] jpeg in
                     guard let self, let target = self.streamingTo else { return }
                     self.network?.sendCameraFrame(jpeg, to: target)
+                    // Ride along with every frame: what our HUD is showing,
+                    // so the spectator can redraw crosshair + enemy tags.
+                    self.network?.send(.overlayState(self.currentOverlayState()), to: [target])
                 }
             } else if streamingTo == peerName {
                 streamingTo = nil
                 camera.frameTap = nil
+            }
+
+        case .overlayState(let state):
+            if isSpectator, peerName == watchingPlayer {
+                spectatorOverlay = state
             }
 
         case .hostEnded:

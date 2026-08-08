@@ -347,10 +347,25 @@ struct SpectatorView: View {
     private var feedPanel: some View {
         ZStack {
             if let frame = engine.spectatorFrame, engine.watchingPlayer != nil {
-                Image(uiImage: frame)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                GeometryReader { geo in
+                    let fit = Self.fittedRect(image: frame.size, in: geo.size)
+                    Image(uiImage: frame)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Their HUD, redrawn: enemy tags pinned to the frame and
+                    // the crosshair — nothing else from their chrome.
+                    if let overlay = engine.spectatorOverlay {
+                        ForEach(overlay.tags, id: \.name) { tag in
+                            EnemyTag(name: tag.name, hpFraction: CGFloat(tag.hp))
+                                .position(x: fit.minX + CGFloat(tag.x) * fit.width,
+                                          y: fit.minY + CGFloat(tag.y) * fit.height - 40)
+                        }
+                        spectatedCrosshair(overlay, center: CGPoint(x: fit.midX, y: fit.midY))
+                    }
+                }
+                .clipped()
+                .allowsHitTesting(false)
             } else if let watching = engine.watchingPlayer {
                 VStack(spacing: Space.md) {
                     ProgressView()
@@ -371,6 +386,37 @@ struct SpectatorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) { watchedStatusBar }
         .overlay(alignment: .bottom) { killFeedStrip }
+    }
+
+    /// Where a scaledToFit image actually lands inside its container.
+    private static func fittedRect(image: CGSize, in container: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0, container.width > 0, container.height > 0 else {
+            return CGRect(origin: .zero, size: container)
+        }
+        let scale = min(container.width / image.width, container.height / image.height)
+        let size = CGSize(width: image.width * scale, height: image.height * scale)
+        return CGRect(x: (container.width - size.width) / 2,
+                      y: (container.height - size.height) / 2,
+                      width: size.width, height: size.height)
+    }
+
+    /// The spectated player's crosshair: hot when they're locked, faint when
+    /// they're scanning — same semantics as their reticle.
+    @ViewBuilder
+    private func spectatedCrosshair(_ overlay: SpectatorOverlayState, center: CGPoint) -> some View {
+        let locked = overlay.lockedTarget != nil
+        VStack(spacing: Space.xs) {
+            Image(systemName: locked ? "scope" : "plus")
+                .font(.system(size: 40, weight: .thin))
+                .foregroundStyle(locked ? Color.echoPrimary : Color.echoText.opacity(Alpha.muted))
+            if let target = overlay.lockedTarget {
+                Text("LOCKED · \(target.uppercased())")
+                    .font(.caption2.bold())
+                    .foregroundStyle(Color.echoPrimary)
+            }
+        }
+        .position(center)
+        .animation(.easeOut(duration: 0.15), value: locked)
     }
 
     /// Who's on air and how they're doing, pinned over the feed.

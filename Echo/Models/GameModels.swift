@@ -79,6 +79,23 @@ enum GameMessage: Codable {
     case hostEnded                              // host closed the game; everyone back to the menu
     case lobbyRoster(players: [String], spectators: [String])   // host-authoritative membership; drives mesh + UI
     case joinDenied(reason: String)             // host turned the sender's join down (e.g. lobby full)
+    case overlayState(SpectatorOverlayState)    // streamer → spectator: HUD elements to redraw over the feed
+}
+
+/// What the spectated player sees, reduced to the two things worth mirroring:
+/// their crosshair state and the enemy tags floating in their viewfinder.
+/// Tag positions are normalized (0–1) in the full portrait camera frame, so
+/// the spectator pins them straight onto the streamed image — the projection
+/// math stays on the phone, which has the AR camera to do it with.
+struct SpectatorOverlayState: Codable, Equatable {
+    struct Tag: Codable, Equatable {
+        let name: String     // display call sign, pre-stripped
+        let x: Double
+        let y: Double
+        let hp: Double       // 0–1 fraction
+    }
+    let tags: [Tag]
+    let lockedTarget: String?   // display call sign under the crosshair, if locked
 }
 
 struct Player: Identifiable {

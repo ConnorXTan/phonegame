@@ -133,8 +133,9 @@ private final class WorldSmoother {
 }
 
 /// The floating tag itself: call sign over a thin HP capsule. Sized as chrome,
-/// not prose — it sits over a live camera feed.
-private struct EnemyTag: View {
+/// not prose — it sits over a live camera feed. Internal because the
+/// spectator's feed redraws the exact same tag from streamed overlay state.
+struct EnemyTag: View {
     let name: String
     let hpFraction: CGFloat
 
