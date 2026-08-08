@@ -49,19 +49,29 @@ struct MenuView: View {
                     .padding(.horizontal, Space.xl)
             }
 
-            if !isMac {
-                TextField("Your call sign", text: $engine.playerName)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.center)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .frame(maxWidth: 260)
+            if let notice = engine.lobbyNotice {
+                Label(notice, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Color.echoWarning)
+                    .padding(Space.md)
+                    .background(Color.echoWarning.opacity(Alpha.surface),
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .padding(.horizontal, Space.xl)
+            }
 
+            TextField(isMac ? "Spectator name (optional)" : "Your call sign", text: $engine.playerName)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.center)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .frame(maxWidth: 260)
+
+            if !isMac {
                 VStack(spacing: Space.md) {
                     Button {
                         engine.enterLobby(hosting: true)
                     } label: {
-                        Label("Host Game", systemImage: "antenna.radiowaves.left.and.right")
+                        Label("Host a Lobby", systemImage: "antenna.radiowaves.left.and.right")
                             .frame(maxWidth: 260)
                             .foregroundStyle(Color.echoOnPrimary)
                     }
@@ -70,9 +80,9 @@ struct MenuView: View {
                     .tint(Color.echoPrimary)
 
                     Button {
-                        engine.enterLobby(hosting: false)
+                        engine.enterBrowser(asSpectator: false)
                     } label: {
-                        Label("Join Game", systemImage: "person.3.fill")
+                        Label("Find Lobbies", systemImage: "person.3.fill")
                             .frame(maxWidth: 260)
                     }
                     .buttonStyle(.bordered)
@@ -82,19 +92,30 @@ struct MenuView: View {
             }
 
             if isMac {
-                Button {
-                    engine.enterSpectator(hosting: true)
-                } label: {
-                    Label("Run the Game (spectate & host)", systemImage: "tv")
-                        .frame(maxWidth: 260)
-                        .foregroundStyle(Color.echoOnPrimary)
+                VStack(spacing: Space.md) {
+                    Button {
+                        engine.enterSpectator(hosting: true)
+                    } label: {
+                        Label("Run the Game (host a lobby)", systemImage: "tv")
+                            .frame(maxWidth: 260)
+                            .foregroundStyle(Color.echoOnPrimary)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(Color.echoPrimary)
+
+                    Button {
+                        engine.enterBrowser(asSpectator: true)
+                    } label: {
+                        Label("Spectate a Lobby", systemImage: "binoculars.fill")
+                            .frame(maxWidth: 260)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(Color.echoPrimary)
             }
 
-            Text(isMac ? "This Mac has no UWB chip, so it runs the show instead of playing."
+            Text(isMac ? "This Mac has no UWB chip — it runs the show or watches, never plays."
                        : "Pick a short call sign — it's how other players see you.")
                 .font(.caption2)
                 .foregroundStyle(Color.echoTextSecondary)

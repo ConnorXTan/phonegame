@@ -36,7 +36,9 @@ struct SpectatorView: View {
                             .frame(width: 280)
                         Divider().overlay(Color.echoHairline)
                         if engine.phase == .lobby {
-                            if engine.externalMatchInProgress {
+                            if !engine.isHost {
+                                waitingForHostPanel
+                            } else if engine.externalMatchInProgress {
                                 matchInProgressPanel
                             } else {
                                 setupPanel
@@ -152,6 +154,21 @@ struct SpectatorView: View {
                         .pickerStyle(.segmented)
                     }
 
+                    settingRow(label: "Player limit", icon: "person.3") {
+                        Picker("Player limit", selection: Binding(
+                            get: { engine.settings.maxPlayers },
+                            set: {
+                                engine.settings.maxPlayers = $0
+                                engine.refreshLobbyAdvertisement()
+                            }
+                        )) {
+                            ForEach(GameSettings.maxPlayerChoices, id: \.self) { count in
+                                Text("\(count)").tag(count)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
                     Divider().overlay(Color.echoHairline)
 
                     HStack(spacing: Space.xl) {
@@ -191,6 +208,22 @@ struct SpectatorView: View {
             .frame(maxWidth: .infinity)
             .padding(Space.xxl)
         }
+    }
+
+    /// Joined someone else's lobby as a pure spectator: the host runs the
+    /// match; we watch. No Start button exists in this mode.
+    private var waitingForHostPanel: some View {
+        VStack(spacing: Space.md) {
+            ProgressView()
+            Text("Waiting for the host to start the match…")
+                .foregroundStyle(Color.echoTextSecondary)
+            Text("You're spectating — the host controls settings and start. Once the match runs, click a player to watch their view.")
+                .font(.caption2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(Color.echoTextTertiary)
+                .frame(maxWidth: 380)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// A real match was already running when this screen opened. The laptop

@@ -5,7 +5,7 @@ import NearbyInteraction
 import UIKit
 
 enum GamePhase: Equatable {
-    case menu, lobby, playing, summary
+    case menu, browsing, lobby, playing, summary
 }
 
 /// Source of truth for game state. Hit resolution runs on the SHOOTER's phone
@@ -58,7 +58,9 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var isSpectator = false
     @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
     @Published private(set) var spectatorFrame: UIImage?
-    private var spectators: Set<String> = []                // peers that are spectators, not targets
+    @Published private(set) var spectators: Set<String> = []   // peers that are spectators, not targets
+    @Published private(set) var joiningLobby: String?          // wire name of the host we're connecting to
+    @Published private(set) var lobbyNotice: String?           // join failures ("lobby full") for the menu/browser
     private var streamingTo: MCPeerID?                      // player side: who gets our viewfinder
 
     private(set) var network: NetworkManager?
@@ -104,6 +106,7 @@ final class GameEngine: NSObject, ObservableObject {
 
     // MARK: - Lobby
 
+    /// Create and host our own lobby (phone hosts).
     func enterLobby(hosting: Bool) {
         // Single entry: the menu stays tappable through the menu→lobby
         // crossfade, so a double-tap ran this twice — orphaning a live
@@ -118,19 +121,86 @@ final class GameEngine: NSObject, ObservableObject {
         while name.utf8.count > 58 { name.removeLast() }
         guard !name.isEmpty else { return }
         hostEndedNotice = nil
+        lobbyNotice = nil
         isHost = hosting
         network?.stop()   // there must never be two live meshes; nil here while the phase guard holds
-        let net = NetworkManager(playerName: name)
+        let net = NetworkManager(playerName: name, role: hosting ? .host : .player)
         net.delegate = self
         network = net
         let wireName = net.myPeerID.displayName
         players = [wireName: Player(name: wireName, hp: settings.maxHP)]
         net.start()
+        refreshLobbyAdvertisement()
         // Ask now, not at match start — an open permission alert would race
         // the first NISession.run() and the viewfinder's first frame.
         camera.requestAccessIfNeeded()
         phase = .lobby
         UIApplication.shared.isIdleTimerDisabled = true   // auto-lock would drop the mesh
+    }
+
+    /// Browse for lobbies to join — as a player (phones) or spectator (Mac).
+    /// A spectator with no name is just "Spectator".
+    func enterBrowser(asSpectator: Bool) {
+        guard phase == .menu else { return }
+        var name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        while name.utf8.count > 58 { name.removeLast() }
+        if name.isEmpty {
+            guard asSpectator else { return }
+            name = "Spectator"
+        }
+        hostEndedNotice = nil
+        lobbyNotice = nil
+        isSpectator = asSpectator
+        isHost = false
+        network?.stop()
+        let net = NetworkManager(playerName: name, role: asSpectator ? .spectator : .player)
+        net.delegate = self
+        network = net
+        players = [:]
+        if !asSpectator {
+            let wireName = net.myPeerID.displayName
+            players = [wireName: Player(name: wireName, hp: settings.maxHP)]
+            camera.requestAccessIfNeeded()
+        }
+        net.start()
+        phase = .browsing
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    /// Tap a lobby in the browser: connect to its host. Membership (or a
+    /// "full" denial) comes back over messages once the host answers.
+    func joinLobby(_ lobby: DiscoveredLobby) {
+        guard phase == .browsing, joiningLobby == nil, let net = network else { return }
+        joiningLobby = lobby.hostName
+        net.join(lobby)
+        let target = lobby.hostName
+        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            guard let self, self.phase == .browsing, self.joiningLobby == target else { return }
+            self.joiningLobby = nil
+            self.lobbyNotice = "Couldn't reach \(target.displayCallSign)'s lobby — move closer and retry."
+        }
+    }
+
+    /// Host only: re-advertise occupancy/capacity/live state after changes.
+    func refreshLobbyAdvertisement() {
+        guard isHost else { return }
+        network?.updateLobbyAdvertisement(
+            playerCount: players.keys.filter { $0 != TargetDummy.name }.count,
+            capacity: settings.maxPlayers,
+            isLive: phase == .playing)
+    }
+
+    /// Host only: tell everyone who's in — players and spectators separately.
+    /// Members mesh among themselves off this list, and the lobby screens
+    /// render their sections from it. A Mac game master lists itself as a
+    /// spectator so joiners can see who's running the show.
+    private func broadcastRoster() {
+        guard isHost, let net = network else { return }
+        let playerNames = players.keys.filter { $0 != TargetDummy.name }.sorted()
+        var spectatorNames = spectators.sorted()
+        if isSpectator { spectatorNames.append(myName) }
+        net.send(.lobbyRoster(players: playerNames, spectators: spectatorNames))
+        net.updateRoster(playerNames + spectatorNames)
     }
 
     func leave() {
@@ -165,6 +235,7 @@ final class GameEngine: NSObject, ObservableObject {
         watchingPlayer = nil
         spectatorFrame = nil
         spectators = []
+        joiningLobby = nil
         clearExternalMatch()
         streamingTo = nil
         phase = .menu
@@ -177,14 +248,19 @@ final class GameEngine: NSObject, ObservableObject {
     func enterSpectator(hosting: Bool) {
         guard phase == .menu else { return }   // same re-entry hazard as enterLobby
         hostEndedNotice = nil
+        lobbyNotice = nil
         isSpectator = true
         isHost = hosting
+        var name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
+        while name.utf8.count > 58 { name.removeLast() }
+        if name.isEmpty { name = "Spectator" }   // the name field is optional here
         network?.stop()
-        let net = NetworkManager(playerName: "Spectator")
+        let net = NetworkManager(playerName: name, role: hosting ? .host : .spectator)
         net.delegate = self
         network = net
         players = [:]
         net.start()
+        refreshLobbyAdvertisement()
         phase = .lobby
         UIApplication.shared.isIdleTimerDisabled = true
     }
@@ -205,7 +281,7 @@ final class GameEngine: NSObject, ObservableObject {
     /// Host taps Start: broadcast settings, then start locally. The game
     /// master can't start while somebody else's real match is running.
     func startGame() {
-        guard phase == .lobby, !externalMatchInProgress, let net = network else { return }
+        guard phase == .lobby, isHost, !externalMatchInProgress, let net = network else { return }
         net.send(.startGame(settings: settings))
         beginMatch(with: settings)
     }
@@ -249,6 +325,7 @@ final class GameEngine: NSObject, ObservableObject {
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
         startMatchClock(seconds: settings.matchDuration)
+        refreshLobbyAdvertisement()   // the lobby list shows this one as LIVE
         guard !isSpectator else { return }   // observers need only the clock and the mirror
 
         // Before any NISession.run() below, so ranging attaches to a session
@@ -503,6 +580,7 @@ final class GameEngine: NSObject, ObservableObject {
             players[name]?.isAlive = true
         }
         phase = .lobby
+        refreshLobbyAdvertisement()   // back to "open" in the lobby list
     }
 
     // MARK: - Aim indicator
@@ -625,47 +703,38 @@ extension GameEngine: NetworkManagerDelegate {
     func network(_ manager: NetworkManager, peerDidConnect peer: MCPeerID) {
         guard manager === network else { return }   // stale callbacks after leave()
         let name = peer.displayName
-        if spectators.contains(name) {
-            // A reconnecting spectator never becomes a player row.
-        } else if players[name] == nil {
-            players[name] = Player(name: name, hp: settings.maxHP)
-        } else {
+        // Joiner: the host we picked answered — we're in, pending its
+        // capacity check (a .joinDenied would bounce us back out).
+        if phase == .browsing, name == joiningLobby {
+            joiningLobby = nil
+            phase = .lobby
+        }
+        if players[name] != nil {
             players[name]?.isConnected = true       // reconnect: keep their stats
         }
+        // Roster rows are created when the peer declares itself via
+        // .hello/.spectatorHello — a bare connection isn't membership.
         manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName), to: [peer])
-        if phase == .playing {
-            if !isSpectator { despawnDummy() }   // a real target arrived — practice is over
-            // Late joiner or reconnect mid-match: sync settings + full state
-            // (host), our own authoritative row (everyone), and pair up UWB.
-            // .reliable unicasts to one peer stay ordered, so the snapshot
-            // lands after .startGame on their side.
-            if isHost {
-                manager.send(.startGame(settings: settings), to: [peer])
-                manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peer])
-                // Their clock would otherwise start a full match length from now.
-                if let deadline = matchDeadline {
-                    manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peer])
-                }
-            } else if let mine = me {
-                manager.send(.stateSnapshot([PlayerState(mine)]), to: [peer])
-            }
-            if !isSpectator, !spectators.contains(name),
-               let data = ranging.prepare(peerName: name) {
-                manager.send(.discoveryToken(data), to: [peer])
-            }
-        }
     }
 
     func network(_ manager: NetworkManager, peerDidDisconnect peer: MCPeerID) {
         guard manager === network else { return }
         let name = peer.displayName
         if name == externalHostName { clearExternalMatch() }   // its match can't hold our lock
+        if spectators.contains(name) {
+            spectators.remove(name)
+            if isHost { broadcastRoster() }
+        }
         if phase == .playing, players[name] != nil {
             // Might be a transient blip — keep stats so reconnect doesn't
             // resurrect them at full HP with zeroed kills.
             players[name]?.isConnected = false
         } else {
             players[name] = nil
+            if isHost {
+                broadcastRoster()
+                refreshLobbyAdvertisement()
+            }
         }
         ranging.removePeer(name)
         if streamingTo == peer {
@@ -682,8 +751,39 @@ extension GameEngine: NetworkManagerDelegate {
         guard manager === network else { return }
         switch message {
         case .hello(let name):
+            // Host gates capacity here: spectators never count, reconnects
+            // (already in players) always pass.
+            if isHost, players[name] == nil,
+               players.keys.filter({ $0 != TargetDummy.name }).count >= settings.maxPlayers {
+                manager.send(.joinDenied(reason: "Lobby is full (\(settings.maxPlayers) players)."), to: [peer])
+                return
+            }
             if players[name] == nil {
                 players[name] = Player(name: name, hp: settings.maxHP)
+            } else {
+                players[name]?.isConnected = true
+            }
+            if isHost {
+                broadcastRoster()
+                refreshLobbyAdvertisement()
+            }
+            if phase == .playing {
+                if !isSpectator { despawnDummy() }   // a real target arrived
+                // Late joiner or reconnect mid-match: sync settings + full
+                // state (host), our own authoritative row (everyone), and
+                // pair up UWB. Ordered unicasts land after .startGame.
+                if isHost {
+                    manager.send(.startGame(settings: settings), to: [peer])
+                    manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peer])
+                    if let deadline = matchDeadline {
+                        manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peer])
+                    }
+                } else if let mine = me {
+                    manager.send(.stateSnapshot([PlayerState(mine)]), to: [peer])
+                }
+                if !isSpectator, let data = ranging.prepare(peerName: name) {
+                    manager.send(.discoveryToken(data), to: [peer])
+                }
             }
 
         case .discoveryToken(let data):
@@ -791,6 +891,17 @@ extension GameEngine: NetworkManagerDelegate {
             spectators.insert(peer.displayName)
             players[peer.displayName] = nil
             ranging.removePeer(peer.displayName)
+            if isHost {
+                broadcastRoster()
+                if phase == .playing {
+                    // Catch the spectator up on the running match.
+                    manager.send(.startGame(settings: settings), to: [peer])
+                    manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peer])
+                    if let deadline = matchDeadline {
+                        manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peer])
+                    }
+                }
+            }
 
         case .cameraRequest(let active):
             if active {
@@ -814,6 +925,25 @@ extension GameEngine: NetworkManagerDelegate {
             }
             leave()
             hostEndedNotice = "The host ended the game."
+
+        case .lobbyRoster(let playerNames, let spectatorNames):
+            guard !isHost else { return }   // members mirror the host's list
+            spectators = Set(spectatorNames).subtracting([myName])
+            for name in playerNames where players[name] == nil && name != myName {
+                players[name] = Player(name: name, hp: settings.maxHP)
+            }
+            if phase == .lobby {
+                // Host-authoritative membership: prune strangers pre-match.
+                for name in players.keys where name != myName && !playerNames.contains(name) {
+                    players[name] = nil
+                }
+            }
+            network?.updateRoster(playerNames + spectatorNames)
+
+        case .joinDenied(let reason):
+            guard !isHost, phase == .lobby || phase == .browsing else { return }
+            leave()
+            lobbyNotice = reason
         }
     }
 

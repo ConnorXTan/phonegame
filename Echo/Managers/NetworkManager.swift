@@ -8,46 +8,76 @@ protocol NetworkManagerDelegate: AnyObject {
     func network(_ manager: NetworkManager, peerDidDisconnect peer: MCPeerID)
 }
 
-/// Local mesh networking over MultipeerConnectivity — peer-to-peer Wi-Fi and
-/// Bluetooth, no backend. Every device both advertises and browses; for each
-/// discovered pair, the lexicographically smaller display name sends the
-/// invitation, so every pair connects exactly once and the result is a full
-/// mesh (shooter can message victim directly). Dropped links and failed
-/// handshakes self-heal: the inviter retries from a cached discovery record
-/// with randomized backoff, and browsing restarts to refresh discovery.
+/// What this device is on the network. Hosts advertise a joinable lobby;
+/// players and spectators advertise bare presence so lobby-mates can find and
+/// connect to them once the host's roster names them.
+enum NetworkRole {
+    case host, player, spectator
+}
+
+/// A joinable lobby seen by the browser, straight from a host's advertisement.
+struct DiscoveredLobby: Identifiable, Equatable {
+    let peerID: MCPeerID
+    let hostName: String     // wire name; render with .displayCallSign
+    let playerCount: Int
+    let capacity: Int
+    let isLive: Bool         // a match is underway
+
+    var id: String { peerID.displayName }
+    var isFull: Bool { playerCount >= capacity }
+}
+
+/// Lobby-scoped mesh over MultipeerConnectivity — peer-to-peer Wi-Fi and
+/// Bluetooth, no backend. Hosts advertise their lobby (name, occupancy,
+/// capacity, live state); joiners browse and invite the ONE host they picked.
+/// Membership is host-authoritative: when the roster message names the
+/// members, they mesh among themselves (smaller wire name invites), so every
+/// pair in a lobby connects exactly once and different lobbies never touch.
+/// Dropped links self-heal from cached discovery records with backoff;
+/// browser/advertiser restarts are throttled onto fresh instances — rapid
+/// stop/start cycles corrupt CFNetServiceBrowser's run-loop source and trap.
 final class NetworkManager: NSObject, ObservableObject {
     static let serviceType = "lasertag"   // must match NSBonjourServices in Info.plist
 
     @Published private(set) var connectedPeers: [MCPeerID] = []
+    @Published private(set) var lobbies: [DiscoveredLobby] = []
 
     let myPeerID: MCPeerID
-    private let session: MCSession
-    private let advertiser: MCNearbyServiceAdvertiser
-    private var browser: MCNearbyServiceBrowser
+    let role: NetworkRole
     weak var delegate: NetworkManagerDelegate?
 
-    // Browser refresh throttle. Restarting the browser on every dropped
-    // connection turned mesh-formation churn into rapid stop/start cycles,
-    // which double-cancels CFNetServiceBrowser's run-loop source and traps
-    // (EXC_BREAKPOINT in _BrowserCancel) — it reliably killed the host, the
-    // device with the most connection events.
-    private var browserRefreshPending = false
-    private var lastBrowserRefresh = Date.distantPast
+    private let session: MCSession
+    private var advertiser: MCNearbyServiceAdvertiser
+    private var browser: MCNearbyServiceBrowser
 
-    // Main-queue-confined recovery state. The browser reports each peer once,
-    // so a failed handshake or dropped link would strand the pair forever
-    // without a cached record to re-invite from.
+    // Main-queue-confined state.
     private var discoveredPeers: [String: MCPeerID] = [:]
     private var pendingInvites: Set<String> = []
+    private var rosterNames: Set<String> = []    // lobby-mates we should be meshed with
+    private var chosenHost: String?              // the lobby we joined (non-hosts)
     private var isActive = false
 
-    init(playerName: String) {
+    // Restart throttles (see class comment).
+    private var browserRefreshPending = false
+    private var lastBrowserRefresh = Date.distantPast
+    private var advertiserRefreshPending = false
+    private var pendingAdvertisement: [String: String]?
+    private var lastAdvertiserRefresh = Date.distantPast
+
+    init(playerName: String, role: NetworkRole) {
         // Random suffix keeps wire identity unique even when two players type
         // the same call sign; views strip it with .displayCallSign.
         let unique = playerName + "#" + String(format: "%04x", UInt16.random(in: .min ... .max))
+        self.role = role
         myPeerID = MCPeerID(displayName: unique)
         session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)
-        advertiser = MCNearbyServiceAdvertiser(peer: myPeerID, discoveryInfo: nil, serviceType: Self.serviceType)
+        let info: [String: String]
+        switch role {
+        case .host: info = ["r": "h", "c": "0", "x": "6", "s": "open"]
+        case .player: info = ["r": "p"]
+        case .spectator: info = ["r": "s"]
+        }
+        advertiser = MCNearbyServiceAdvertiser(peer: myPeerID, discoveryInfo: info, serviceType: Self.serviceType)
         browser = MCNearbyServiceBrowser(peer: myPeerID, serviceType: Self.serviceType)
         super.init()
         session.delegate = self
@@ -68,9 +98,52 @@ final class NetworkManager: NSObject, ObservableObject {
         browser.stopBrowsingForPeers()
         session.disconnect()
         connectedPeers = []
+        lobbies = []
         discoveredPeers = [:]
         pendingInvites = []
+        rosterNames = []
+        chosenHost = nil
     }
+
+    // MARK: - Lobby membership
+
+    /// Join a discovered lobby: invite its host into our session. Everything
+    /// else (roster, mesh, capacity denial) follows over messages.
+    func join(_ lobby: DiscoveredLobby) {
+        guard isActive else { return }
+        chosenHost = lobby.peerID.displayName
+        rosterNames.insert(lobby.peerID.displayName)
+        let name = lobby.peerID.displayName
+        pendingInvites.insert(name)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
+            self?.pendingInvites.remove(name)
+        }
+        browser.invitePeer(lobby.peerID, to: session, withContext: nil, timeout: 30)
+    }
+
+    /// Host-authoritative membership update: these are the wire names we
+    /// should be meshed with. Prunes strangers, invites newly named mates.
+    func updateRoster(_ names: [String]) {
+        rosterNames = Set(names).subtracting([myPeerID.displayName])
+        if let chosenHost { rosterNames.insert(chosenHost) }
+        meshTick()
+    }
+
+    /// Host only: refresh the advertised occupancy/capacity/live state.
+    /// Throttled — the advertisement must be restarted to change, and rapid
+    /// restarts are the same trap as rapid browser restarts.
+    func updateLobbyAdvertisement(playerCount: Int, capacity: Int, isLive: Bool) {
+        guard role == .host else { return }
+        pendingAdvertisement = [
+            "r": "h",
+            "c": String(playerCount),
+            "x": String(capacity),
+            "s": isLive ? "live" : "open",
+        ]
+        scheduleAdvertiserRefresh()
+    }
+
+    // MARK: - Sending
 
     // First byte of every packet tags its kind, so bulky camera frames skip
     // JSON entirely. '{' (0x7B) is accepted bare for builds predating the tag.
@@ -103,44 +176,53 @@ final class NetworkManager: NSObject, ObservableObject {
         session.connectedPeers.first { $0.displayName == name }
     }
 
-    // MARK: - Invitation & recovery (main queue only)
+    // MARK: - Mesh formation & recovery (main queue only)
 
-    /// Invite iff we are the designated inviter for this pair and no attempt
-    /// is in flight. Unique display names make `<` a strict total order.
-    private func invite(_ peerID: MCPeerID) {
-        guard isActive,
-              myPeerID.displayName < peerID.displayName,
-              !session.connectedPeers.contains(peerID),
-              !pendingInvites.contains(peerID.displayName)
-        else { return }
-        let name = peerID.displayName
-        pendingInvites.insert(name)
-        // Clear the in-flight flag even if the invitation dies without any
-        // session-state callback (invitee vanished mid-handshake).
-        DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
-            self?.pendingInvites.remove(name)
+    /// Connect to every roster-mate we've discovered but aren't linked to.
+    /// The lexicographically smaller wire name invites, so each pair connects
+    /// exactly once; unique names make `<` a strict total order.
+    private func meshTick() {
+        guard isActive else { return }
+        for name in rosterNames where name != chosenHost {
+            guard myPeerID.displayName < name,
+                  let record = discoveredPeers[name],
+                  !session.connectedPeers.contains(record),
+                  !pendingInvites.contains(name)
+            else { continue }
+            pendingInvites.insert(name)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
+                self?.pendingInvites.remove(name)
+            }
+            browser.invitePeer(record, to: session, withContext: nil, timeout: 30)
         }
-        browser.invitePeer(peerID, to: session, withContext: nil, timeout: 30)
     }
 
-    /// After any drop or failed handshake: refresh browsing so discovery
-    /// records regenerate (a restarted browser re-reports every advertiser),
-    /// and if we're the inviter, retry from the cached record after a
-    /// randomized backoff so both sides don't storm.
+    /// After a drop or failed handshake with someone we should be linked to:
+    /// refresh browsing so discovery records regenerate, and retry from the
+    /// cached record after a randomized backoff so both sides don't storm.
     private func recoverConnection(to peerID: MCPeerID) {
-        guard isActive else { return }
+        let name = peerID.displayName
+        guard isActive, rosterNames.contains(name) || name == chosenHost else { return }
         scheduleBrowserRefresh()
-        guard myPeerID.displayName < peerID.displayName else { return }
+        let isMyInvite = name == chosenHost || myPeerID.displayName < name
+        guard isMyInvite else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + Double.random(in: 1.0...3.0)) { [weak self] in
             guard let self, self.isActive,
-                  let cached = self.discoveredPeers[peerID.displayName] else { return }
-            self.invite(cached)
+                  let cached = self.discoveredPeers[name],
+                  !self.session.connectedPeers.contains(cached),
+                  !self.pendingInvites.contains(name)
+            else { return }
+            self.pendingInvites.insert(name)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 35) { [weak self] in
+                self?.pendingInvites.remove(name)
+            }
+            self.browser.invitePeer(cached, to: self.session, withContext: nil, timeout: 30)
         }
     }
 
     /// At most one browser restart per ~5 s, coalescing bursts, and always
-    /// onto a FRESH browser instance — restarting the same one after churn is
-    /// what corrupted its run-loop source and crashed the app.
+    /// onto a FRESH browser instance — restarting the same one after churn
+    /// corrupts its run-loop source and crashes (EXC_BREAKPOINT, _BrowserCancel).
     private func scheduleBrowserRefresh() {
         guard isActive, !browserRefreshPending else { return }
         browserRefreshPending = true
@@ -155,6 +237,26 @@ final class NetworkManager: NSObject, ObservableObject {
             self.browser = MCNearbyServiceBrowser(peer: self.myPeerID, serviceType: Self.serviceType)
             self.browser.delegate = self
             self.browser.startBrowsingForPeers()
+        }
+    }
+
+    /// Same throttle-and-recreate discipline for the advertiser; the latest
+    /// pending advertisement wins when the window opens.
+    private func scheduleAdvertiserRefresh() {
+        guard isActive, !advertiserRefreshPending else { return }
+        advertiserRefreshPending = true
+        let wait = max(0.5, 2.0 - Date().timeIntervalSince(lastAdvertiserRefresh))
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+            guard let self else { return }
+            self.advertiserRefreshPending = false
+            guard self.isActive, let info = self.pendingAdvertisement else { return }
+            self.pendingAdvertisement = nil
+            self.lastAdvertiserRefresh = Date()
+            self.advertiser.stopAdvertisingPeer()
+            self.advertiser.delegate = nil
+            self.advertiser = MCNearbyServiceAdvertiser(peer: self.myPeerID, discoveryInfo: info, serviceType: Self.serviceType)
+            self.advertiser.delegate = self
+            self.advertiser.startAdvertisingPeer()
         }
     }
 }
@@ -215,6 +317,11 @@ extension NetworkManager: MCSessionDelegate {
 extension NetworkManager: MCNearbyServiceAdvertiserDelegate {
     func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID,
                     withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        // Joiners invite the host they picked; roster-mates invite each other.
+        // Capacity and membership are enforced at the message layer (the host
+        // answers an over-capacity join with .joinDenied), so accepting here
+        // is safe and gives rejected joiners a clean, explicit answer instead
+        // of a silent timeout.
         invitationHandler(true, session)
     }
 
@@ -227,13 +334,25 @@ extension NetworkManager: MCNearbyServiceBrowserDelegate {
     func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
         DispatchQueue.main.async {
             self.discoveredPeers[peerID.displayName] = peerID
-            self.invite(peerID)
+            if info?["r"] == "h" {
+                let lobby = DiscoveredLobby(
+                    peerID: peerID,
+                    hostName: peerID.displayName,
+                    playerCount: Int(info?["c"] ?? "") ?? 0,
+                    capacity: Int(info?["x"] ?? "") ?? 6,
+                    isLive: info?["s"] == "live")
+                self.lobbies.removeAll { $0.id == lobby.id }
+                self.lobbies.append(lobby)
+                self.lobbies.sort { $0.hostName < $1.hostName }
+            }
+            self.meshTick()
         }
     }
 
     func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
         DispatchQueue.main.async {
             self.discoveredPeers[peerID.displayName] = nil
+            self.lobbies.removeAll { $0.id == peerID.displayName }
         }
     }
 

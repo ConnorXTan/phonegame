@@ -18,6 +18,7 @@ struct GameSettings: Codable, Equatable {
     var matchDuration: TimeInterval   // seconds; host picks, ends the match
     var magazineSize: Int             // rounds before a reload
     var reloadDuration: TimeInterval
+    var maxPlayers: Int               // lobby capacity; spectators don't count
 
     var aimConeRadians: Float { aimConeDegrees * .pi / 180 }
 
@@ -25,16 +26,19 @@ struct GameSettings: Codable, Equatable {
         mode: .indoor, weaponRange: 8, aimConeDegrees: 15,
         damage: 25, maxHP: 100, fireCooldown: 0.5, respawnDelay: 5,
         hitInvulnerability: 0.5, spawnProtection: 1,
-        matchDuration: 300, magazineSize: 10, reloadDuration: 3)
+        matchDuration: 300, magazineSize: 10, reloadDuration: 3, maxPlayers: 6)
 
     static let outdoor = GameSettings(
         mode: .outdoor, weaponRange: 20, aimConeDegrees: 10,
         damage: 34, maxHP: 100, fireCooldown: 0.5, respawnDelay: 5,
         hitInvulnerability: 0.5, spawnProtection: 1,
-        matchDuration: 300, magazineSize: 10, reloadDuration: 3)
+        matchDuration: 300, magazineSize: 10, reloadDuration: 3, maxPlayers: 6)
 
     /// Match lengths the host can pick in the lobby.
     static let durationChoices: [TimeInterval] = [120, 300, 600, 900]
+
+    /// Lobby sizes the host can pick.
+    static let maxPlayerChoices: [Int] = [2, 3, 4, 6, 8]
 
     static func preset(for mode: GameMode) -> GameSettings {
         mode == .indoor ? .indoor : .outdoor
@@ -73,6 +77,8 @@ enum GameMessage: Codable {
     case spectatorHello                         // sender is a spectator (laptop), not a player
     case cameraRequest(active: Bool)            // spectator → player: stream me your viewfinder
     case hostEnded                              // host closed the game; everyone back to the menu
+    case lobbyRoster(players: [String], spectators: [String])   // host-authoritative membership; drives mesh + UI
+    case joinDenied(reason: String)             // host turned the sender's join down (e.g. lobby full)
 }
 
 struct Player: Identifiable {

@@ -26,7 +26,7 @@ struct LobbyView: View {
                 .tracking(3)
 
             List {
-                Section("Players · \(roster.count)") {
+                Section("Players · \(roster.count)/\(engine.settings.maxPlayers)") {
                     ForEach(roster) { player in
                         HStack {
                             Image(systemName: "iphone.gen3")
@@ -49,9 +49,23 @@ struct LobbyView: View {
                     if roster.count < 2 {
                         HStack {
                             ProgressView()
-                            Text("Searching for nearby players…")
+                            Text("Waiting for players to join…")
                                 .foregroundStyle(Color.echoTextSecondary)
                                 .padding(.leading, Space.sm)
+                        }
+                    }
+                }
+                if !engine.spectators.isEmpty {
+                    Section("Spectators · \(engine.spectators.count)") {
+                        ForEach(engine.spectators.sorted(), id: \.self) { name in
+                            HStack {
+                                Image(systemName: "tv")
+                                    .foregroundStyle(Color.echoTextSecondary)
+                                    .accessibilityHidden(true)
+                                Text(name.displayCallSign)
+                                    .foregroundStyle(Color.echoTextSecondary)
+                                Spacer()
+                            }
                         }
                     }
                 }
@@ -89,6 +103,29 @@ struct LobbyView: View {
                         )) {
                             ForEach(GameSettings.durationChoices, id: \.self) { seconds in
                                 Text(seconds.durationLabel).tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    VStack(spacing: Space.sm) {
+                        HStack {
+                            Label("Player limit", systemImage: "person.3")
+                                .font(.caption)
+                                .foregroundStyle(Color.echoTextSecondary)
+                            Spacer()
+                            Text("\(engine.settings.maxPlayers)")
+                                .font(.caption.bold().monospacedDigit())
+                        }
+                        Picker("Player limit", selection: Binding(
+                            get: { engine.settings.maxPlayers },
+                            set: {
+                                engine.settings.maxPlayers = $0
+                                engine.refreshLobbyAdvertisement()
+                            }
+                        )) {
+                            ForEach(GameSettings.maxPlayerChoices, id: \.self) { count in
+                                Text("\(count)").tag(count)
                             }
                         }
                         .pickerStyle(.segmented)

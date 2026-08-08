@@ -20,11 +20,17 @@ struct RootView: View {
         ZStack {
             if engine.phase == .menu {
                 MenuView()
+            } else if engine.phase == .browsing {
+                if let net = engine.network {
+                    LobbyBrowserView(net: net)
+                } else {
+                    MenuView()
+                }
             } else if engine.isSpectator {
                 SpectatorView()   // one screen covers lobby/playing/summary
             } else {
                 switch engine.phase {
-                case .menu: MenuView()
+                case .menu, .browsing: MenuView()
                 case .lobby: LobbyView()
                 case .playing: GameHUDView()
                 case .summary: MatchSummaryView()
