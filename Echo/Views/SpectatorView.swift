@@ -77,7 +77,6 @@ struct SpectatorView: View {
                     .font(.title2.monospacedDigit().bold())
                     .foregroundStyle(engine.matchRemaining < 30 ? Color.echoDanger : Color.echoText)
                     .accessibilityLabel("Time remaining \(engine.matchRemaining.clockString)")
-                chip(engine.settings.mode == .indoor ? "INDOOR" : "OUTDOOR")
             }
 
             Spacer()
@@ -158,9 +157,6 @@ struct SpectatorView: View {
                     HStack(spacing: Space.xl) {
                         statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
                         statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
-                        statChip("bolt.fill", "\(engine.settings.damage) dmg")
-                        statChip("heart.fill", "\(engine.settings.maxHP) hp")
-                        statChip("arrow.counterclockwise", "\(engine.settings.magazineSize) rds")
                     }
                     .font(.caption)
                     .foregroundStyle(Color.echoTextSecondary)
@@ -293,6 +289,9 @@ struct SpectatorView: View {
                     Text(player.name.displayCallSign)
                         .font(.headline)
                         .lineLimit(1)
+                    Label(player.role.label.uppercased(), systemImage: player.role.symbol)
+                        .font(.caption2)
+                        .foregroundStyle(Color.echoTextTertiary)
                     Spacer()
                     if watching {
                         Label("LIVE", systemImage: "record.circle.fill")
@@ -301,7 +300,7 @@ struct SpectatorView: View {
                     }
                 }
                 GeometryReader { geo in
-                    let frac = CGFloat(player.hp) / CGFloat(max(1, engine.settings.maxHP))
+                    let frac = CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.echoText.opacity(Alpha.subtle))
                         Capsule()
@@ -389,8 +388,8 @@ struct SpectatorView: View {
                 Text("\(player.hp) HP · \(player.kills) K · \(player.deaths) D")
                     .font(.caption.monospacedDigit().bold())
                 Capsule()
-                    .fill(Color.echoHealth(CGFloat(player.hp) / CGFloat(max(1, engine.settings.maxHP))))
-                    .frame(width: 72 * max(0, CGFloat(player.hp) / CGFloat(max(1, engine.settings.maxHP))), height: 6)
+                    .fill(Color.echoHealth(CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))))
+                    .frame(width: 72 * max(0, CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))), height: 6)
                     .frame(width: 72, alignment: .leading)
                     .background(Color.echoText.opacity(Alpha.subtle), in: Capsule())
             }
@@ -426,7 +425,7 @@ struct SpectatorView: View {
                 .font(.system(size: winnerTitleSize, weight: .black, design: .rounded))
                 .foregroundStyle(result.isDraw ? Color.echoText : Color.echoAccent)
 
-            chip("\(engine.settings.mode == .indoor ? "INDOOR" : "OUTDOOR") · \(result.duration.durationLabel)")
+            chip(result.duration.durationLabel)
 
             VStack(spacing: Space.sm) {
                 ForEach(Array(result.standings.enumerated()), id: \.element.id) { index, player in

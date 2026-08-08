@@ -48,7 +48,6 @@ struct EnemyHealthbarOverlay: View {
     private func visibleTags(viewport: CGSize, at date: Date) -> [Tag] {
         guard viewport != .zero,
               let frame = engine.camera.session.currentFrame else { return [] }
-        let maxHP = CGFloat(max(1, engine.settings.maxHP))
         var tags: [Tag] = []
         for player in engine.opponents where player.isAlive && player.isConnected {
             guard let world = worldPosition(of: player.name, camera: frame.camera, at: date) else {
@@ -67,7 +66,7 @@ struct EnemyHealthbarOverlay: View {
                 id: player.name,
                 name: player.name.displayCallSign,
                 point: point,
-                hpFraction: CGFloat(player.hp) / maxHP))
+                hpFraction: CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))))
         }
         return tags
     }
