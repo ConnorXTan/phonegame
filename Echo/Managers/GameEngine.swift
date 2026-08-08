@@ -147,6 +147,7 @@ final class GameEngine: NSObject, ObservableObject {
         camera.start()
         startAimTimer()
         startMatchClock(seconds: settings.matchDuration)
+        haptics.prepare()
         haptics.playGameStart()
 
         // Pairwise UWB token exchange with every connected peer. Both sides
