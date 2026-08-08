@@ -91,36 +91,10 @@ struct GameHUDView: View {
 
     private var topBar: some View {
         VStack(spacing: Space.xxs) {   // bar rides tight under the readouts
-            // Three clusters — who you are, how the match stands, what you can
-            // tap. Grouping is carried by the flexible gaps between them, so
-            // items inside a cluster read as belonging together.
+            // Two clusters: match state hard left, controls hard right. Your
+            // own name is one thing you never need reminding of, and the bar
+            // below already carries HP — so the numbers take the prime spot.
             HStack(spacing: 0) {
-                // 1 — identity
-                HStack(spacing: Space.xs) {
-                    Text(engine.myName.displayCallSign.uppercased())
-                        .font(.subheadline.bold())
-                        .lineLimit(1)
-                        // Everything else in the row is fixedSize, so the name
-                        // eats the whole deficit — shrink it a little before
-                        // ellipsizing, so a normal call sign still reads in full.
-                        .minimumScaleFactor(0.75)
-                        .truncationMode(.tail)
-                    Text("\(engine.me?.hp ?? 0)")
-                        .font(.subheadline.monospacedDigit().bold())
-                        .foregroundStyle(hpColor)
-                        .fixedSize()
-                        .accessibilityLabel("\(engine.me?.hp ?? 0) hit points")
-                    shieldBadge
-                }
-                // Size to the name's natural width first. Without this it stays
-                // greedy and splits the slack with cluster 2, which shoves the
-                // middle group up against the buttons.
-                .layoutPriority(1)
-
-                // 2 — match state. Takes the leftover width and centres in it,
-                // rather than sitting between two Spacers: the call sign is
-                // compressible, so Spacers there split unevenly and the middle
-                // cluster drifts into the buttons.
                 HStack(spacing: Space.xs) {
                     matchClock
                     Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
@@ -128,11 +102,13 @@ struct GameHUDView: View {
                         .foregroundStyle(Color.echoTextSecondary)
                         .fixedSize()
                         .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
+                    shieldBadge
                 }
-                .frame(maxWidth: .infinity)
 
-                // 3 — controls. Zero spacing between them: each already carries
-                // a 44pt target, so extra gap would only push the row wider.
+                Spacer(minLength: Space.sm)
+
+                // Zero spacing between them: each already carries a 44pt
+                // target, so extra gap would only push the row wider.
                 HStack(spacing: 0) {
                     hudButton("list.number", "Scoreboard") { showScores = true }
                     hudButton("waveform.badge.magnifyingglass", "Ranging diagnostics") { showDebug = true }

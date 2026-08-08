@@ -68,10 +68,11 @@ struct MiniMapView: View {
         return nil
     }
 
-    /// Two rings, evenly spaced — half range and full range. The old set sat
-    /// just inside the backdrop's edge, which read as a cramped fourth ring.
+    /// Half, three-quarter, and full weapon range. The extra ring out near the
+    /// rim is where the reading matters most — that's the band a target is in
+    /// just before they walk into range.
     private func drawRings(ctx: GraphicsContext, center: CGPoint, radius: CGFloat) {
-        for fraction: CGFloat in [0.5, 1.0] {
+        for fraction: CGFloat in [0.5, 0.75, 1.0] {
             let r = radius * fraction
             ctx.stroke(Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
                        with: .color(.echoSecondary.opacity(Alpha.subtle)), lineWidth: 1)
