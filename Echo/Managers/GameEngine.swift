@@ -177,6 +177,13 @@ final class GameEngine: NSObject, ObservableObject {
         } else if let victimPeer = net.peer(named: victim) {
             net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victimPeer])
             haptics.playHitMarker()
+            // Optimistic: drop their bar now instead of a network round trip
+            // later; the victim's authoritative .healthUpdate reconciles it.
+            // Never kill optimistically — isAlive, kills, and the feed wait
+            // for the real .death, so a hit they didn't accept can't fake one.
+            if let hp = players[victim]?.hp {
+                players[victim]?.hp = max(0, hp - settings.damage)
+            }
         }
     }
 
