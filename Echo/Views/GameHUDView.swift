@@ -24,6 +24,8 @@ struct GameHUDView: View {
     /// How long a kill toast lingers, and how many can stack before the oldest
     /// is dropped — a multi-kill flurry must not curtain off the viewfinder.
     private let killToastLifetime: TimeInterval = 10
+    /// Tail of the lifetime spent fading, so it reaches zero exactly at 10 s.
+    private let killToastFadeDuration: TimeInterval = 2.5
     private let maxKillToasts = 4
 
     var body: some View {
@@ -200,7 +202,11 @@ struct GameHUDView: View {
     /// ticking clock — `killFeed` itself never changes, so nothing here can
     /// disturb the engine's record.
     private var killToasts: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+        // 0.1 s, matching the other HUD clocks: the fade is driven frame by
+        // frame from each toast's age rather than by a removal transition,
+        // which inside a TimelineView fires against a view the closure has
+        // already rebuilt and so pops instead of fading.
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let live = engine.killFeed.filter {
                 context.date.timeIntervalSince($0.timestamp) < killToastLifetime
             }
@@ -209,13 +215,22 @@ struct GameHUDView: View {
             VStack(alignment: .trailing, spacing: Space.xs) {
                 ForEach(Array(live.enumerated()), id: \.element.id) { index, event in
                     killToast(event, isLatest: index == 0)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .opacity(fadeOpacity(for: event, at: context.date))
                 }
             }
-            .animation(.easeOut(duration: 0.35), value: live.map(\.id))
+            .animation(.easeOut(duration: 0.25), value: live.map(\.id))
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.horizontal)
         }
+    }
+
+    /// Solid for most of its life, then a linear ramp to fully transparent
+    /// right on the lifetime — a toast that dimmed the whole time would be
+    /// half-legible for most of the window it exists to be read in.
+    private func fadeOpacity(for event: KillEvent, at now: Date) -> Double {
+        let remaining = killToastLifetime - now.timeIntervalSince(event.timestamp)
+        guard remaining < killToastFadeDuration else { return 1 }
+        return max(0, remaining / killToastFadeDuration)
     }
 
     /// A capsule so the text survives whatever the camera is pointed at; the
