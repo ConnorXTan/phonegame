@@ -26,8 +26,10 @@ struct MenuView: View {
                 Text("ECHO")
                     .font(.system(size: titleSize, weight: .black, design: .rounded))
                     .tracking(4)
-                Text("UWB laser tag · aim like a camera")
-                    .foregroundStyle(Color.echoTextSecondary)
+                if !isMac {
+                    Text("UWB laser tag · aim like a camera")
+                        .foregroundStyle(Color.echoTextSecondary)
+                }
             }
 
             if let notice = engine.hostEndedNotice {
@@ -39,7 +41,7 @@ struct MenuView: View {
                     .padding(.horizontal, 24)
             }
 
-            if let warning = engine.uwbWarning {
+            if !isMac, let warning = engine.uwbWarning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
                     .foregroundStyle(Color.echoWarning)
@@ -96,7 +98,7 @@ struct MenuView: View {
                     Button {
                         engine.enterSpectator(hosting: true)
                     } label: {
-                        Label("Run the Game (host a lobby)", systemImage: "tv")
+                        Label("Host a Game", systemImage: "tv")
                             .frame(maxWidth: 260)
                             .foregroundStyle(Color.echoOnPrimary)
                     }
@@ -112,13 +114,15 @@ struct MenuView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+                    .tint(Color.echoText)   // neutral — the accent read as a warning here
                 }
             }
 
-            Text(isMac ? "This Mac has no UWB chip — it runs the show or watches, never plays."
-                       : "Pick a short call sign — it's how other players see you.")
-                .font(.caption2)
-                .foregroundStyle(Color.echoTextSecondary)
+            if !isMac {
+                Text("Pick a short call sign — it's how other players see you.")
+                    .font(.caption2)
+                    .foregroundStyle(Color.echoTextSecondary)
+            }
 
             Spacer()
             Spacer()
