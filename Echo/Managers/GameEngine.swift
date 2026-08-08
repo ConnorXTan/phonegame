@@ -32,6 +32,9 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
     @Published private(set) var rangingAlert: String?
+    /// Which peer `rangingAlert` is about (nil = device-wide, e.g. permission
+    /// problems), so a recovery for that peer — and only that peer — dismisses it.
+    private var rangingAlertPeer: String?
     @Published private(set) var hostEndedNotice: String?   // shown on the menu after a host shutdown
     @Published private(set) var aimHint: String?
     @Published private(set) var matchRemaining: TimeInterval = 0
@@ -141,6 +144,7 @@ final class GameEngine: NSObject, ObservableObject {
         invulnerableUntil = nil
         damageFlash = false
         rangingAlert = nil
+        rangingAlertPeer = nil
         pendingSnapshots = [:]
         matchResult = nil
         isHost = false
@@ -202,6 +206,7 @@ final class GameEngine: NSObject, ObservableObject {
         lastFireTime = nil
         invulnerableUntil = nil
         rangingAlert = nil
+        rangingAlertPeer = nil
         // U2 iPhones (15/16) aim exclusively through the camera; if its
         // permission was denied, direction data can never arrive.
         if !isSpectator,
@@ -767,7 +772,16 @@ extension GameEngine: RangingManagerDelegate {
         net.send(.discoveryToken(tokenData), to: [peer])
     }
 
-    func ranging(_ manager: RangingManager, failedPermanently reason: String, forPeer peerName: String?) {
+    func ranging(_ manager: RangingManager, raiseAlert reason: String, forPeer peerName: String?) {
         rangingAlert = reason
+        rangingAlertPeer = peerName
+    }
+
+    func ranging(_ manager: RangingManager, clearAlertForPeer peerName: String) {
+        // A device-wide alert (permission, camera access) can't be dismissed
+        // by one peer's recovery — only per-peer alerts clear here.
+        guard rangingAlertPeer == peerName else { return }
+        rangingAlert = nil
+        rangingAlertPeer = nil
     }
 }

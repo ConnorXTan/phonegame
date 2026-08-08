@@ -64,6 +64,8 @@ struct DebugRangingView: View {
             }
             calibrationRow(for: player)
                 .font(.caption.monospacedDigit())
+            invalidationRows(for: player)
+                .font(.caption.monospacedDigit())
         }
         .padding(.vertical, Space.xs)
     }
@@ -86,6 +88,18 @@ struct DebugRangingView: View {
 
     private func calibrationRow(for player: Player) -> some View {
         row("aim assist", engine.ranging.convergenceHint(for: player.name) ?? "ready")
+    }
+
+    /// Raw NIError from the last session invalidation. Playtests run without
+    /// Xcode attached, so this sheet is the only place the code is readable.
+    @ViewBuilder
+    private func invalidationRows(for player: Player) -> some View {
+        if let inv = engine.ranging.lastInvalidation(for: player.name) {
+            row("last NI error", inv.message)
+            row("invalidations", "\(inv.count), last \(Int(Date().timeIntervalSince(inv.at))) s ago")
+        } else {
+            row("last NI error", "none")
+        }
     }
 
     private func row(_ label: String, _ value: String) -> some View {
