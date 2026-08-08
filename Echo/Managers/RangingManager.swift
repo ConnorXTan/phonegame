@@ -419,7 +419,7 @@ extension RangingManager: NISessionDelegate {
             // Transient: recreate with a fresh token, backing off as the
             // streak grows. Never give the peer up permanently — nothing else
             // re-creates it, so a removed pair could only come back through a
-            // MultipeerConnectivity drop-and-reconnect.
+            // network drop-and-reconnect.
             let streak = (self.invalidationStreaks[name] ?? 0) + 1
             self.invalidationStreaks[name] = streak
             if streak == 3 {
