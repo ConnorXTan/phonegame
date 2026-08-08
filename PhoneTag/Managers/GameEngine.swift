@@ -1,5 +1,7 @@
+import AVFoundation
 import Foundation
 import MultipeerConnectivity
+import NearbyInteraction
 import UIKit
 
 enum GamePhase: Equatable {
@@ -25,6 +27,7 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
     @Published private(set) var rangingAlert: String?
+    @Published private(set) var aimHint: String?
 
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
@@ -111,6 +114,13 @@ final class GameEngine: NSObject, ObservableObject {
         lastKilledBy = nil
         lastFireTime = nil
         rangingAlert = nil
+        // U2 iPhones (15/16) aim exclusively through the camera; if its
+        // permission was denied, direction data can never arrive.
+        if !NISession.deviceCapabilities.supportsDirectionMeasurement,
+           NISession.deviceCapabilities.supportsCameraAssistance,
+           AVCaptureDevice.authorizationStatus(for: .video) == .denied {
+            rangingAlert = "Camera access is off — this iPhone aims through the camera. Enable it: Settings → Apps → PhoneTag → Camera."
+        }
         // Late join: snapshots can arrive before .startGame (different senders,
         // independent ordering). Apply any fresh ones on top of the reset.
         for entry in pendingSnapshots.values where Date().timeIntervalSince(entry.at) < 5 {
@@ -240,6 +250,8 @@ final class GameEngine: NSObject, ObservableObject {
             aimedTarget = target
             if target != nil { haptics.playLockTick() }
         }
+        let hint = ranging.anyConvergenceHint
+        if hint != aimHint { aimHint = hint }
     }
 
     // MARK: - Target dummy (solo practice)

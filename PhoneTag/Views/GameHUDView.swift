@@ -112,6 +112,7 @@ struct GameHUDView: View {
                 .animation(.spring(response: 0.2, dampingFraction: 0.6), value: engine.aimedTarget)
 
             Text(engine.aimedTarget.map { "LOCKED · \($0.displayCallSign.uppercased())" }
+                 ?? engine.aimHint
                  ?? "hold phone up — the BACK faces your target")
                 .font(.footnote.weight(engine.aimedTarget != nil ? .bold : .regular))
                 .foregroundStyle(engine.aimedTarget != nil ? Color.red : Color.secondary)

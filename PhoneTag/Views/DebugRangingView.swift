@@ -50,6 +50,8 @@ struct DebugRangingView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            calibrationRow(for: player)
+                .font(.caption.monospacedDigit())
         }
         .padding(.vertical, 4)
     }
@@ -67,6 +69,10 @@ struct DebugRangingView: View {
             } ?? "—")
         }
         .font(.caption.monospacedDigit())
+    }
+
+    private func calibrationRow(for player: Player) -> some View {
+        row("aim assist", engine.ranging.convergenceHint(for: player.name) ?? "ready")
     }
 
     private func row(_ label: String, _ value: String) -> some View {

@@ -53,6 +53,15 @@ final class RangingManager: NSObject, ObservableObject {
     private var invalidationStreaks: [String: Int] = [:]
     private var syntheticReadings: [String: [RangingReading]] = [:]   // solo-practice targets, no NISession
 
+    /// U2 devices aim via camera assistance, which needs ARKit to converge
+    /// before direction data flows. Per-peer human-readable hint while not
+    /// converged; nil once ready. Polled by the aim timer and debug view.
+    private(set) var convergenceHints: [String: String] = [:]
+
+    var anyConvergenceHint: String? { convergenceHints.values.first }
+
+    func convergenceHint(for name: String) -> String? { convergenceHints[name] }
+
     static var isSupported: Bool {
         NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
     }
@@ -155,6 +164,7 @@ final class RangingManager: NSObject, ObservableObject {
         peers[name] = nil
         peerNames.removeAll { $0 == name }
         invalidationStreaks[name] = nil
+        convergenceHints[name] = nil
     }
 
     func stopAll() {
@@ -163,6 +173,7 @@ final class RangingManager: NSObject, ObservableObject {
         peerNames = []
         invalidationStreaks = [:]
         syntheticReadings = [:]
+        convergenceHints = [:]
     }
 
     // MARK: - Private
@@ -225,6 +236,33 @@ extension RangingManager: NISessionDelegate {
                 self.run(pr)   // retry ranging with the same tokens
             }
         }
+    }
+
+    func session(_ session: NISession, didUpdateAlgorithmConvergence convergence: NIAlgorithmConvergence, for object: NINearbyObject?) {
+        onMain {
+            guard let name = self.peerName(for: session) else { return }
+            switch convergence.status {
+            case .converged:
+                self.convergenceHints[name] = nil
+            case .notConverged(let reasons):
+                self.convergenceHints[name] = Self.hint(for: reasons)
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    private static func hint(for reasons: [NIAlgorithmConvergenceStatus.Reason]) -> String {
+        if reasons.contains(.insufficientLighting) {
+            return "aim assist calibrating — too dark, find brighter light"
+        }
+        if reasons.contains(.insufficientHorizontalSweep) {
+            return "aim assist calibrating — sweep the phone slowly left ↔ right"
+        }
+        if reasons.contains(.insufficientVerticalSweep) {
+            return "aim assist calibrating — tilt the phone up ↕ down"
+        }
+        return "aim assist calibrating — move the phone around slowly"
     }
 
     func sessionSuspensionEnded(_ session: NISession) {
