@@ -51,6 +51,7 @@ final class RangingManager: NSObject, ObservableObject {
 
     private var peers: [String: PeerRanging] = [:]
     private var invalidationStreaks: [String: Int] = [:]
+    private var syntheticReadings: [String: [RangingReading]] = [:]   // solo-practice targets, no NISession
 
     static var isSupported: Bool {
         NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
@@ -114,13 +115,13 @@ final class RangingManager: NSObject, ObservableObject {
     // MARK: - Readings
 
     func latestReading(for peerName: String) -> RangingReading? {
-        peers[peerName]?.readings.last
+        readings(for: peerName).last
     }
 
     /// Freshest reading with a usable aim angle within `window` seconds.
     func latestDirectional(for peerName: String, within window: TimeInterval) -> RangingReading? {
         let cutoff = Date().addingTimeInterval(-window)
-        return peers[peerName]?.readings.last {
+        return readings(for: peerName).last {
             $0.timestamp >= cutoff && ($0.direction != nil || $0.horizontalAngle != nil)
         }
     }
@@ -128,7 +129,23 @@ final class RangingManager: NSObject, ObservableObject {
     /// Readings per second over the last second — for the debug view.
     func sampleRate(for peerName: String) -> Int {
         let cutoff = Date().addingTimeInterval(-1)
-        return peers[peerName]?.readings.filter { $0.timestamp >= cutoff }.count ?? 0
+        return readings(for: peerName).filter { $0.timestamp >= cutoff }.count
+    }
+
+    // MARK: - Synthetic targets (solo practice)
+
+    func injectSyntheticReading(_ reading: RangingReading, for name: String) {
+        var buffer = syntheticReadings[name] ?? []
+        buffer.append(reading)
+        let cutoff = Date().addingTimeInterval(-1)
+        buffer.removeAll { $0.timestamp < cutoff }
+        syntheticReadings[name] = buffer
+        if !peerNames.contains(name) { peerNames.append(name) }
+    }
+
+    func removeSynthetic(_ name: String) {
+        syntheticReadings[name] = nil
+        peerNames.removeAll { $0 == name }
     }
 
     // MARK: - Lifecycle
@@ -145,6 +162,7 @@ final class RangingManager: NSObject, ObservableObject {
         peers = [:]
         peerNames = []
         invalidationStreaks = [:]
+        syntheticReadings = [:]
     }
 
     // MARK: - Private
@@ -169,6 +187,10 @@ final class RangingManager: NSObject, ObservableObject {
 
     private func peerName(for session: NISession) -> String? {
         peers.first { $0.value.session === session }?.key
+    }
+
+    private func readings(for peerName: String) -> [RangingReading] {
+        peers[peerName]?.readings ?? syntheticReadings[peerName] ?? []
     }
 
     private func onMain(_ work: @escaping () -> Void) {

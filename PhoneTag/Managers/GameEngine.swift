@@ -29,6 +29,7 @@ final class GameEngine: NSObject, ObservableObject {
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
     let haptics = HapticsManager()
+    private let dummy = TargetDummy()
 
     private var aimTimer: Timer?
     private var respawnTimer: Timer?
@@ -75,6 +76,7 @@ final class GameEngine: NSObject, ObservableObject {
     func leave() {
         network?.stop()
         network = nil
+        despawnDummy()
         ranging.stopAll()
         stopTimers()
         players = [:]
@@ -122,11 +124,14 @@ final class GameEngine: NSObject, ObservableObject {
 
         // Pairwise UWB token exchange with every connected peer. Both sides
         // send; ordering races are handled inside RangingManager.
-        guard let net = network else { return }
-        for peer in net.connectedPeers {
-            if let data = ranging.prepare(peerName: peer.displayName) {
-                net.send(.discoveryToken(data), to: [peer])
+        if let net = network, !net.connectedPeers.isEmpty {
+            for peer in net.connectedPeers {
+                if let data = ranging.prepare(peerName: peer.displayName) {
+                    net.send(.discoveryToken(data), to: [peer])
+                }
             }
+        } else {
+            spawnDummy()   // solo test: nobody to shoot, so conjure a target
         }
     }
 
@@ -139,7 +144,10 @@ final class GameEngine: NSObject, ObservableObject {
         lastFireTime = now
         haptics.playFire()
         net.send(.shotFired(by: myName))
-        if let victim = resolveShot(), let victimPeer = net.peer(named: victim) {
+        guard let victim = resolveShot() else { return }
+        if victim == TargetDummy.name {
+            hitDummy()
+        } else if let victimPeer = net.peer(named: victim) {
             net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victimPeer])
             haptics.playHitMarker()
         }
@@ -234,6 +242,48 @@ final class GameEngine: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Target dummy (solo practice)
+
+    private func spawnDummy() {
+        players[TargetDummy.name] = Player(name: TargetDummy.name, hp: settings.maxHP)
+        dummy.onReading = { [weak self] reading in
+            self?.ranging.injectSyntheticReading(reading, for: TargetDummy.name)
+        }
+        dummy.spawn()
+    }
+
+    private func despawnDummy() {
+        guard players[TargetDummy.name] != nil else { return }
+        dummy.stop()
+        ranging.removeSynthetic(TargetDummy.name)
+        players[TargetDummy.name] = nil
+    }
+
+    /// Victim-side logic, played locally: the dummy takes damage, dies, and
+    /// respawns at a new bearing so you have to hunt for it.
+    private func hitDummy() {
+        guard var target = players[TargetDummy.name], target.isAlive else { return }
+        target.hp = max(0, target.hp - settings.damage)
+        haptics.playHitMarker()
+        if target.hp <= 0 {
+            target.isAlive = false
+            target.deaths += 1
+            players[myName]?.kills += 1
+            killFeed.insert(KillEvent(killer: myName, victim: TargetDummy.name), at: 0)
+            trimFeed()
+            haptics.playKillConfirm()
+            dummy.relocate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + settings.respawnDelay) { [weak self] in
+                guard let self, self.phase == .playing,
+                      var revived = self.players[TargetDummy.name] else { return }
+                revived.hp = self.settings.maxHP
+                revived.isAlive = true
+                self.players[TargetDummy.name] = revived
+            }
+        }
+        players[TargetDummy.name] = target
+    }
+
     // MARK: - Helpers
 
     /// Merge a snapshot row from the wire — each phone is authoritative for
@@ -281,6 +331,7 @@ extension GameEngine: NetworkManagerDelegate {
         }
         manager.send(.hello(playerName: myName), to: [peer])
         if phase == .playing {
+            despawnDummy()   // a real target arrived — practice is over
             // Late joiner or reconnect mid-match: sync settings + full state
             // (host), our own authoritative row (everyone), and pair up UWB.
             // .reliable unicasts to one peer stay ordered, so the snapshot
