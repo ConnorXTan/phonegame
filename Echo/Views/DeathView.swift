@@ -3,8 +3,7 @@ import SwiftUI
 struct DeathView: View {
     @EnvironmentObject private var engine: GameEngine
 
-    @ScaledMetric(relativeTo: .largeTitle) private var glyphSize: CGFloat = 52
-    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 40
+    @ScaledMetric(relativeTo: .largeTitle) private var bannerWidth: CGFloat = 240
     @ScaledMetric(relativeTo: .largeTitle) private var countdownSize: CGFloat = 72
 
     var body: some View {
@@ -14,14 +13,11 @@ struct DeathView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: Space.lg) {
-                Image(systemName: "xmark.shield.fill")
-                    .font(.system(size: glyphSize))
-                    .foregroundStyle(Color.echoDanger)
-
-                Text("ELIMINATED")
-                    .font(.system(size: titleSize, weight: .black, design: .rounded))
-                    .tracking(2)
-                    .foregroundStyle(Color.echoDanger)
+                Image(art: .eliminated)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: bannerWidth)
+                    .accessibilityLabel("Eliminated")
 
                 if let killer = engine.lastKilledBy {
                     Text("tagged by \(killer.displayCallSign)")
