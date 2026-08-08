@@ -49,7 +49,7 @@ struct GameHUDView: View {
                 HStack(alignment: .top, spacing: Space.sm) {
                     MiniMapView()
                         .frame(width: miniMapDiameter, height: miniMapDiameter)
-                        .padding(.leading)
+                        .padding(.leading, Space.xs)   // hugs the edge to offset the smaller disc
                     killFeedView   // carries its own trailing inset
                 }
                 Spacer()

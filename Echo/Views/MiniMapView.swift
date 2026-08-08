@@ -55,11 +55,9 @@ struct MiniMapView: View {
                          with: .color(.echoText))
             }
         }
-        .background(
-            Circle()
-                .fill(Color.echoBackground.opacity(Alpha.strong))
-                .overlay(Circle().stroke(Color.echoText.opacity(Alpha.subtle), lineWidth: 1))
-        )
+        // Fill only — no outline. The stroke sat a hair outside the last range
+        // ring and read as a tighter fourth ring rather than a boundary.
+        .background(Circle().fill(Color.echoBackground.opacity(Alpha.strong)))
         .accessibilityHidden(true)   // geometry; the ranging sheet reads the same data as text
     }
 
@@ -70,8 +68,10 @@ struct MiniMapView: View {
         return nil
     }
 
+    /// Two rings, evenly spaced — half range and full range. The old set sat
+    /// just inside the backdrop's edge, which read as a cramped fourth ring.
     private func drawRings(ctx: GraphicsContext, center: CGPoint, radius: CGFloat) {
-        for fraction: CGFloat in [0.33, 0.66, 1.0] {
+        for fraction: CGFloat in [0.5, 1.0] {
             let r = radius * fraction
             ctx.stroke(Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)),
                        with: .color(.echoSecondary.opacity(Alpha.subtle)), lineWidth: 1)
