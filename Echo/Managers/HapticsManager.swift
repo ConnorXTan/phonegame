@@ -189,8 +189,11 @@ final class HapticsManager {
             guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else { return }
             do {
                 try device.lockForConfiguration()
+                // Balanced even when setTorchModeOn throws (likely while
+                // ARKit owns the pipeline) — a leaked lock keeps the device
+                // reserved against ARKit's own reconfiguration.
+                defer { device.unlockForConfiguration() }
                 try device.setTorchModeOn(level: 1.0)
-                device.unlockForConfiguration()
             } catch { return }
             Thread.sleep(forTimeInterval: 0.08)
             if (try? device.lockForConfiguration()) != nil {

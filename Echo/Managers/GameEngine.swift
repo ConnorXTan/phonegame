@@ -99,6 +99,12 @@ final class GameEngine: NSObject, ObservableObject {
     // MARK: - Lobby
 
     func enterLobby(hosting: Bool) {
+        // Single entry: the menu stays tappable through the menu→lobby
+        // crossfade, so a double-tap ran this twice — orphaning a live
+        // NetworkManager that kept advertising and accepting invites. Two
+        // meshes in one process discover and fight each other until
+        // MultipeerConnectivity falls over.
+        guard phase == .menu else { return }
         var name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
         // MCPeerID rejects display names over 63 UTF-8 bytes; leave room for
         // the "#xxxx" uniqueness suffix. removeLast() drops whole graphemes,
@@ -107,6 +113,7 @@ final class GameEngine: NSObject, ObservableObject {
         guard !name.isEmpty else { return }
         hostEndedNotice = nil
         isHost = hosting
+        network?.stop()   // there must never be two live meshes; nil here while the phase guard holds
         let net = NetworkManager(playerName: name)
         net.delegate = self
         network = net
@@ -161,9 +168,11 @@ final class GameEngine: NSObject, ObservableObject {
     /// camera. The laptop's mode: it can still host (Start button, settings,
     /// authoritative match end) because "host" is only a protocol convention.
     func enterSpectator(hosting: Bool) {
+        guard phase == .menu else { return }   // same re-entry hazard as enterLobby
         hostEndedNotice = nil
         isSpectator = true
         isHost = hosting
+        network?.stop()
         let net = NetworkManager(playerName: "Spectator")
         net.delegate = self
         network = net
@@ -670,8 +679,16 @@ extension GameEngine: NetworkManagerDelegate {
 
         case .startGame(let settings):
             if phase == .playing {
-                self.settings = settings   // late-join resync; don't reset the match
+                // Late-join/reconnect resync; don't reset the match. A host
+                // ignores it — its own settings are the authoritative ones,
+                // and a rival host's broadcast must not rewrite a live match.
+                if !isHost { self.settings = settings }
             } else {
+                // Someone else's match is starting — whoever started it calls
+                // time. Without dropping the flag, a lobby host pulled into a
+                // running match would broadcast rival .endMatch tallies when
+                // its own clock hit zero.
+                isHost = false
                 beginMatch(with: settings)
             }
 
