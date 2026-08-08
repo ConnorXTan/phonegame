@@ -25,7 +25,10 @@ struct GameHUDView: View {
             CameraFeedView(camera: engine.camera)
             scrim
 
-            if engine.isAlive { aimOverlay }
+            if engine.isAlive {
+                EnemyHealthbarOverlay()
+                aimOverlay
+            }
 
             VStack(spacing: Space.sm) {
                 topBar
