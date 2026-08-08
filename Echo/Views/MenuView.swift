@@ -24,10 +24,6 @@ struct MenuView: View {
                     .scaledToFit()
                     .frame(width: logoWidth)
                     .accessibilityLabel("Echo")
-                if !isMac {
-                    Text("UWB laser tag · aim like a camera")
-                        .foregroundStyle(Color.echoTextSecondary)
-                }
             }
 
             if let notice = engine.hostEndedNotice {
