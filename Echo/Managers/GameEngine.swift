@@ -30,6 +30,11 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var aimHint: String?
     @Published private(set) var matchRemaining: TimeInterval = 0
     @Published private(set) var matchResult: MatchResult?
+    @Published private(set) var ammo: Int = 0
+    @Published private(set) var reloadRemaining: TimeInterval = 0
+
+    var isReloading: Bool { reloadRemaining > 0 }
+    var magazineSize: Int { settings.magazineSize }
 
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
@@ -41,6 +46,7 @@ final class GameEngine: NSObject, ObservableObject {
     private var respawnTimer: Timer?
     private var matchTimer: Timer?
     private var matchDeadline: Date?
+    private var reloadTimer: Timer?
     private var pendingSnapshots: [String: (state: PlayerState, at: Date)] = [:]
 
     var myName: String { network?.myPeerID.displayName ?? playerName }
@@ -139,6 +145,8 @@ final class GameEngine: NSObject, ObservableObject {
         }
         pendingSnapshots = [:]
         matchResult = nil
+        cancelReload()
+        ammo = settings.magazineSize
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
         // Before any NISession.run() below, so ranging attaches to a session
@@ -167,11 +175,16 @@ final class GameEngine: NSObject, ObservableObject {
 
     func fire() {
         guard phase == .playing, isAlive, let net = network else { return }
+        guard !isReloading else { return }
+        // Dry trigger on an empty mag racks the reload instead of firing.
+        guard ammo > 0 else { startReload(); return }
         let now = Date()
         if let last = lastFireTime, now.timeIntervalSince(last) < settings.fireCooldown { return }
         lastFireTime = now
+        ammo -= 1
         haptics.playFire()
         net.send(.shotFired(by: myName))
+        defer { if ammo == 0 { startReload() } }   // auto-reload on the last round
         guard let victim = resolveShot() else { return }
         if victim == TargetDummy.name {
             hitDummy()
@@ -179,6 +192,39 @@ final class GameEngine: NSObject, ObservableObject {
             net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victimPeer])
             haptics.playHitMarker()
         }
+    }
+
+    /// Manual reload (the button beside FIRE) and the auto-reload on empty.
+    func startReload() {
+        guard phase == .playing, isAlive, !isReloading, ammo < settings.magazineSize else { return }
+        reloadRemaining = settings.reloadDuration
+        haptics.playReloadStart()
+        reloadTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            self.reloadRemaining -= 0.05
+            if self.reloadRemaining <= 0 {
+                timer.invalidate()
+                self.finishReload()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)   // keeps ticking during scroll tracking
+        reloadTimer = timer
+    }
+
+    private func finishReload() {
+        reloadTimer?.invalidate()
+        reloadTimer = nil
+        reloadRemaining = 0
+        ammo = settings.magazineSize
+        haptics.playReloadComplete()
+    }
+
+    /// Cancel without loading — death, match end, leaving.
+    private func cancelReload() {
+        reloadTimer?.invalidate()
+        reloadTimer = nil
+        reloadRemaining = 0
     }
 
     /// The core algorithm: most-centered live target inside the aim cone and
@@ -223,6 +269,7 @@ final class GameEngine: NSObject, ObservableObject {
         trimFeed()
         network?.send(.death(player: myName, killedBy: killer))
         haptics.playDeath()
+        cancelReload()   // respawn hands you a fresh mag anyway
         startRespawnCountdown()
     }
 
@@ -245,6 +292,8 @@ final class GameEngine: NSObject, ObservableObject {
         respawnRemaining = 0
         players[myName]?.hp = settings.maxHP
         players[myName]?.isAlive = true
+        cancelReload()
+        ammo = settings.magazineSize
         network?.send(.respawn(player: myName))
         haptics.playRespawn()
     }
@@ -298,6 +347,7 @@ final class GameEngine: NSObject, ObservableObject {
         respawnTimer?.invalidate()
         respawnTimer = nil
         respawnRemaining = 0
+        cancelReload()
         aimedTarget = nil
         despawnDummy()
         phase = .summary
@@ -421,6 +471,7 @@ final class GameEngine: NSObject, ObservableObject {
         matchTimer = nil
         matchDeadline = nil
         matchRemaining = 0
+        cancelReload()
     }
 }
 

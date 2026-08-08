@@ -141,6 +141,21 @@ final class HapticsManager {
         }
     }
 
+    /// Mag out: a soft double-clunk so an empty gun is felt, not just seen.
+    func playReloadStart() {
+        play([transient(0, intensity: 0.55, sharpness: 0.25),
+              transient(0.11, intensity: 0.45, sharpness: 0.2)]) {
+            self.impactLight.impactOccurred()
+        }
+    }
+
+    /// Mag in: one crisp snap — you're live again without looking down.
+    func playReloadComplete() {
+        play([transient(0, intensity: 0.9, sharpness: 0.85)]) {
+            self.impactRigid.impactOccurred()
+        }
+    }
+
     func playRespawn() { notify.notificationOccurred(.success) }
     func playGameStart() { notify.notificationOccurred(.success) }
 

@@ -8,6 +8,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 - **Networking** — MultipeerConnectivity peer-to-peer mesh (Wi-Fi/Bluetooth, zero backend).
 - **Feedback** — Core Haptics: fire tick, shooter hit-marker, heavy ×3 damage burst, death rumble, target-lock tick.
 - **Match flow** — the host picks a match length; a live K/D readout and countdown sit in the HUD, and time expiring drops everyone into a match summary.
+- **Ammo** — 10 rounds to a magazine, shown as segments in the ring around FIRE. Emptying it auto-reloads (3 s), or reload early with the button beside FIRE.
 
 ## Requirements
 
@@ -29,6 +30,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 3. Host taps **Start**. Phones exchange UWB tokens and ranging begins.
 4. **Hold the phone in portrait like you're photographing your target** — the UWB antenna cone points out the *back* of the phone. The crosshair locks (with a tick) when someone is in your sights.
 5. **FIRE.** Hit: their phone buzzes heavy ×3, flashes red, HP drops. At 0 HP: death screen, 5 s respawn.
+   The ring around FIRE is your **magazine** — 10 segments, one per round, turning red on the last two. Run dry and it reloads itself in 3 s (you can't fire during it), so top up with the reload button before you push. Respawning hands you a fresh mag.
 6. Bodies block UWB — **human shields are canon**.
 7. Your **kills and deaths** run live in the HUD next to the match clock (which turns red for the last 30 s); the ⅓-list button opens the full scoreboard mid-match.
 8. When the clock hits zero everyone gets the **match summary** — winner, your K/D, and the final standings. **Back to Lobby** keeps the mesh up so the host can run another round.
@@ -38,7 +40,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 | Indoor | 8 m | 15° | 25 (4-shot kill) |
 | Outdoor | 20 m | 10° | 34 (3-shot kill) |
 
-Tuning lives in `GameSettings` presets (`Echo/Models/GameModels.swift`) — adjust cone/range/damage in playtesting.
+Tuning lives in `GameSettings` presets (`Echo/Models/GameModels.swift`) — adjust cone/range/damage, plus `magazineSize` and `reloadDuration`, in playtesting.
 
 ## Architecture
 

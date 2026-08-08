@@ -14,18 +14,20 @@ struct GameSettings: Codable, Equatable {
     var fireCooldown: TimeInterval
     var respawnDelay: TimeInterval
     var matchDuration: TimeInterval   // seconds; host picks, ends the match
+    var magazineSize: Int             // rounds before a reload
+    var reloadDuration: TimeInterval
 
     var aimConeRadians: Float { aimConeDegrees * .pi / 180 }
 
     static let indoor = GameSettings(
         mode: .indoor, weaponRange: 8, aimConeDegrees: 15,
         damage: 25, maxHP: 100, fireCooldown: 0.5, respawnDelay: 5,
-        matchDuration: 300)
+        matchDuration: 300, magazineSize: 10, reloadDuration: 3)
 
     static let outdoor = GameSettings(
         mode: .outdoor, weaponRange: 20, aimConeDegrees: 10,
         damage: 34, maxHP: 100, fireCooldown: 0.5, respawnDelay: 5,
-        matchDuration: 300)
+        matchDuration: 300, magazineSize: 10, reloadDuration: 3)
 
     /// Match lengths the host can pick in the lobby.
     static let durationChoices: [TimeInterval] = [120, 300, 600, 900]
