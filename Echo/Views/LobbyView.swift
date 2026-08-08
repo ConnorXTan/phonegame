@@ -74,20 +74,6 @@ struct LobbyView: View {
 
             if engine.isHost {
                 VStack(spacing: Space.md) {
-                    Picker("Mode", selection: Binding(
-                        get: { engine.settings.mode },
-                        set: { mode in
-                            // Swapping presets must not discard the chosen length.
-                            let duration = engine.settings.matchDuration
-                            engine.settings = .preset(for: mode)
-                            engine.settings.matchDuration = duration
-                        }
-                    )) {
-                        Text("Indoor").tag(GameMode.indoor)
-                        Text("Outdoor").tag(GameMode.outdoor)
-                    }
-                    .pickerStyle(.segmented)
-
                     VStack(spacing: Space.sm) {
                         HStack {
                             Label("Match length", systemImage: "timer")
@@ -117,18 +103,18 @@ struct LobbyView: View {
                             Text("\(engine.settings.maxPlayers)")
                                 .font(.caption.bold().monospacedDigit())
                         }
-                        Picker("Player limit", selection: Binding(
-                            get: { engine.settings.maxPlayers },
-                            set: {
-                                engine.settings.maxPlayers = $0
-                                engine.refreshLobbyAdvertisement()
-                            }
-                        )) {
-                            ForEach(GameSettings.maxPlayerChoices, id: \.self) { count in
-                                Text("\(count)").tag(count)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                        Slider(
+                            value: Binding(
+                                get: { Double(engine.settings.maxPlayers) },
+                                set: {
+                                    engine.settings.maxPlayers = Int($0.rounded())
+                                    engine.refreshLobbyAdvertisement()
+                                }
+                            ),
+                            in: 2...8,
+                            step: 1
+                        )
+                        .tint(Color.echoPrimary)
                     }
 
                     HStack(spacing: Space.xl) {

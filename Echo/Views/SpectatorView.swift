@@ -126,22 +126,6 @@ struct SpectatorView: View {
                 }
 
                 VStack(spacing: Space.lg) {
-                    settingRow(label: "Arena", icon: "map") {
-                        Picker("Arena", selection: Binding(
-                            get: { engine.settings.mode },
-                            set: { mode in
-                                // Swapping presets must not discard the chosen length.
-                                let duration = engine.settings.matchDuration
-                                engine.settings = .preset(for: mode)
-                                engine.settings.matchDuration = duration
-                            }
-                        )) {
-                            Text("Indoor").tag(GameMode.indoor)
-                            Text("Outdoor").tag(GameMode.outdoor)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-
                     settingRow(label: "Match length", icon: "timer") {
                         Picker("Match length", selection: Binding(
                             get: { engine.settings.matchDuration },
@@ -154,19 +138,19 @@ struct SpectatorView: View {
                         .pickerStyle(.segmented)
                     }
 
-                    settingRow(label: "Player limit", icon: "person.3") {
-                        Picker("Player limit", selection: Binding(
-                            get: { engine.settings.maxPlayers },
-                            set: {
-                                engine.settings.maxPlayers = $0
-                                engine.refreshLobbyAdvertisement()
-                            }
-                        )) {
-                            ForEach(GameSettings.maxPlayerChoices, id: \.self) { count in
-                                Text("\(count)").tag(count)
-                            }
-                        }
-                        .pickerStyle(.segmented)
+                    settingRow(label: "Player limit — \(engine.settings.maxPlayers)", icon: "person.3") {
+                        Slider(
+                            value: Binding(
+                                get: { Double(engine.settings.maxPlayers) },
+                                set: {
+                                    engine.settings.maxPlayers = Int($0.rounded())
+                                    engine.refreshLobbyAdvertisement()
+                                }
+                            ),
+                            in: 2...8,
+                            step: 1
+                        )
+                        .tint(Color.echoPrimary)
                     }
 
                     Divider().overlay(Color.echoHairline)
