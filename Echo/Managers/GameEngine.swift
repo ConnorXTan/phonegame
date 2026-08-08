@@ -678,12 +678,25 @@ extension GameEngine: NetworkManagerDelegate {
             }
 
         case .startGame(let settings):
+            let fromSpectator = spectators.contains(peer.displayName)
             if phase == .playing {
-                // Late-join/reconnect resync; don't reset the match. A host
-                // ignores it — its own settings are the authoritative ones,
-                // and a rival host's broadcast must not rewrite a live match.
-                if !isHost { self.settings = settings }
+                if fromSpectator, isHost, !isSpectator {
+                    // The game master started a real match while we were host
+                    // of a stale one (typically abandoned solo practice) —
+                    // ours yields and we join theirs.
+                    isHost = false
+                    beginMatch(with: settings)
+                } else if !isHost {
+                    // Late-join/reconnect resync; don't reset the match. A
+                    // host ignores it — its own settings are authoritative,
+                    // and a rival's broadcast must not rewrite a live match.
+                    self.settings = settings
+                }
             } else {
+                // The game master (spectator-host) is never dragged into
+                // someone else's match — it opens on its setup screen and
+                // starts matches itself.
+                if isSpectator, isHost { return }
                 // Someone else's match is starting — whoever started it calls
                 // time. Without dropping the flag, a lobby host pulled into a
                 // running match would broadcast rival .endMatch tallies when
