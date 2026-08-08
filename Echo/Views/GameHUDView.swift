@@ -188,6 +188,7 @@ struct GameHUDView: View {
     private var aimOverlay: some View {
         ZStack {
             ScopeReticle(locked: engine.aimedTarget != nil)
+            HitMarkerView(marker: engine.hitMarker)
             statusPill.offset(y: 82)
         }
         .allowsHitTesting(false)
@@ -307,6 +308,55 @@ struct GameHUDView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .animation(.easeOut(duration: 0.25), value: engine.damageFlash)
+    }
+}
+
+/// The four-tick X that pops at the crosshair the instant a shot lands. Same
+/// fixed-geometry chrome as the reticle it sits inside — diagram ticks, not
+/// icon art. A kill reads danger-red *and* longer/wider, so the two never rely
+/// on hue alone. Driven off `HitMarker.count` so two hits in a row each
+/// retrigger instead of the second being swallowed.
+private struct HitMarkerView: View {
+    let marker: HitMarker
+
+    @State private var opacity: Double = 0
+    @State private var scale: CGFloat = 1
+
+    // Geometry, sized to sit inside the locked reticle ring (74pt).
+    private var tickLength: CGFloat { marker.isKill ? 16 : 13 }
+    private var tickRadius: CGFloat { marker.isKill ? 24 : 20 }
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<4, id: \.self) { arm in
+                Capsule()
+                    .fill(marker.isKill ? Color.echoDanger : Color.echoText)
+                    .frame(width: 3, height: tickLength)
+                    .offset(y: -tickRadius)
+                    .rotationEffect(.degrees(Double(arm) * 90 + 45))
+            }
+        }
+        .compositingGroup()
+        .shadow(color: Color.echoBackground.opacity(Alpha.heavy), radius: 2)
+        .opacity(opacity)
+        .scaleEffect(scale)
+        .onChange(of: marker) { _, _ in flash() }
+        .accessibilityHidden(true)   // the haptic and tick already report the hit
+    }
+
+    /// Snap in small and opaque, then bloom outward as it fades. The fade has
+    /// to be deferred a cycle: setting opacity 1 and animating it to 0 in one
+    /// synchronous block coalesces into a single update, and the marker never
+    /// renders visible at all.
+    private func flash() {
+        opacity = 1
+        scale = 0.8
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.26)) {
+                opacity = 0
+                scale = 1.2
+            }
+        }
     }
 }
 

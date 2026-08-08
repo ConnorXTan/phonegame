@@ -37,6 +37,9 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var matchResult: MatchResult?
     @Published private(set) var ammo: Int = 0
     @Published private(set) var reloadRemaining: TimeInterval = 0
+    /// Bumped on every confirmed hit we land — the HUD watches it to flash the
+    /// hit marker. A counter, not a Bool, so back-to-back hits each register.
+    @Published private(set) var hitMarker = HitMarker(count: 0, isKill: false)
 
     var isReloading: Bool { reloadRemaining > 0 }
     var magazineSize: Int { settings.magazineSize }
@@ -216,6 +219,7 @@ final class GameEngine: NSObject, ObservableObject {
         camera.start()
         startAimTimer()
         haptics.prepare()
+        SoundManager.shared.prepare()
         haptics.playGameStart()
 
         // Pairwise UWB token exchange with every connected PLAYER (spectators
@@ -244,15 +248,20 @@ final class GameEngine: NSObject, ObservableObject {
         if let last = lastFireTime, now.timeIntervalSince(last) < settings.fireCooldown { return }
         lastFireTime = now
         ammo -= 1
+        // Resolve BEFORE any feedback. Ranging readings are only good for
+        // 0.2 s, and playing audio/haptics first can burn longer than that —
+        // the shot would then be scored against stale directions and miss a
+        // target the crosshair is plainly locked onto.
+        let victim = resolveShot()
         haptics.playFire()
         net.send(.shotFired(by: myName))
         defer { if ammo == 0 { startReload() } }   // auto-reload on the last round
-        guard let victim = resolveShot() else { return }
+        guard let victim else { return }
         if victim == TargetDummy.name {
             hitDummy()
         } else if let victimPeer = net.peer(named: victim) {
             net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victimPeer])
-            haptics.playHitMarker()
+            confirmHit()
             // Optimistic: drop their bar now instead of a network round trip
             // later; the victim's authoritative .healthUpdate reconciles it.
             // Never kill optimistically — isAlive, kills, and the feed wait
@@ -260,6 +269,17 @@ final class GameEngine: NSObject, ObservableObject {
             if let hp = players[victim]?.hp {
                 players[victim]?.hp = max(0, hp - settings.damage)
             }
+        }
+    }
+
+    /// Shooter-side hit confirmation — marker, tick, buzz. The kill variant
+    /// fires separately when the victim's `.death` comes back over the wire.
+    private func confirmHit(kill: Bool = false) {
+        hitMarker = HitMarker(count: hitMarker.count + 1, isKill: kill)
+        if kill {
+            haptics.playKillConfirm()
+        } else {
+            haptics.playHitMarker()
         }
     }
 
@@ -501,14 +521,14 @@ final class GameEngine: NSObject, ObservableObject {
         if let until = dummyInvulnerableUntil, now < until { return }
         dummyInvulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         target.hp = max(0, target.hp - settings.damage)
-        haptics.playHitMarker()
+        confirmHit()
         if target.hp <= 0 {
             target.isAlive = false
             target.deaths += 1
             players[myName]?.kills += 1
             killFeed.insert(KillEvent(killer: myName, victim: TargetDummy.name), at: 0)
             trimFeed()
-            haptics.playKillConfirm()
+            confirmHit(kill: true)
             dummy.relocate()
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.respawnDelay) { [weak self] in
                 guard let self, self.phase == .playing,
@@ -666,7 +686,7 @@ extension GameEngine: NetworkManagerDelegate {
             players[killedBy]?.kills += 1
             killFeed.insert(KillEvent(killer: killedBy, victim: player), at: 0)
             trimFeed()
-            if killedBy == myName { haptics.playKillConfirm() }
+            if killedBy == myName { confirmHit(kill: true) }
 
         case .respawn(let player):
             guard player != myName else { return }

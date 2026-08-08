@@ -111,6 +111,13 @@ extension String {
     }
 }
 
+/// Drives the HUD hit marker. `count` increments per confirmed hit so rapid
+/// hits retrigger the animation; `isKill` swaps it to the kill styling.
+struct HitMarker: Equatable {
+    var count: Int
+    var isKill: Bool
+}
+
 struct KillEvent: Identifiable {
     let id = UUID()
     let killer: String

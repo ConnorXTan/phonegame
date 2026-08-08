@@ -7,6 +7,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 - **Aiming** — Nearby Interaction (the UWB chip behind AirTag precision finding) streams distance + 3D direction between iPhones at ~55 Hz. A shot hits when the target is inside the aim cone and weapon range; the most-centered target wins.
 - **Networking** — MultipeerConnectivity peer-to-peer mesh (Wi-Fi/Bluetooth, zero backend).
 - **Feedback** — Core Haptics: fire tick, shooter hit-marker, heavy ×3 damage burst, death rumble, target-lock tick.
+- **Hit markers** — land a shot and a four-tick X pops at the crosshair with the hitmarker sound; a kill turns it red and pitches the tick up.
 - **Match flow** — the host picks a match length; a live K/D readout and countdown sit in the HUD, and time expiring drops everyone into a match summary.
 - **Ammo** — 10 rounds to a magazine, shown as segments in the ring around FIRE. Emptying it auto-reloads (3 s), or reload early with the button beside FIRE.
 
@@ -69,4 +70,6 @@ The **UWB Ranging debug sheet** (magnifying-glass button in the HUD) shows live 
 
 ## Not built yet (stretch, in demo-value order)
 
-AR crosshair mode → teams → weapon classes (shotgun/sniper) → Watch companion → spectator web scoreboard. Sounds are placeholder system clicks — swap in real pew/hit assets in `HapticsManager`.
+AR crosshair mode → teams → weapon classes (shotgun/sniper) → Watch companion → spectator web scoreboard.
+
+Sounds in `Echo/Sounds/` are synthesized originals, not sampled from any game — swap them for licensed assets if you want a different feel. `SoundManager.play` takes a `rate`, so one asset can cover several cues.
