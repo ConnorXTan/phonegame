@@ -47,7 +47,7 @@ final class GameEngine: NSObject, ObservableObject {
         ranging.delegate = self
         if !RangingManager.isSupported {
             uwbWarning = "This device has no UWB chip (needs iPhone 11+, non-SE). Ranging won't work here."
-        } else if !RangingManager.supportsDirection {
+        } else if !RangingManager.supportsAiming {
             uwbWarning = "This device can't measure UWB direction, so aiming won't work."
         }
     }

@@ -10,9 +10,13 @@ struct RangingReading {
 
     /// Radians off boresight. Boresight = straight out the BACK of the phone,
     /// which is -Z in the device coordinate frame (aim like taking a photo).
+    /// U2 devices (iPhone 15/16) often deliver only the camera-assisted
+    /// horizontalAngle rather than a full direction vector — use it as the
+    /// aim angle so those phones can still shoot.
     var angleOffBoresight: Float? {
-        guard let d = direction else { return nil }
-        return acos(max(-1, min(1, -d.z)))
+        if let d = direction { return acos(max(-1, min(1, -d.z))) }
+        if let h = horizontalAngle { return abs(h) }
+        return nil
     }
 }
 
@@ -52,8 +56,12 @@ final class RangingManager: NSObject, ObservableObject {
         NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
     }
 
-    static var supportsDirection: Bool {
+    /// Raw UWB angle-of-arrival (U1 chips) OR camera-assisted direction (U2
+    /// chips report supportsDirectionMeasurement == false but deliver
+    /// direction/horizontalAngle once camera assistance is running).
+    static var supportsAiming: Bool {
         NISession.deviceCapabilities.supportsDirectionMeasurement
+            || NISession.deviceCapabilities.supportsCameraAssistance
     }
 
     // MARK: - Token exchange
@@ -109,10 +117,12 @@ final class RangingManager: NSObject, ObservableObject {
         peers[peerName]?.readings.last
     }
 
-    /// Freshest reading with a usable direction within `window` seconds.
+    /// Freshest reading with a usable aim angle within `window` seconds.
     func latestDirectional(for peerName: String, within window: TimeInterval) -> RangingReading? {
         let cutoff = Date().addingTimeInterval(-window)
-        return peers[peerName]?.readings.last { $0.timestamp >= cutoff && $0.direction != nil }
+        return peers[peerName]?.readings.last {
+            $0.timestamp >= cutoff && ($0.direction != nil || $0.horizontalAngle != nil)
+        }
     }
 
     /// Readings per second over the last second — for the debug view.
