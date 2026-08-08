@@ -348,7 +348,6 @@ final class GameEngine: NSObject, ObservableObject {
         let viewport = CGSize(width: 300, height: 400)
         var tags: [SpectatorOverlayState.Tag] = []
         if let frame = camera.session.currentFrame {
-            let maxHP = Double(max(1, settings.maxHP))
             let now = Date()
             for player in opponents where player.isAlive && player.isConnected {
                 guard let reading = ranging.latestReading(for: player.name),
@@ -368,7 +367,7 @@ final class GameEngine: NSObject, ObservableObject {
                     name: player.name.displayCallSign,
                     x: point.x / viewport.width,
                     y: point.y / viewport.height,
-                    hp: Double(player.hp) / maxHP))
+                    hp: Double(player.hp) / Double(max(1, player.role.maxHP))))
             }
         }
         return SpectatorOverlayState(tags: tags, lockedTarget: aimedTarget?.displayCallSign)
