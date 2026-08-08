@@ -72,8 +72,9 @@ final class HapticsManager {
         }
     }
 
-    /// Shooter-side hit confirmation: crisp double tick.
+    /// Shooter-side hit confirmation: the hitmarker tick, crisp double buzz.
     func playHitMarker() {
+        SoundManager.shared.play("hitmarker")
         play([transient(0, intensity: 0.7, sharpness: 1.0),
               transient(0.06, intensity: 0.7, sharpness: 1.0)]) {
             self.impactLight.impactOccurred()
@@ -133,7 +134,13 @@ final class HapticsManager {
         }
     }
 
+    /// Kill confirm: the same tick pitched up and doubled, so a downed player
+    /// sounds different from a body shot without needing a second asset.
     func playKillConfirm() {
+        SoundManager.shared.play("hitmarker", rate: 1.35)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.09) {
+            SoundManager.shared.play("hitmarker", volume: 0.8, rate: 1.6)
+        }
         play([transient(0, intensity: 1, sharpness: 1),
               transient(0.08, intensity: 1, sharpness: 1),
               transient(0.16, intensity: 1, sharpness: 1)]) {

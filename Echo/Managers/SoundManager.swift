@@ -15,14 +15,22 @@ final class SoundManager {
         preload("pew", copies: 3)
         preload("hit", copies: 2)
         preload("death", copies: 1)
+        preload("hitmarker", copies: 4)   // deepest pool: hits land fastest
     }
 
-    func play(_ name: String, volume: Float = 1.0) {
+    /// Force the lazy singleton up before the match starts. Building the
+    /// player pools takes long enough to blow the ranging freshness window if
+    /// it happens on the first trigger pull.
+    func prepare() {}
+
+    /// `rate` repitches — the kill confirm is the hitmarker played sharper.
+    func play(_ name: String, volume: Float = 1.0, rate: Float = 1.0) {
         guard let pool = pools[name], !pool.isEmpty else { return }
         let i = (nextIndex[name] ?? 0) % pool.count
         nextIndex[name] = i + 1
         let player = pool[i]
         player.volume = volume
+        player.rate = rate
         player.currentTime = 0
         player.play()
     }
@@ -34,6 +42,7 @@ final class SoundManager {
         }
         pools[name] = (0..<copies).compactMap { _ in
             let player = try? AVAudioPlayer(contentsOf: url)
+            player?.enableRate = true   // must be set before prepareToPlay()
             player?.prepareToPlay()
             return player
         }

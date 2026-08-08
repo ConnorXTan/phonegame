@@ -72,6 +72,7 @@ enum GameMessage: Codable {
     case matchClock(remaining: TimeInterval)    // host re-syncs a late joiner's clock
     case spectatorHello                         // sender is a spectator (laptop), not a player
     case cameraRequest(active: Bool)            // spectator → player: stream me your viewfinder
+    case hostEnded                              // host closed the game; everyone back to the menu
 }
 
 struct Player: Identifiable {
@@ -109,6 +110,13 @@ extension String {
         else { return self }
         return String(self[..<hash])
     }
+}
+
+/// Drives the HUD hit marker. `count` increments per confirmed hit so rapid
+/// hits retrigger the animation; `isKill` swaps it to the kill styling.
+struct HitMarker: Equatable {
+    var count: Int
+    var isKill: Bool
 }
 
 struct KillEvent: Identifiable {
