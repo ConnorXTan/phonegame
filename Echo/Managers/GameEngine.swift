@@ -36,6 +36,13 @@ final class GameEngine: NSObject, ObservableObject {
     var isReloading: Bool { reloadRemaining > 0 }
     var magazineSize: Int { settings.magazineSize }
 
+    // Spectator mode (the laptop): watches the mesh, never plays.
+    @Published private(set) var isSpectator = false
+    @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
+    @Published private(set) var spectatorFrame: UIImage?
+    private var spectators: Set<String> = []                // peers that are spectators, not targets
+    private var streamingTo: MCPeerID?                      // player side: who gets our viewfinder
+
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
     let haptics = HapticsManager()
@@ -96,6 +103,7 @@ final class GameEngine: NSObject, ObservableObject {
         network = nil
         despawnDummy()
         ranging.stopAll()
+        camera.frameTap = nil
         camera.stop()   // after the NI sessions that were using it
         stopTimers()
         players = [:]
@@ -108,8 +116,41 @@ final class GameEngine: NSObject, ObservableObject {
         pendingSnapshots = [:]
         matchResult = nil
         isHost = false
+        isSpectator = false
+        watchingPlayer = nil
+        spectatorFrame = nil
+        spectators = []
+        streamingTo = nil
         phase = .menu
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// Join the mesh as a pure observer — no Player entry, no ranging, no
+    /// camera. The laptop's mode: it can still host (Start button, settings,
+    /// authoritative match end) because "host" is only a protocol convention.
+    func enterSpectator(hosting: Bool) {
+        isSpectator = true
+        isHost = hosting
+        let net = NetworkManager(playerName: "Spectator")
+        net.delegate = self
+        network = net
+        players = [:]
+        net.start()
+        phase = .lobby
+        UIApplication.shared.isIdleTimerDisabled = true
+    }
+
+    /// Spectator: switch whose viewfinder we're watching (nil = stop).
+    func watch(_ name: String?) {
+        guard isSpectator, let net = network else { return }
+        if let current = watchingPlayer, current != name, let peer = net.peer(named: current) {
+            net.send(.cameraRequest(active: false), to: [peer])
+        }
+        watchingPlayer = name
+        spectatorFrame = nil
+        if let name, let peer = net.peer(named: name) {
+            net.send(.cameraRequest(active: true), to: [peer])
+        }
     }
 
     /// Host taps Start: broadcast settings, then start locally.
@@ -133,7 +174,8 @@ final class GameEngine: NSObject, ObservableObject {
         rangingAlert = nil
         // U2 iPhones (15/16) aim exclusively through the camera; if its
         // permission was denied, direction data can never arrive.
-        if !NISession.deviceCapabilities.supportsDirectionMeasurement,
+        if !isSpectator,
+           !NISession.deviceCapabilities.supportsDirectionMeasurement,
            NISession.deviceCapabilities.supportsCameraAssistance,
            AVCaptureDevice.authorizationStatus(for: .video) == .denied {
             rangingAlert = "Camera access is off — this iPhone aims through the camera. Enable it: Settings → Apps → Echo → Camera."
@@ -149,21 +191,25 @@ final class GameEngine: NSObject, ObservableObject {
         ammo = settings.magazineSize
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
+        startMatchClock(seconds: settings.matchDuration)
+        guard !isSpectator else { return }   // observers need only the clock and the mirror
+
         // Before any NISession.run() below, so ranging attaches to a session
         // that's already delivering frames. Also covers solo practice, where
         // there are no peers and so no NI session to start it.
         camera.start()
         startAimTimer()
-        startMatchClock(seconds: settings.matchDuration)
         haptics.prepare()
         haptics.playGameStart()
 
-        // Pairwise UWB token exchange with every connected peer. Both sides
-        // send; ordering races are handled inside RangingManager.
-        if let net = network, !net.connectedPeers.isEmpty {
-            for peer in net.connectedPeers {
+        // Pairwise UWB token exchange with every connected PLAYER (spectators
+        // don't range). Both sides send; ordering races are handled inside
+        // RangingManager.
+        let playerPeers = (network?.connectedPeers ?? []).filter { !spectators.contains($0.displayName) }
+        if !playerPeers.isEmpty {
+            for peer in playerPeers {
                 if let data = ranging.prepare(peerName: peer.displayName) {
-                    net.send(.discoveryToken(data), to: [peer])
+                    network?.send(.discoveryToken(data), to: [peer])
                 }
             }
         } else {
@@ -481,14 +527,16 @@ extension GameEngine: NetworkManagerDelegate {
     func network(_ manager: NetworkManager, peerDidConnect peer: MCPeerID) {
         guard manager === network else { return }   // stale callbacks after leave()
         let name = peer.displayName
-        if players[name] == nil {
+        if spectators.contains(name) {
+            // A reconnecting spectator never becomes a player row.
+        } else if players[name] == nil {
             players[name] = Player(name: name, hp: settings.maxHP)
         } else {
             players[name]?.isConnected = true       // reconnect: keep their stats
         }
-        manager.send(.hello(playerName: myName), to: [peer])
+        manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName), to: [peer])
         if phase == .playing {
-            despawnDummy()   // a real target arrived — practice is over
+            if !isSpectator { despawnDummy() }   // a real target arrived — practice is over
             // Late joiner or reconnect mid-match: sync settings + full state
             // (host), our own authoritative row (everyone), and pair up UWB.
             // .reliable unicasts to one peer stay ordered, so the snapshot
@@ -503,7 +551,8 @@ extension GameEngine: NetworkManagerDelegate {
             } else if let mine = me {
                 manager.send(.stateSnapshot([PlayerState(mine)]), to: [peer])
             }
-            if let data = ranging.prepare(peerName: name) {
+            if !isSpectator, !spectators.contains(name),
+               let data = ranging.prepare(peerName: name) {
                 manager.send(.discoveryToken(data), to: [peer])
             }
         }
@@ -520,6 +569,14 @@ extension GameEngine: NetworkManagerDelegate {
             players[name] = nil
         }
         ranging.removePeer(name)
+        if streamingTo == peer {
+            streamingTo = nil
+            camera.frameTap = nil
+        }
+        if watchingPlayer == name {
+            watchingPlayer = nil
+            spectatorFrame = nil
+        }
     }
 
     func network(_ manager: NetworkManager, didReceive message: GameMessage, from peer: MCPeerID) {
@@ -596,7 +653,33 @@ extension GameEngine: NetworkManagerDelegate {
         case .matchClock(let remaining):
             guard phase == .playing, !isHost else { return }
             startMatchClock(seconds: remaining)
+
+        case .spectatorHello:
+            // Not a combatant: no roster row, no HP, no UWB session, can't be shot.
+            spectators.insert(peer.displayName)
+            players[peer.displayName] = nil
+            ranging.removePeer(peer.displayName)
+
+        case .cameraRequest(let active):
+            if active {
+                streamingTo = peer
+                camera.start()   // idempotent; covers a lobby preview request
+                camera.frameTap = { [weak self] jpeg in
+                    guard let self, let target = self.streamingTo else { return }
+                    self.network?.sendCameraFrame(jpeg, to: target)
+                }
+            } else if streamingTo == peer {
+                streamingTo = nil
+                camera.frameTap = nil
+            }
         }
+    }
+
+    func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peer: MCPeerID) {
+        guard manager === network, isSpectator,
+              peer.displayName == watchingPlayer,
+              let image = UIImage(data: jpeg) else { return }
+        spectatorFrame = image
     }
 }
 

@@ -3,6 +3,7 @@ import MultipeerConnectivity
 
 protocol NetworkManagerDelegate: AnyObject {
     func network(_ manager: NetworkManager, didReceive message: GameMessage, from peer: MCPeerID)
+    func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peer: MCPeerID)
     func network(_ manager: NetworkManager, peerDidConnect peer: MCPeerID)
     func network(_ manager: NetworkManager, peerDidDisconnect peer: MCPeerID)
 }
@@ -63,16 +64,31 @@ final class NetworkManager: NSObject, ObservableObject {
         pendingInvites = []
     }
 
+    // First byte of every packet tags its kind, so bulky camera frames skip
+    // JSON entirely. '{' (0x7B) is accepted bare for builds predating the tag.
+    private static let kindJSON: UInt8 = 0x00
+    private static let kindCameraFrame: UInt8 = 0x01
+
     /// Send to specific peers, or broadcast to everyone when `peers` is nil.
     func send(_ message: GameMessage, to peers: [MCPeerID]? = nil) {
         let targets = peers ?? session.connectedPeers
         guard !targets.isEmpty else { return }
         do {
-            let data = try JSONEncoder().encode(message)
+            var data = Data([Self.kindJSON])
+            data.append(try JSONEncoder().encode(message))
             try session.send(data, toPeers: targets, with: .reliable)
         } catch {
             print("[Network] send failed: \(error)")
         }
+    }
+
+    /// Viewfinder frame for a spectator. Unreliable: a dropped frame is better
+    /// than a late one, and it can't head-of-line-block game messages.
+    func sendCameraFrame(_ jpeg: Data, to peer: MCPeerID) {
+        guard session.connectedPeers.contains(peer) else { return }
+        var data = Data([Self.kindCameraFrame])
+        data.append(jpeg)
+        try? session.send(data, toPeers: [peer], with: .unreliable)
     }
 
     func peer(named name: String) -> MCPeerID? {
@@ -142,12 +158,24 @@ extension NetworkManager: MCSessionDelegate {
     }
 
     func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
-        guard let message = try? JSONDecoder().decode(GameMessage.self, from: data) else {
-            print("[Network] undecodable message from \(peerID.displayName)")
-            return
-        }
-        DispatchQueue.main.async {
-            self.delegate?.network(self, didReceive: message, from: peerID)
+        guard let first = data.first else { return }
+        switch first {
+        case Self.kindCameraFrame:
+            let jpeg = data.dropFirst()
+            DispatchQueue.main.async {
+                self.delegate?.network(self, didReceiveCameraFrame: jpeg, from: peerID)
+            }
+        case Self.kindJSON, UInt8(ascii: "{"):
+            let payload = first == Self.kindJSON ? data.dropFirst() : data[...]
+            guard let message = try? JSONDecoder().decode(GameMessage.self, from: payload) else {
+                print("[Network] undecodable message from \(peerID.displayName)")
+                return
+            }
+            DispatchQueue.main.async {
+                self.delegate?.network(self, didReceive: message, from: peerID)
+            }
+        default:
+            print("[Network] unknown packet kind \(first) from \(peerID.displayName)")
         }
     }
 

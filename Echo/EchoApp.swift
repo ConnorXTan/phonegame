@@ -18,11 +18,17 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            switch engine.phase {
-            case .menu: MenuView()
-            case .lobby: LobbyView()
-            case .playing: GameHUDView()
-            case .summary: MatchSummaryView()
+            if engine.phase == .menu {
+                MenuView()
+            } else if engine.isSpectator {
+                SpectatorView()   // one screen covers lobby/playing/summary
+            } else {
+                switch engine.phase {
+                case .menu: MenuView()
+                case .lobby: LobbyView()
+                case .playing: GameHUDView()
+                case .summary: MatchSummaryView()
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: engine.phase)
