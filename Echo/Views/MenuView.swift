@@ -102,5 +102,9 @@ struct MenuView: View {
             Spacer()
             Spacer()
         }
+        // Warm the peer cache while the player is still here, so the lobby
+        // fills immediately on Host/Join instead of after discovery warmup.
+        .onAppear { engine.prewarmDiscovery() }
+        .onChange(of: engine.playerName) { engine.prewarmDiscovery() }
     }
 }
