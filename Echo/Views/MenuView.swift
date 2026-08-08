@@ -92,15 +92,6 @@ struct MenuView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(Color.echoPrimary)
-            } else {
-                Button {
-                    engine.enterSpectator(hosting: true)
-                } label: {
-                    Label("Spectate & Host (big screen)", systemImage: "tv")
-                        .frame(maxWidth: 260)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
             }
 
             Text(isMac ? "This Mac has no UWB chip, so it runs the show instead of playing."

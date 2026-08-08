@@ -1,28 +1,46 @@
 import SwiftUI
 
-/// The laptop's control room: live roster with HP/K/D, click a player to
-/// watch their viewfinder, host controls (mode, duration, Start), kill feed,
-/// and final standings. Covers lobby, playing, and summary phases.
+/// The laptop's control room: match setup with full host parity in the lobby,
+/// a broadcast-style live view (standings rail, camera feed, kill feed) during
+/// play, and final standings after. Click a player to watch their viewfinder.
 struct SpectatorView: View {
     @EnvironmentObject private var engine: GameEngine
 
     @ScaledMetric(relativeTo: .largeTitle) private var winnerTitleSize: CGFloat = 40
     @ScaledMetric(relativeTo: .largeTitle) private var emptyGlyphSize: CGFloat = 56
 
-    private var roster: [Player] { engine.opponents }
+    /// Alphabetical while the lobby fills; live standings once the match runs.
+    private var roster: [Player] {
+        let players = engine.opponents
+        guard engine.phase != .lobby else { return players }
+        return players.sorted { a, b in
+            if a.kills != b.kills { return a.kills > b.kills }
+            if a.deaths != b.deaths { return a.deaths < b.deaths }
+            return a.name < b.name
+        }
+    }
 
     var body: some View {
         ZStack {
             Color.echoBackground.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                    .padding(.horizontal)
+                    .padding(.horizontal, Space.lg)
                     .padding(.vertical, Space.md)
                 Divider().overlay(Color.echoHairline)
                 if engine.phase == .summary, let result = engine.matchResult {
                     summary(result)
                 } else {
-                    content
+                    HStack(spacing: 0) {
+                        playerRail
+                            .frame(width: 280)
+                        Divider().overlay(Color.echoHairline)
+                        if engine.phase == .lobby {
+                            setupPanel
+                        } else {
+                            feedPanel
+                        }
+                    }
                 }
             }
         }
@@ -33,71 +51,168 @@ struct SpectatorView: View {
 
     private var header: some View {
         HStack(spacing: Space.lg) {
-            Label("ECHO · SPECTATOR", systemImage: "tv")
-                .font(.headline.weight(.black))
-                .tracking(1)
+            HStack(spacing: Space.sm) {
+                Image(systemName: "tv")
+                    .foregroundStyle(Color.echoPrimary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("ECHO")
+                        .font(.headline.weight(.black))
+                        .tracking(2)
+                    Text("GAME MASTER")
+                        .font(.caption2)
+                        .tracking(2)
+                        .foregroundStyle(Color.echoTextSecondary)
+                }
+            }
 
             if engine.phase == .playing {
                 Text(engine.matchRemaining.clockString)
-                    .font(.title3.monospacedDigit().bold())
+                    .font(.title2.monospacedDigit().bold())
                     .foregroundStyle(engine.matchRemaining < 30 ? Color.echoDanger : Color.echoText)
+                    .accessibilityLabel("Time remaining \(engine.matchRemaining.clockString)")
+                chip(engine.settings.mode == .indoor ? "INDOOR" : "OUTDOOR")
             }
 
             Spacer()
 
-            if engine.phase == .lobby {
-                Picker("Mode", selection: Binding(
-                    get: { engine.settings.mode },
-                    set: { engine.settings = .preset(for: $0) }
-                )) {
-                    Text("Indoor").tag(GameMode.indoor)
-                    Text("Outdoor").tag(GameMode.outdoor)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-
-                Menu {
-                    ForEach(GameSettings.durationChoices, id: \.self) { choice in
-                        Button(choice.durationLabel) { engine.settings.matchDuration = choice }
-                    }
-                } label: {
-                    Label(engine.settings.matchDuration.durationLabel, systemImage: "clock")
-                }
-
-                Button {
-                    engine.startGame()
-                } label: {
-                    Label("Start Match", systemImage: "play.fill")
-                        .foregroundStyle(Color.echoOnPrimary)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.echoPrimary)
-                .disabled(roster.isEmpty)
-            }
+            Label("\(roster.count)", systemImage: "iphone.gen3")
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(Color.echoTextSecondary)
+                .padding(.horizontal, Space.md)
+                .padding(.vertical, Space.xs)
+                .background(Color.echoSurface, in: Capsule())
+                .accessibilityLabel("\(roster.count) players connected")
 
             Button(role: .destructive) {
                 engine.leave()
             } label: {
                 Image(systemName: "xmark.circle")
+                    .font(.title3)
             }
-            .accessibilityLabel("Leave")
+            .accessibilityLabel("Close the game")
         }
     }
 
-    // MARK: - Main layout
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .tracking(1)
+            .foregroundStyle(Color.echoTextSecondary)
+            .padding(.horizontal, Space.sm)
+            .padding(.vertical, Space.xxs)
+            .background(Color.echoSurface, in: Capsule())
+    }
 
-    private var content: some View {
-        HStack(spacing: 0) {
-            playerRail
-                .frame(width: 260)
-            Divider().overlay(Color.echoHairline)
-            feedPanel
+    // MARK: - Lobby: match setup (host parity with LobbyView)
+
+    private var setupPanel: some View {
+        ScrollView {
+            VStack(spacing: Space.xl) {
+                VStack(spacing: Space.xs) {
+                    Text("MATCH SETUP")
+                        .font(.caption.bold())
+                        .tracking(3)
+                        .foregroundStyle(Color.echoTextSecondary)
+                    Text("Players join from their phones — the roster fills itself.")
+                        .font(.caption2)
+                        .foregroundStyle(Color.echoTextTertiary)
+                }
+
+                VStack(spacing: Space.lg) {
+                    settingRow(label: "Arena", icon: "map") {
+                        Picker("Arena", selection: Binding(
+                            get: { engine.settings.mode },
+                            set: { mode in
+                                // Swapping presets must not discard the chosen length.
+                                let duration = engine.settings.matchDuration
+                                engine.settings = .preset(for: mode)
+                                engine.settings.matchDuration = duration
+                            }
+                        )) {
+                            Text("Indoor").tag(GameMode.indoor)
+                            Text("Outdoor").tag(GameMode.outdoor)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    settingRow(label: "Match length", icon: "timer") {
+                        Picker("Match length", selection: Binding(
+                            get: { engine.settings.matchDuration },
+                            set: { engine.settings.matchDuration = $0 }
+                        )) {
+                            ForEach(GameSettings.durationChoices, id: \.self) { seconds in
+                                Text(seconds.durationLabel).tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    Divider().overlay(Color.echoHairline)
+
+                    HStack(spacing: Space.xl) {
+                        statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
+                        statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
+                        statChip("bolt.fill", "\(engine.settings.damage) dmg")
+                        statChip("heart.fill", "\(engine.settings.maxHP) hp")
+                        statChip("arrow.counterclockwise", "\(engine.settings.magazineSize) rds")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Color.echoTextSecondary)
+                }
+                .padding(Space.xl)
+                .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
+                .frame(maxWidth: 560)
+
+                Button {
+                    engine.startGame()
+                } label: {
+                    Label(roster.isEmpty ? "Waiting for players…" : "Start Match",
+                          systemImage: "play.fill")
+                        .font(.headline)
+                        .frame(minWidth: 260)
+                        .foregroundStyle(Color.echoOnPrimary)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Color.echoPrimary)
+                .disabled(roster.isEmpty)
+
+                if !roster.isEmpty {
+                    Text("\(roster.count) in — you can keep waiting or start now.")
+                        .font(.caption2)
+                        .foregroundStyle(Color.echoTextTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(Space.xxl)
         }
     }
+
+    private func settingRow(label: String, icon: String, @ViewBuilder control: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Label(label, systemImage: icon)
+                .font(.caption.bold())
+                .foregroundStyle(Color.echoTextSecondary)
+            control()
+        }
+    }
+
+    private func statChip(_ icon: String, _ text: String) -> some View {
+        Label(text, systemImage: icon)
+    }
+
+    // MARK: - Player rail
 
     private var playerRail: some View {
         ScrollView {
-            VStack(spacing: Space.md) {
+            VStack(alignment: .leading, spacing: Space.md) {
+                Text(engine.phase == .lobby ? "ROSTER" : "STANDINGS")
+                    .font(.caption2.bold())
+                    .tracking(2)
+                    .foregroundStyle(Color.echoTextTertiary)
+                    .padding(.horizontal, Space.xs)
+
                 if roster.isEmpty {
                     VStack(spacing: Space.sm) {
                         ProgressView()
@@ -105,23 +220,30 @@ struct SpectatorView: View {
                             .font(.caption)
                             .foregroundStyle(Color.echoTextSecondary)
                     }
+                    .frame(maxWidth: .infinity)
                     .padding(.top, Space.xxl)
                 }
-                ForEach(roster) { player in
-                    playerCard(player)
+                ForEach(Array(roster.enumerated()), id: \.element.id) { index, player in
+                    playerCard(player, rank: engine.phase == .lobby ? nil : index + 1)
                 }
             }
             .padding(Space.md)
         }
     }
 
-    private func playerCard(_ player: Player) -> some View {
+    private func playerCard(_ player: Player, rank: Int?) -> some View {
         let watching = engine.watchingPlayer == player.name
         return Button {
             engine.watch(watching ? nil : player.name)
         } label: {
             VStack(alignment: .leading, spacing: Space.sm) {
-                HStack {
+                HStack(spacing: Space.sm) {
+                    if let rank {
+                        Text("\(rank)")
+                            .font(.caption.monospacedDigit().bold())
+                            .foregroundStyle(rank == 1 ? Color.echoAccent : Color.echoTextTertiary)
+                            .frame(width: 16)
+                    }
                     Circle()
                         .fill(statusColor(for: player))
                         .frame(width: 9, height: 9)
@@ -164,6 +286,8 @@ struct SpectatorView: View {
             )
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .accessibilityHint(watching ? "Stops watching this player" : "Watches this player's camera")
     }
 
     private func statusColor(for player: Player) -> Color {
@@ -180,20 +304,11 @@ struct SpectatorView: View {
 
     private var feedPanel: some View {
         ZStack {
-            if let frame = engine.spectatorFrame, let watching = engine.watchingPlayer {
+            if let frame = engine.spectatorFrame, engine.watchingPlayer != nil {
                 Image(uiImage: frame)
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .topLeading) {
-                        Label("LIVE · \(watching.displayCallSign.uppercased())",
-                              systemImage: "dot.radiowaves.left.and.right")
-                            .font(.caption.bold())
-                            .foregroundStyle(Color.echoOnPrimary)
-                            .padding(Space.sm)
-                            .background(Color.echoPrimary, in: Capsule())
-                            .padding(Space.md)
-                    }
             } else if let watching = engine.watchingPlayer {
                 VStack(spacing: Space.md) {
                     ProgressView()
@@ -212,7 +327,34 @@ struct SpectatorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) { watchedStatusBar }
         .overlay(alignment: .bottom) { killFeedStrip }
+    }
+
+    /// Who's on air and how they're doing, pinned over the feed.
+    @ViewBuilder
+    private var watchedStatusBar: some View {
+        if let watching = engine.watchingPlayer, let player = engine.players[watching] {
+            HStack(spacing: Space.md) {
+                Label("LIVE · \(watching.displayCallSign.uppercased())",
+                      systemImage: "dot.radiowaves.left.and.right")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.echoOnPrimary)
+                    .padding(.horizontal, Space.md)
+                    .padding(.vertical, Space.xs)
+                    .background(Color.echoPrimary, in: Capsule())
+                Spacer()
+                Text("\(player.hp) HP · \(player.kills) K · \(player.deaths) D")
+                    .font(.caption.monospacedDigit().bold())
+                Capsule()
+                    .fill(Color.echoHealth(CGFloat(player.hp) / CGFloat(max(1, engine.settings.maxHP))))
+                    .frame(width: 72 * max(0, CGFloat(player.hp) / CGFloat(max(1, engine.settings.maxHP))), height: 6)
+                    .frame(width: 72, alignment: .leading)
+                    .background(Color.echoText.opacity(Alpha.subtle), in: Capsule())
+            }
+            .padding(Space.md)
+            .background(Color.echoBackground.opacity(Alpha.strong))
+        }
     }
 
     private var killFeedStrip: some View {
@@ -241,6 +383,8 @@ struct SpectatorView: View {
             winnerHeadline(result)
                 .font(.system(size: winnerTitleSize, weight: .black, design: .rounded))
                 .foregroundStyle(result.isDraw ? Color.echoText : Color.echoAccent)
+
+            chip("\(engine.settings.mode == .indoor ? "INDOOR" : "OUTDOOR") · \(result.duration.durationLabel)")
 
             VStack(spacing: Space.sm) {
                 ForEach(Array(result.standings.enumerated()), id: \.element.id) { index, player in
