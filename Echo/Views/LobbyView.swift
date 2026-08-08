@@ -41,6 +41,9 @@ struct LobbyView: View {
                                     .background(Color.echoSurface, in: Capsule())
                             }
                             Spacer()
+                            Label(player.role.label.uppercased(), systemImage: player.role.symbol)
+                                .font(.caption2)
+                                .foregroundStyle(Color.echoTextSecondary)
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(Color.echoSecondary)
                                 .accessibilityLabel("Connected")
@@ -71,6 +74,9 @@ struct LobbyView: View {
                 }
             }
             .scrollContentBackground(.hidden)
+
+            rolePicker
+                .padding(.horizontal)
 
             if engine.isHost {
                 VStack(spacing: Space.md) {
@@ -120,8 +126,6 @@ struct LobbyView: View {
                     HStack(spacing: Space.xl) {
                         statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
                         statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
-                        statChip("bolt.fill", "\(engine.settings.damage) dmg")
-                        statChip("heart.fill", "\(engine.settings.maxHP) hp")
                     }
                     .font(.caption)
                     .foregroundStyle(Color.echoTextSecondary)
@@ -143,7 +147,7 @@ struct LobbyView: View {
                     ProgressView()
                     Text("Waiting for the host to start…")
                         .foregroundStyle(Color.echoTextSecondary)
-                    Text("The host sets the mode and match length.")
+                    Text("The host sets the match length.")
                         .font(.caption2)
                         .foregroundStyle(Color.echoTextTertiary)
                 }
@@ -151,6 +155,39 @@ struct LobbyView: View {
             }
         }
         .padding(.vertical)
+    }
+
+    /// Everyone picks their own loadout while waiting; the choice broadcasts
+    /// so the whole roster shows it.
+    private var rolePicker: some View {
+        VStack(spacing: Space.sm) {
+            HStack {
+                Label("Your role", systemImage: engine.myRole.symbol)
+                    .font(.caption)
+                    .foregroundStyle(Color.echoTextSecondary)
+                Spacer()
+                Text(engine.myRole.blurb)
+                    .font(.caption2)
+                    .foregroundStyle(Color.echoTextTertiary)
+            }
+            Picker("Role", selection: Binding(
+                get: { engine.myRole },
+                set: { engine.selectRole($0) }
+            )) {
+                ForEach(PlayerRole.allCases) { role in
+                    Text(role.label).tag(role)
+                }
+            }
+            .pickerStyle(.segmented)
+            HStack(spacing: Space.xl) {
+                statChip("heart.fill", "\(engine.myRole.maxHP) hp")
+                statChip("bolt.fill", "\(engine.myRole.damage) dmg")
+                statChip("arrow.counterclockwise", "\(engine.myRole.magazineSize) rds")
+                statChip("timer", String(format: "%.2gs", engine.myRole.fireCooldown))
+            }
+            .font(.caption)
+            .foregroundStyle(Color.echoTextSecondary)
+        }
     }
 
     private func statChip(_ icon: String, _ text: String) -> some View {

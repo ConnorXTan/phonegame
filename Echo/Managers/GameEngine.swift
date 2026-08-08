@@ -13,7 +13,9 @@ enum GamePhase: Equatable {
 final class GameEngine: NSObject, ObservableObject {
 
     @Published var playerName: String = ""
-    @Published var settings: GameSettings = .indoor
+    @Published var settings: GameSettings = .standard
+    /// Our loadout. Survives leave() so the pick sticks between games.
+    @Published private(set) var myRole: PlayerRole = .regular
     @Published private(set) var phase: GamePhase = .menu
     @Published private(set) var isHost = false
 
@@ -45,7 +47,7 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var hitMarker = HitMarker(count: 0, isKill: false)
 
     var isReloading: Bool { reloadRemaining > 0 }
-    var magazineSize: Int { settings.magazineSize }
+    var magazineSize: Int { myRole.magazineSize }
 
     // Spectator mode (the laptop): watches the mesh, never plays.
     // A match already running when the game master arrives locks its setup
@@ -73,6 +75,7 @@ final class GameEngine: NSObject, ObservableObject {
     private let dummy = TargetDummy()
 
     private var aimTimer: Timer?
+    private var autoFireTimer: Timer?
     private var respawnTimer: Timer?
     private var matchTimer: Timer?
     private var matchDeadline: Date?
@@ -171,7 +174,7 @@ final class GameEngine: NSObject, ObservableObject {
         net.delegate = self
         network = net
         let wireName = net.myName
-        players = [wireName: Player(name: wireName, hp: settings.maxHP)]
+        players = [wireName: Player(name: wireName, role: myRole)]
         net.start(as: hosting ? .host : .player)
         refreshLobbyAdvertisement()
         // Ask now, not at match start — an open permission alert would race
@@ -202,7 +205,7 @@ final class GameEngine: NSObject, ObservableObject {
         players = [:]
         if !asSpectator {
             let wireName = net.myName
-            players = [wireName: Player(name: wireName, hp: settings.maxHP)]
+            players = [wireName: Player(name: wireName, role: myRole)]
             camera.requestAccessIfNeeded()
         }
         net.start(as: asSpectator ? .spectator : .player)
@@ -308,6 +311,16 @@ final class GameEngine: NSObject, ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = true
     }
 
+    /// Pick a loadout. Lobby-only: switching mid-match would re-base HP and
+    /// let a dying player heal by swapping to Heavy.
+    func selectRole(_ role: PlayerRole) {
+        guard phase == .lobby, !isSpectator, role != myRole else { return }
+        myRole = role
+        players[myName]?.role = role
+        players[myName]?.hp = role.maxHP
+        network?.send(.roleSelect(player: myName, role: role))
+    }
+
     /// Spectator: switch whose viewfinder we're watching (nil = stop).
     func watch(_ name: String?) {
         guard isSpectator, let net = network else { return }
@@ -336,8 +349,8 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func beginMatch(with settings: GameSettings) {
         self.settings = settings
-        for name in players.keys {
-            players[name]?.hp = settings.maxHP
+        for (name, player) in players {
+            players[name]?.hp = player.role.maxHP
             players[name]?.isAlive = true
             players[name]?.kills = 0
             players[name]?.deaths = 0
@@ -364,7 +377,7 @@ final class GameEngine: NSObject, ObservableObject {
         pendingSnapshots = [:]
         matchResult = nil
         cancelReload()
-        ammo = settings.magazineSize
+        ammo = myRole.magazineSize
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
         startMatchClock(seconds: settings.matchDuration)
@@ -403,7 +416,7 @@ final class GameEngine: NSObject, ObservableObject {
         // Dry trigger on an empty mag racks the reload instead of firing.
         guard ammo > 0 else { startReload(); return }
         let now = Date()
-        if let last = lastFireTime, now.timeIntervalSince(last) < settings.fireCooldown { return }
+        if let last = lastFireTime, now.timeIntervalSince(last) < myRole.fireCooldown { return }
         lastFireTime = now
         ammo -= 1
         // Resolve BEFORE any feedback. Ranging readings are only good for
@@ -418,16 +431,36 @@ final class GameEngine: NSObject, ObservableObject {
         if victim == TargetDummy.name {
             hitDummy()
         } else if net.isConnected(victim) {
-            net.send(.hit(target: victim, by: myName, damage: settings.damage), to: [victim])
+            net.send(.hit(target: victim, by: myName, damage: myRole.damage), to: [victim])
             confirmHit()
             // Optimistic: drop their bar now instead of a network round trip
             // later; the victim's authoritative .healthUpdate reconciles it.
             // Never kill optimistically — isAlive, kills, and the feed wait
             // for the real .death, so a hit they didn't accept can't fake one.
             if let hp = players[victim]?.hp {
-                players[victim]?.hp = max(0, hp - settings.damage)
+                players[victim]?.hp = max(0, hp - myRole.damage)
             }
         }
+    }
+
+    /// Press-and-hold entry from the FIRE button. Every role fires once on
+    /// press; automatic roles (Light) keep firing at their own cadence until
+    /// release. fire()'s guards handle death, reload, cooldown, and match end,
+    /// so the timer can tick blindly in between.
+    func triggerDown() {
+        fire()
+        guard myRole.isAutomatic else { return }
+        autoFireTimer?.invalidate()
+        let timer = Timer(timeInterval: myRole.fireCooldown, repeats: true) { [weak self] _ in
+            self?.fire()
+        }
+        RunLoop.main.add(timer, forMode: .common)   // keeps firing during scroll tracking
+        autoFireTimer = timer
+    }
+
+    func triggerUp() {
+        autoFireTimer?.invalidate()
+        autoFireTimer = nil
     }
 
     /// Shooter-side hit confirmation — marker, tick, buzz. The kill variant
@@ -443,8 +476,8 @@ final class GameEngine: NSObject, ObservableObject {
 
     /// Manual reload (the button beside FIRE) and the auto-reload on empty.
     func startReload() {
-        guard phase == .playing, isAlive, !isReloading, ammo < settings.magazineSize else { return }
-        reloadRemaining = settings.reloadDuration
+        guard phase == .playing, isAlive, !isReloading, ammo < myRole.magazineSize else { return }
+        reloadRemaining = myRole.reloadDuration
         haptics.playReloadStart()
         reloadTimer?.invalidate()
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
@@ -463,7 +496,7 @@ final class GameEngine: NSObject, ObservableObject {
         reloadTimer?.invalidate()
         reloadTimer = nil
         reloadRemaining = 0
-        ammo = settings.magazineSize
+        ammo = myRole.magazineSize
         haptics.playReloadComplete()
     }
 
@@ -542,10 +575,10 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func respawn() {
         respawnRemaining = 0
-        players[myName]?.hp = settings.maxHP
+        players[myName]?.hp = myRole.maxHP
         players[myName]?.isAlive = true
         cancelReload()
-        ammo = settings.magazineSize
+        ammo = myRole.magazineSize
         // Overwrites rather than extends any leftover hit i-frames: whoever
         // killed us shouldn't get a shorter spawn window than anyone else.
         invulnerableUntil = Date().addingTimeInterval(settings.spawnProtection)
@@ -599,6 +632,7 @@ final class GameEngine: NSObject, ObservableObject {
         matchRemaining = 0
         aimTimer?.invalidate()
         aimTimer = nil
+        triggerUp()
         respawnTimer?.invalidate()
         respawnTimer = nil
         respawnRemaining = 0
@@ -618,8 +652,8 @@ final class GameEngine: NSObject, ObservableObject {
         lastFireTime = nil
         invulnerableUntil = nil
         damageFlash = false
-        for name in players.keys {
-            players[name]?.hp = settings.maxHP
+        for (name, player) in players {
+            players[name]?.hp = player.role.maxHP
             players[name]?.isAlive = true
         }
         phase = .lobby
@@ -654,7 +688,7 @@ final class GameEngine: NSObject, ObservableObject {
     // MARK: - Target dummy (solo practice)
 
     private func spawnDummy() {
-        players[TargetDummy.name] = Player(name: TargetDummy.name, hp: settings.maxHP)
+        players[TargetDummy.name] = Player(name: TargetDummy.name)   // a Regular, 100 HP
         dummyInvulnerableUntil = nil
         dummy.onReading = { [weak self] reading in
             self?.ranging.injectSyntheticReading(reading, for: TargetDummy.name)
@@ -679,7 +713,7 @@ final class GameEngine: NSObject, ObservableObject {
         let now = Date()
         if let until = dummyInvulnerableUntil, now < until { return }
         dummyInvulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
-        target.hp = max(0, target.hp - settings.damage)
+        target.hp = max(0, target.hp - myRole.damage)
         confirmHit()
         if target.hp <= 0 {
             target.isAlive = false
@@ -692,7 +726,7 @@ final class GameEngine: NSObject, ObservableObject {
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.respawnDelay) { [weak self] in
                 guard let self, self.phase == .playing,
                       var revived = self.players[TargetDummy.name] else { return }
-                revived.hp = self.settings.maxHP
+                revived.hp = revived.role.maxHP
                 revived.isAlive = true
                 self.dummyInvulnerableUntil = Date().addingTimeInterval(self.settings.spawnProtection)
                 self.players[TargetDummy.name] = revived
@@ -712,7 +746,8 @@ final class GameEngine: NSObject, ObservableObject {
         // its .spectatorHello landed, and every receiver would then recreate it
         // as a shootable target even after correctly removing it.
         guard !spectators.contains(state.name) else { return }
-        var player = players[state.name] ?? Player(name: state.name, hp: state.hp)
+        var player = players[state.name] ?? Player(name: state.name, role: state.role)
+        player.role = state.role
         player.hp = state.hp
         player.isAlive = state.isAlive
         player.kills = state.kills
@@ -734,6 +769,7 @@ final class GameEngine: NSObject, ObservableObject {
     private func stopTimers() {
         aimTimer?.invalidate()
         aimTimer = nil
+        triggerUp()
         respawnTimer?.invalidate()
         respawnTimer = nil
         respawnRemaining = 0
@@ -761,7 +797,7 @@ extension GameEngine: NetworkManagerDelegate {
         }
         // Roster rows are created when the peer declares itself via
         // .hello/.spectatorHello — a bare connection isn't membership.
-        manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName), to: [name])
+        manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName, role: myRole), to: [name])
     }
 
     func network(_ manager: NetworkManager, peerDidDisconnect name: String) {
@@ -796,7 +832,7 @@ extension GameEngine: NetworkManagerDelegate {
     func network(_ manager: NetworkManager, didReceive message: GameMessage, from peerName: String) {
         guard manager === network else { return }
         switch message {
-        case .hello(let name):
+        case .hello(let name, let role):
             // Host gates capacity here: spectators never count, reconnects
             // (already in players) always pass.
             if isHost, players[name] == nil,
@@ -805,9 +841,12 @@ extension GameEngine: NetworkManagerDelegate {
                 return
             }
             if players[name] == nil {
-                players[name] = Player(name: name, hp: settings.maxHP)
+                players[name] = Player(name: name, role: role)
             } else {
                 players[name]?.isConnected = true
+                // Mid-match their row (HP included) is authoritative from
+                // them — don't re-base it under a role that can't change now.
+                if phase != .playing { players[name]?.role = role }
             }
             if isHost {
                 broadcastRoster()
@@ -831,6 +870,13 @@ extension GameEngine: NetworkManagerDelegate {
                     manager.send(.discoveryToken(data), to: [peerName])
                 }
             }
+
+        case .roleSelect(let player, let role):
+            // Lobby-only by construction (the picker hides in play), but guard
+            // anyway: a mid-match swap would re-base a live HP total.
+            guard phase != .playing, player != myName else { return }
+            players[player]?.role = role
+            players[player]?.hp = role.maxHP
 
         case .discoveryToken(let data):
             if let reply = ranging.receiveToken(data, from: peerName) {
@@ -904,7 +950,7 @@ extension GameEngine: NetworkManagerDelegate {
 
         case .respawn(let player):
             guard player != myName else { return }
-            players[player]?.hp = settings.maxHP
+            players[player]?.hp = (players[player]?.role ?? .regular).maxHP
             players[player]?.isAlive = true
 
         case .endMatch(let finalStates):
@@ -916,7 +962,8 @@ extension GameEngine: NetworkManagerDelegate {
             // Host's tallies are authoritative for the summary; fall back to
             // our own row if the host somehow never saw us.
             var finals = finalStates.map { state -> Player in
-                var player = players[state.name] ?? Player(name: state.name, hp: state.hp)
+                var player = players[state.name] ?? Player(name: state.name, role: state.role)
+                player.role = state.role
                 player.hp = state.hp
                 player.isAlive = state.isAlive
                 player.kills = state.kills
@@ -975,8 +1022,10 @@ extension GameEngine: NetworkManagerDelegate {
         case .lobbyRoster(let playerNames, let spectatorNames):
             guard !isHost else { return }   // members mirror the host's list
             spectators = Set(spectatorNames).subtracting([myName])
+            // Role unknown until their .hello / .roleSelect lands; Regular
+            // is the placeholder.
             for name in playerNames where players[name] == nil && name != myName {
-                players[name] = Player(name: name, hp: settings.maxHP)
+                players[name] = Player(name: name)
             }
             if phase == .lobby {
                 // Host-authoritative membership: prune strangers pre-match.

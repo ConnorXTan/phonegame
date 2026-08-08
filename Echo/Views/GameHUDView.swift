@@ -8,6 +8,7 @@ struct GameHUDView: View {
     @State private var showDebug = false
     @State private var showScores = false
     @State private var clockPulse = false
+    @State private var fireTriggerHeld = false
 
     /// The fire cluster scales with Dynamic Type as a unit — button, ring, and
     /// labels together — so nothing outgrows the circle it sits in.
@@ -176,7 +177,7 @@ struct GameHUDView: View {
     }
 
     private var hpFraction: CGFloat {
-        CGFloat(engine.me?.hp ?? 0) / CGFloat(max(1, engine.settings.maxHP))
+        CGFloat(engine.me?.hp ?? 0) / CGFloat(max(1, engine.myRole.maxHP))
     }
 
     private var hpColor: Color { .echoHealth(hpFraction) }
@@ -304,37 +305,54 @@ struct GameHUDView: View {
         .padding(.bottom, Space.xl)
     }
 
+    /// Not a Button: FIRE is press-and-hold — automatic roles keep shooting
+    /// while it's held — so the control tracks the touch itself. A press
+    /// while dead or reloading is a no-op via engine.fire()'s own guards.
     private var fireButton: some View {
-        Button(action: engine.fire) {
-            ZStack {
-                Circle()
-                    .fill(fireFill)
-                    .shadow(color: Color.echoPrimary.opacity(engine.ammo > 0 && engine.isAlive
-                                                             ? Alpha.strong : 0), radius: 12)
-                    .padding(9)   // inset so the ammo ring reads against the camera, not the fill
+        ZStack {
+            Circle()
+                .fill(fireFill)
+                .shadow(color: Color.echoPrimary.opacity(engine.ammo > 0 && engine.isAlive
+                                                         ? Alpha.strong : 0), radius: 12)
+                .padding(9)   // inset so the ammo ring reads against the camera, not the fill
 
-                AmmoRing(ammo: engine.ammo,
-                         capacity: engine.magazineSize,
-                         reloadProgress: reloadProgress)
+            AmmoRing(ammo: engine.ammo,
+                     capacity: engine.magazineSize,
+                     reloadProgress: reloadProgress)
 
-                VStack(spacing: Space.xxs) {
-                    Text(engine.isReloading ? "RELOAD" : "FIRE")
-                        .font(.system(size: engine.isReloading ? reloadLabelSize : fireLabelSize,
-                                      weight: .black, design: .rounded))
-                    Text(engine.isReloading
-                         ? String(format: "%.1fs", max(0, engine.reloadRemaining))
-                         : "\(engine.ammo)/\(engine.magazineSize)")
-                        .font(.system(size: ammoCountSize, weight: .bold, design: .rounded).monospacedDigit())
-                        .opacity(Alpha.heavy)
-                }
-                .foregroundStyle(fireLabelColor)
+            VStack(spacing: Space.xxs) {
+                Text(engine.isReloading ? "RELOAD" : "FIRE")
+                    .font(.system(size: engine.isReloading ? reloadLabelSize : fireLabelSize,
+                                  weight: .black, design: .rounded))
+                Text(engine.isReloading
+                     ? String(format: "%.1fs", max(0, engine.reloadRemaining))
+                     : "\(engine.ammo)/\(engine.magazineSize)")
+                    .font(.system(size: ammoCountSize, weight: .bold, design: .rounded).monospacedDigit())
+                    .opacity(Alpha.heavy)
             }
+            .foregroundStyle(fireLabelColor)
         }
-        .buttonStyle(.plain)
         .frame(width: fireDiameter, height: fireDiameter)
-        .disabled(!engine.isAlive || engine.isReloading)
+        .contentShape(Circle())
+        .scaleEffect(fireTriggerHeld && engine.isAlive ? 0.94 : 1)
+        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: fireTriggerHeld)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard !fireTriggerHeld else { return }
+                    fireTriggerHeld = true
+                    engine.triggerDown()
+                }
+                .onEnded { _ in
+                    fireTriggerHeld = false
+                    engine.triggerUp()
+                }
+        )
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(engine.isReloading ? "Reloading" : "Fire")
         .accessibilityValue("\(engine.ammo) of \(engine.magazineSize) rounds")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { engine.fire() }
     }
 
     private var fireFill: Color {
@@ -352,8 +370,8 @@ struct GameHUDView: View {
 
     /// 0…1 while reloading, nil otherwise — drives the ring's refill sweep.
     private var reloadProgress: Double? {
-        guard engine.isReloading, engine.settings.reloadDuration > 0 else { return nil }
-        return 1 - (engine.reloadRemaining / engine.settings.reloadDuration)
+        guard engine.isReloading, engine.myRole.reloadDuration > 0 else { return nil }
+        return 1 - (engine.reloadRemaining / engine.myRole.reloadDuration)
     }
 
     private var reloadButton: some View {
