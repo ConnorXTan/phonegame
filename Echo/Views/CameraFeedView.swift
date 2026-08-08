@@ -9,7 +9,7 @@ struct CameraFeedView: View {
 
     var body: some View {
         ZStack {
-            Color.black
+            Color.echoBackground
             if camera.isRunning {
                 ARViewfinder(session: camera.session)
                     .transition(.opacity)
@@ -22,15 +22,16 @@ struct CameraFeedView: View {
     }
 
     private var unavailablePanel: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Space.md) {
             Image(systemName: "video.slash")
-                .font(.system(size: 34, weight: .thin))
-                .foregroundStyle(.white.opacity(0.5))
+                .font(.system(size: glyphSize, weight: .thin))
+                .foregroundStyle(Color.echoTextTertiary)
+                .accessibilityHidden(true)
             if let reason = camera.unavailableReason {
                 Text(reason)
                     .font(.footnote)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
                     .frame(maxWidth: 280)
             }
             if camera.isBlockedByPermission {
@@ -40,11 +41,13 @@ struct CameraFeedView: View {
                 }
                 .font(.footnote.bold())
                 .buttonStyle(.bordered)
-                .tint(.red)
+                .tint(Color.echoPrimary)
             }
         }
         .padding(.bottom, 120)   // clear of the radar and fire button
     }
+
+    @ScaledMetric(relativeTo: .largeTitle) private var glyphSize: CGFloat = 34
 }
 
 /// ARSCNView draws the camera background for a session it doesn't own; the

@@ -15,11 +15,11 @@ struct DebugRangingView: View {
                     Section("Radar") {
                         RadarView()
                             .frame(height: 180)
-                            .listRowBackground(Color.black)
+                            .listRowBackground(Color.echoBackground)
                     }
                     if engine.opponents.isEmpty {
                         Text("No peers connected")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.echoTextSecondary)
                     }
                     ForEach(engine.opponents) { player in
                         row(for: player)
@@ -38,16 +38,21 @@ struct DebugRangingView: View {
         let inCone = angle.map { $0 < engine.settings.aimConeRadians } ?? false
         let inRange = (reading?.distance).map { $0 < engine.settings.weaponRange } ?? false
 
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.sm) {
             HStack {
                 Circle()
-                    .fill(inCone && inRange ? Color.red : (reading != nil ? Color.green : Color.gray))
+                    .fill(inCone && inRange
+                          ? Color.echoPrimary
+                          : (reading != nil ? Color.echoSecondary : Color.echoInert))
                     .frame(width: 10, height: 10)
+                    .accessibilityLabel(inCone && inRange
+                                        ? "In your sights"
+                                        : (reading != nil ? "Ranging" : "No signal"))
                 Text(player.name.displayCallSign).font(.headline)
                 Spacer()
                 Text("\(engine.ranging.sampleRate(for: player.name)) Hz")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
             }
 
             if let reading {
@@ -55,23 +60,23 @@ struct DebugRangingView: View {
             } else {
                 Text("no readings yet — waiting for token exchange / UWB lock")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
             }
             calibrationRow(for: player)
                 .font(.caption.monospacedDigit())
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, Space.xs)
     }
 
     private func grid(reading: RangingReading, angle: Float?, inCone: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             row("reading age", String(format: "%.2f s", Date().timeIntervalSince(reading.timestamp)))
             row("distance", reading.distance.map { String(format: "%.2f m", $0) } ?? "—")
             row("direction", reading.direction.map {
                 String(format: "(%.2f, %.2f, %.2f)", $0.x, $0.y, $0.z)
             } ?? "nil — not in your sights")
             row("angle off boresight", angle.map { String(format: "%.1f°", $0 * 180 / .pi) } ?? "—")
-            row("in cone", angle == nil ? "—" : (inCone ? "YES 🎯" : "no"))
+            row("in cone", angle == nil ? "—" : (inCone ? "yes" : "no"))
             row("horizontal angle", reading.horizontalAngle.map {
                 String(format: "%.1f°", $0 * 180 / .pi)
             } ?? "—")
@@ -85,7 +90,7 @@ struct DebugRangingView: View {
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).foregroundStyle(.secondary)
+            Text(label).foregroundStyle(Color.echoTextSecondary)
             Spacer()
             Text(value)
         }

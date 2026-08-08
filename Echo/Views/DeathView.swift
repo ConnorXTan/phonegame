@@ -3,37 +3,42 @@ import SwiftUI
 struct DeathView: View {
     @EnvironmentObject private var engine: GameEngine
 
+    @ScaledMetric(relativeTo: .largeTitle) private var glyphSize: CGFloat = 52
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 40
+    @ScaledMetric(relativeTo: .largeTitle) private var countdownSize: CGFloat = 72
+
     var body: some View {
         ZStack {
-            Color(red: 0.25, green: 0, blue: 0)
-                .opacity(0.94)
+            Color.echoBackground
+                .opacity(Alpha.opaque)
                 .ignoresSafeArea()
 
-            VStack(spacing: 18) {
+            VStack(spacing: Space.lg) {
                 Image(systemName: "xmark.shield.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(.red)
+                    .font(.system(size: glyphSize))
+                    .foregroundStyle(Color.echoDanger)
 
                 Text("ELIMINATED")
-                    .font(.system(size: 40, weight: .black, design: .rounded))
+                    .font(.system(size: titleSize, weight: .black, design: .rounded))
                     .tracking(2)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.echoDanger)
 
                 if let killer = engine.lastKilledBy {
                     Text("tagged by \(killer.displayCallSign)")
                         .font(.headline)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(Color.echoTextSecondary)
                 }
 
                 Text(String(format: "%.1f", max(0, engine.respawnRemaining)))
-                    .font(.system(size: 72, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .font(.system(size: countdownSize, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.echoText)
                     .contentTransition(.numericText())
 
                 Text("respawning…")
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(Color.echoTextTertiary)
             }
+            .accessibilityElement(children: .combine)
         }
         .transition(.opacity)
     }

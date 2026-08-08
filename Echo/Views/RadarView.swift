@@ -39,15 +39,16 @@ struct RadarView: View {
                 for (i, item) in blindList.enumerated() {
                     let text = Text("\(item.0) · \(String(format: "%.1f m", item.1))")
                         .font(.caption2)
-                        .foregroundStyle(Color.white.opacity(0.4))
+                        .foregroundStyle(Color.echoTextTertiary)
                     ctx.draw(text, at: CGPoint(x: 8, y: 10 + CGFloat(i) * 14), anchor: .leading)
                 }
 
-                // Self marker
+                // Self marker — neutral, so the colored blips read as the signal.
                 ctx.fill(Path(ellipseIn: CGRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)),
-                         with: .color(.cyan))
+                         with: .color(.echoText))
             }
         }
+        .accessibilityHidden(true)   // diagnostic geometry; DebugRangingView lists the same data as text
     }
 
     /// Signed radians off boresight in the horizontal plane; positive = right.
@@ -61,12 +62,13 @@ struct RadarView: View {
         for fraction: CGFloat in [0.33, 0.66, 1.0] {
             let r = radius * fraction
             let rect = CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2)
-            ctx.stroke(Path(ellipseIn: rect), with: .color(.green.opacity(0.25)), lineWidth: 1)
+            ctx.stroke(Path(ellipseIn: rect),
+                       with: .color(.echoSecondary.opacity(Alpha.subtle)), lineWidth: 1)
         }
         var vertical = Path()
         vertical.move(to: center)
         vertical.addLine(to: CGPoint(x: center.x, y: center.y - radius))
-        ctx.stroke(vertical, with: .color(.green.opacity(0.35)), lineWidth: 1)
+        ctx.stroke(vertical, with: .color(.echoSecondary.opacity(Alpha.muted)), lineWidth: 1)
     }
 
     private func drawCone(ctx: GraphicsContext, center: CGPoint, radius: CGFloat) {
@@ -78,7 +80,7 @@ struct RadarView: View {
                     endAngle: .degrees(-90 + Double(cone)),
                     clockwise: false)
         path.closeSubpath()
-        ctx.fill(path, with: .color(.red.opacity(0.10)))
+        ctx.fill(path, with: .color(.echoPrimary.opacity(Alpha.surface)))
     }
 
     private func drawBlip(ctx: GraphicsContext, center: CGPoint, radius: CGFloat,
@@ -87,7 +89,7 @@ struct RadarView: View {
         let r = min(distance / maxRange, 1.0) * radius
         let point = CGPoint(x: center.x + sin(angle) * r,
                             y: center.y - cos(angle) * r)
-        let color: Color = locked ? .red : .orange
+        let color: Color = locked ? .echoPrimary : .echoAccent
         ctx.fill(Path(ellipseIn: CGRect(x: point.x - 6, y: point.y - 6, width: 12, height: 12)),
                  with: .color(color))
         let label = Text("\(name) \(String(format: "%.1f", distance))m")

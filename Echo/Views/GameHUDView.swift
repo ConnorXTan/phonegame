@@ -9,6 +9,11 @@ struct GameHUDView: View {
     @State private var showScores = false
     @State private var clockPulse = false
 
+    /// The fire control scales with Dynamic Type as a unit — button and label
+    /// together — so the label never outgrows the circle.
+    @ScaledMetric(relativeTo: .largeTitle) private var fireDiameter: CGFloat = 112
+    @ScaledMetric(relativeTo: .title2) private var fireLabelSize: CGFloat = 24
+
     var body: some View {
         ZStack {
             // What the back of the phone sees — the same ARSession UWB camera
@@ -18,14 +23,15 @@ struct GameHUDView: View {
 
             if engine.isAlive { aimOverlay }
 
-            VStack(spacing: 6) {
+            VStack(spacing: Space.sm) {
                 topBar
                 if let alert = engine.rangingAlert {
                     Label(alert, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2)
-                        .foregroundStyle(.yellow)
-                        .padding(8)
-                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(Color.echoWarning)
+                        .padding(Space.sm)
+                        .background(Color.echoBackground.opacity(Alpha.strong),
+                                    in: RoundedRectangle(cornerRadius: Radius.sm))
                         .padding(.horizontal)
                 }
                 killFeedView
@@ -52,11 +58,11 @@ struct GameHUDView: View {
     /// middle of the frame stays untouched.
     private var scrim: some View {
         VStack(spacing: 0) {
-            LinearGradient(colors: [.black.opacity(0.6), .clear],
+            LinearGradient(colors: [Color.echoBackground.opacity(Alpha.strong), .clear],
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 130)
             Spacer()
-            LinearGradient(colors: [.clear, .black.opacity(0.55)],
+            LinearGradient(colors: [.clear, Color.echoBackground.opacity(Alpha.strong)],
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 180)
         }
@@ -67,34 +73,39 @@ struct GameHUDView: View {
     // MARK: - Status strip
 
     private var topBar: some View {
-        VStack(spacing: 5) {
-            HStack(spacing: 14) {
+        VStack(spacing: Space.xs) {
+            HStack(spacing: Space.md) {
                 Text(engine.myName.displayCallSign.uppercased())
                     .font(.caption.bold())
                 Text("\(engine.me?.hp ?? 0)")
                     .font(.caption.monospacedDigit().bold())
                     .foregroundStyle(hpColor)
+                    .accessibilityLabel("\(engine.me?.hp ?? 0) hit points")
                 Spacer()
                 matchClock
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
                     .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(Color.echoTextSecondary)
+                    .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
                 Button { showScores = true } label: {
                     Image(systemName: "list.number")
                 }
+                .accessibilityLabel("Scoreboard")
                 Button { showDebug = true } label: {
                     Image(systemName: "waveform.badge.magnifyingglass")
                 }
+                .accessibilityLabel("Ranging diagnostics")
                 Button { engine.leave() } label: {
                     Image(systemName: "xmark.circle")
                 }
+                .accessibilityLabel("Leave match")
             }
             .font(.footnote)
-            .foregroundStyle(.white)
+            .foregroundStyle(Color.echoText)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(.black.opacity(0.45))
+                    Capsule().fill(Color.echoBackground.opacity(Alpha.muted))
                     Capsule()
                         .fill(hpColor)
                         .frame(width: geo.size.width * max(0, hpFraction))
@@ -102,10 +113,11 @@ struct GameHUDView: View {
                 .animation(.easeOut(duration: 0.2), value: hpFraction)
             }
             .frame(height: 5)
+            .accessibilityHidden(true)   // the numeric HP readout above covers this
         }
-        .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
+        .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
         .padding(.horizontal)
-        .padding(.top, 6)
+        .padding(.top, Space.sm)
     }
 
     private var hpFraction: CGFloat {
@@ -113,7 +125,7 @@ struct GameHUDView: View {
     }
 
     private var hpColor: Color {
-        hpFraction > 0.5 ? .green : hpFraction > 0.25 ? .orange : .red
+        hpFraction > 0.5 ? .echoSecondary : hpFraction > 0.25 ? .echoAccent : .echoDanger
     }
 
     /// Turns red and pulses over the last 30 seconds.
@@ -122,20 +134,25 @@ struct GameHUDView: View {
         let urgent = remaining <= 30
         return Label(remaining.clockString, systemImage: "timer")
             .font(.caption.bold().monospacedDigit())
-            .foregroundStyle(urgent ? Color.red : Color.white)
-            .opacity(urgent && clockPulse ? 0.35 : 1)
+            .foregroundStyle(urgent ? Color.echoDanger : Color.echoText)
+            .opacity(urgent && clockPulse ? Alpha.muted : 1)
             .animation(urgent ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default,
                        value: clockPulse)
             .onChange(of: urgent) { _, isUrgent in clockPulse = isUrgent }
     }
 
     private var killFeedView: some View {
-        VStack(alignment: .trailing, spacing: 2) {
+        VStack(alignment: .trailing, spacing: Space.xxs) {
             ForEach(engine.killFeed.prefix(3)) { event in
-                Text("\(event.killer.displayCallSign)  ⚡︎  \(event.victim.displayCallSign)")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .shadow(color: .black.opacity(0.7), radius: 2)
+                (
+                    Text(event.killer.displayCallSign)
+                    + Text("  \(Image(systemName: "bolt.fill"))  ")
+                    + Text(event.victim.displayCallSign)
+                )
+                .font(.caption2)
+                .foregroundStyle(Color.echoTextSecondary)
+                .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2)
+                .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -159,11 +176,11 @@ struct GameHUDView: View {
             let locked = engine.aimedTarget != nil
             Text(lockLabel)
                 .font(.footnote.weight(locked ? .bold : .regular))
-                .foregroundStyle(locked ? Color.red : Color.white.opacity(0.85))
+                .foregroundStyle(locked ? Color.echoPrimary : Color.echoTextSecondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.black.opacity(0.45), in: Capsule())
+                .padding(.horizontal, Space.md)
+                .padding(.vertical, Space.sm)
+                .background(Color.echoBackground.opacity(Alpha.muted), in: Capsule())
         }
     }
 
@@ -186,23 +203,28 @@ struct GameHUDView: View {
                 let progress = cooldownProgress(at: context.date)
                 ZStack {
                     Circle()
-                        .fill(engine.isAlive ? Color.red.opacity(0.9) : Color.gray.opacity(0.7))
-                        .shadow(color: .red.opacity(progress >= 1 ? 0.6 : 0), radius: 12)
+                        .fill(engine.isAlive
+                              ? Color.echoPrimary
+                              : Color.echoInert.opacity(Alpha.strong))
+                        .shadow(color: Color.echoPrimary.opacity(progress >= 1 ? Alpha.strong : 0),
+                                radius: 12)
                     Circle()
                         .trim(from: 0, to: progress)
-                        .stroke(.white.opacity(0.9), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                        .stroke(Color.echoText.opacity(Alpha.heavy),
+                                style: StrokeStyle(lineWidth: 5, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                        .padding(4)
+                        .padding(Space.xs)
                     Text("FIRE")
-                        .font(.system(size: 24, weight: .black, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: fireLabelSize, weight: .black, design: .rounded))
+                        .foregroundStyle(Color.echoText)
                 }
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 112, height: 112)
+        .frame(width: fireDiameter, height: fireDiameter)
         .disabled(!engine.isAlive)
-        .padding(.bottom, 28)
+        .padding(.bottom, Space.xl)
+        .accessibilityLabel("Fire")
     }
 
     private func cooldownProgress(at date: Date) -> CGFloat {
@@ -213,8 +235,8 @@ struct GameHUDView: View {
     // MARK: - Damage flash
 
     private var damageOverlay: some View {
-        Color.red
-            .opacity(engine.damageFlash ? 0.5 : 0)
+        Color.echoDanger
+            .opacity(engine.damageFlash ? Alpha.muted : 0)
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .animation(.easeOut(duration: 0.25), value: engine.damageFlash)
@@ -226,13 +248,13 @@ struct GameHUDView: View {
 private struct ScopeReticle: View {
     let locked: Bool
 
-    private var color: Color { locked ? .red : .white.opacity(0.8) }
+    private var color: Color { locked ? .echoPrimary : Color.echoText.opacity(Alpha.heavy) }
     private var ringSize: CGFloat { locked ? 74 : 96 }
 
     var body: some View {
         ZStack {
             Circle()
-                .stroke(color.opacity(0.8), lineWidth: locked ? 2 : 1)
+                .stroke(color.opacity(Alpha.heavy), lineWidth: locked ? 2 : 1)
                 .frame(width: ringSize, height: ringSize)
 
             // Ticks at 12/3/6/9, pointing in at the dot.
@@ -246,15 +268,15 @@ private struct ScopeReticle: View {
 
             // The laser dot itself.
             Circle()
-                .fill(Color.red)
+                .fill(Color.echoPrimary)
                 .frame(width: 8, height: 8)
-                .shadow(color: .red.opacity(0.9), radius: locked ? 10 : 5)
+                .shadow(color: Color.echoPrimary.opacity(Alpha.heavy), radius: locked ? 10 : 5)
             Circle()
-                .stroke(.white.opacity(0.9), lineWidth: 1)
+                .stroke(Color.echoText.opacity(Alpha.heavy), lineWidth: 1)
                 .frame(width: 15, height: 15)
         }
         .compositingGroup()
-        .shadow(color: .black.opacity(0.5), radius: 2)
+        .shadow(color: Color.echoBackground.opacity(Alpha.muted), radius: 2)
         .scaleEffect(locked ? 1.08 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.6), value: locked)
     }

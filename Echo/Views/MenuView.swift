@@ -3,32 +3,37 @@ import SwiftUI
 struct MenuView: View {
     @EnvironmentObject private var engine: GameEngine
 
+    @ScaledMetric(relativeTo: .largeTitle) private var markSize: CGFloat = 44
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 44
+
     private var nameEmpty: Bool {
         engine.playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: Space.xl) {
             Spacer()
 
-            VStack(spacing: 8) {
+            VStack(spacing: Space.sm) {
                 Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.red)
+                    .font(.system(size: markSize))
+                    .foregroundStyle(Color.echoPrimary)
+                    .accessibilityHidden(true)
                 Text("ECHO")
-                    .font(.system(size: 44, weight: .black, design: .rounded))
+                    .font(.system(size: titleSize, weight: .black, design: .rounded))
                     .tracking(4)
                 Text("UWB laser tag · aim like a camera")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
             }
 
             if let warning = engine.uwbWarning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
-                    .foregroundStyle(.yellow)
-                    .padding(12)
-                    .background(.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal, 24)
+                    .foregroundStyle(Color.echoWarning)
+                    .padding(Space.md)
+                    .background(Color.echoWarning.opacity(Alpha.surface),
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .padding(.horizontal, Space.xl)
             }
 
             TextField("Your call sign", text: $engine.playerName)
@@ -38,7 +43,7 @@ struct MenuView: View {
                 .textInputAutocapitalization(.never)
                 .frame(maxWidth: 260)
 
-            VStack(spacing: 12) {
+            VStack(spacing: Space.md) {
                 Button {
                     engine.enterLobby(hosting: true)
                 } label: {
@@ -47,7 +52,7 @@ struct MenuView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(.red)
+                .tint(Color.echoPrimary)
 
                 Button {
                     engine.enterLobby(hosting: false)
@@ -62,7 +67,7 @@ struct MenuView: View {
 
             Text("Pick a short call sign — it's how other players see you.")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.echoTextSecondary)
 
             Spacer()
             Spacer()

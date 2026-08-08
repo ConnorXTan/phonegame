@@ -37,17 +37,20 @@ where the glyph is a diagram element, not prose.
 
 Echo's palette is a dark tactical HUD read over a live camera feed. Keep it that way.
 
-Define every color once, in `Assets.xcassets` as a Color Set (with a dark variant) or in a single
-`Color+Echo.swift`. Views reference names, never values.
+**`Echo/Design/Theme.swift` is the single source of truth.** Views reference names, never values.
 
-| Token | Role | Notes |
-|---|---|---|
-| `.echoBackground` | Base surface behind non-camera screens | Near-black, not `#000` |
-| `.echoSurface` | Cards, sheets, chips | One step up from background |
-| `.echoText` / `.echoTextSecondary` | Primary / supporting copy | Secondary is a *dimmer primary*, not gray |
-| `.echoAccent` | Interactive, locked-on, primary action | The one color that means "act" |
-| `.echoDanger` | Damage, death, enemy | Currently red — keep it exclusive to harm |
-| `.echoSuccess` | Lock acquired, hit confirmed, ready | Currently green |
+| Token | Role |
+|---|---|
+| `.echoText` | Primary copy |
+| `.echoBackground` | The surface everything sits on |
+| `.echoPrimary` | Interactive and aimed-at: buttons, fire control, acquired lock |
+| `.echoSecondary` | Alive, connected, scored |
+| `.echoAccent` | Standout non-critical state: placement, urgency, host controls |
+| `.echoTextSecondary` / `.echoTextTertiary` | Supporting copy — a *dimmer primary*, never gray |
+| `.echoSurface` / `.echoHairline` | Card fills and dividers, as tints of the text color |
+| `.echoDanger` | Damage, death, enemy — deliberately its own token, not an alias |
+| `.echoWarning` | Recoverable problems |
+| `.echoInert` | Disconnected, disabled, out of play |
 
 Rules:
 
@@ -64,17 +67,20 @@ Rules:
 
 ## Spacing, and hierarchy through space
 
-**Use a fixed scale.** Every gap, pad, and inset comes from:
+**Use a fixed scale.** Every gap, pad, and inset comes from `Space` in `Theme.swift`:
 
 ```
-2, 4, 8, 12, 16, 24, 32, 48, 64
+xxs 2   xs 4   sm 8   md 12   lg 16   xl 24   xxl 32
 ```
 
-The scale is deliberately non-linear — adjacent steps must be *visibly* different. Right now the
-views use 17 distinct spacing values (2, 3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 28…);
-the difference between 10 and 12 is invisible, so those aren't decisions, they're noise. Round to
-the nearest scale step. Same for opacity — pick from `0.05, 0.1, 0.2, 0.4, 0.6, 0.8` rather than
-inventing 0.07, 0.12, 0.14, 0.45, 0.55, 0.94.
+The scale is deliberately non-linear — adjacent steps must be *visibly* different. The difference
+between 10 and 12 is invisible, so it isn't a decision, it's noise. Round to the nearest step.
+Same for opacity: use the `Alpha` ladder (`hairline .05`, `surface .1`, `subtle .2`, `muted .4`,
+`strong .6`, `heavy .8`, `opaque .95`) rather than inventing values.
+
+Raw numbers are still correct for **geometry** — a reticle ring diameter, a radar tick length, a
+fixed clearance — because those are diagram dimensions, not rhythm. Comment them so the intent is
+obvious.
 
 **Start with too much space, then tighten.** The default failure is cramped, not airy. When a
 layout feels wrong and you can't say why, the answer is usually more whitespace.
@@ -127,14 +133,25 @@ scale the counter up until it fights the reticle.
 - Tap targets ≥ 44×44pt. A one-handed player in motion has poor aim.
 - Honor `.accessibilityReduceMotion` for screen shake, kill-feed slides, and celebration effects.
 
-## Known debt
+## Checking your work
 
-Existing violations, for when you're already in the file — fix opportunistically, don't sweep:
+Before finishing a UI change, these should all come back empty:
 
-- `MatchSummaryView.swift:60-61` — 🏆 emoji ×2
-- `DebugRangingView.swift:74` — 🎯 emoji
-- `GameHUDView.swift:135` — ⚡︎ in the kill feed
-- No color tokens anywhere; raw `Color.red` / `.white` / `.gray` throughout, plus a literal
-  `Color(red: 0.25, green: 0, blue: 0)`
-- 9 hard-coded `.system(size:)` text sizes (24 → 72) that ignore Dynamic Type
-- Unsystematized spacing and opacity ladders (see above)
+```sh
+# emoji anywhere in the interface
+grep -rnP '[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{FE0E}\x{FE0F}]' Echo/Views/*.swift
+# hard-coded type sizes (use @ScaledMetric)
+grep -rn "system(size: [0-9]" Echo/Views/*.swift
+# raw colors that bypass the token layer
+grep -rnE "Color\.(red|green|blue|gray|yellow|orange|cyan)|Color\(red:" Echo/Views/*.swift
+# off-scale opacity
+grep -rnE "\.opacity\(0\.[0-9]" Echo/Views/*.swift
+```
+
+There is no simulator runtime installed that matches the iOS 26.5 SDK, so `xcodebuild` cannot
+resolve a destination. To verify compilation:
+
+```sh
+xcrun swiftc -typecheck -sdk "$(xcrun --sdk iphonesimulator26.5 --show-sdk-path)" \
+  -target arm64-apple-ios17.0-simulator $(find Echo -name "*.swift")
+```

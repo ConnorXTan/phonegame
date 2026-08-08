@@ -15,19 +15,22 @@ struct ScoreboardView: View {
         NavigationStack {
             List {
                 ForEach(Array(ranked.enumerated()), id: \.element.id) { index, player in
-                    HStack(spacing: 12) {
+                    HStack(spacing: Space.md) {
                         Text("\(index + 1)")
                             .font(.headline.monospacedDigit())
-                            .foregroundStyle(index == 0 ? .yellow : .secondary)
+                            .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
                             .frame(width: 24)
 
                         Circle()
-                            .fill(player.isConnected ? (player.isAlive ? Color.green : Color.red) : Color.gray)
+                            .fill(statusColor(for: player))
                             .frame(width: 10, height: 10)
+                            .accessibilityLabel(statusLabel(for: player))
 
                         Text(player.name.displayCallSign)
                             .font(player.name == engine.myName ? .headline.bold() : .headline)
-                            .foregroundStyle(player.isConnected ? .primary : .secondary)
+                            .foregroundStyle(player.isConnected
+                                             ? Color.echoText
+                                             : Color.echoTextSecondary)
 
                         Spacer()
 
@@ -35,16 +38,27 @@ struct ScoreboardView: View {
                             .font(.subheadline.monospacedDigit())
                         Text("\(player.deaths) D")
                             .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.echoTextSecondary)
                         Text("\(player.hp) HP")
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.echoTextSecondary)
                             .frame(width: 52, alignment: .trailing)
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
             .navigationTitle("Scoreboard")
             .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    private func statusColor(for player: Player) -> Color {
+        guard player.isConnected else { return .echoInert }
+        return player.isAlive ? .echoSecondary : .echoDanger
+    }
+
+    private func statusLabel(for player: Player) -> String {
+        guard player.isConnected else { return "Disconnected" }
+        return player.isAlive ? "Alive" : "Down"
     }
 }

@@ -3,24 +3,26 @@ import SwiftUI
 struct LobbyView: View {
     @EnvironmentObject private var engine: GameEngine
 
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 32
+
     private var roster: [Player] {
         engine.players.values.sorted { $0.name < $1.name }
     }
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: Space.xl) {
             HStack {
                 Button("Leave", role: .destructive) { engine.leave() }
                 Spacer()
                 Label(engine.isHost ? "Hosting" : "Joined",
                       systemImage: "antenna.radiowaves.left.and.right")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
             }
             .padding(.horizontal)
 
             Text("LOBBY")
-                .font(.system(size: 32, weight: .black, design: .rounded))
+                .font(.system(size: titleSize, weight: .black, design: .rounded))
                 .tracking(3)
 
             List {
@@ -28,26 +30,28 @@ struct LobbyView: View {
                     ForEach(roster) { player in
                         HStack {
                             Image(systemName: "iphone.gen3")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Color.echoSecondary)
+                                .accessibilityHidden(true)
                             Text(player.name.displayCallSign)
                             if player.name == engine.myName {
                                 Text("you")
                                     .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(.blue.opacity(0.3), in: Capsule())
+                                    .padding(.horizontal, Space.sm)
+                                    .padding(.vertical, Space.xxs)
+                                    .background(Color.echoSurface, in: Capsule())
                             }
                             Spacer()
                             Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Color.echoSecondary)
+                                .accessibilityLabel("Connected")
                         }
                     }
                     if roster.count < 2 {
                         HStack {
                             ProgressView()
                             Text("Searching for nearby players…")
-                                .foregroundStyle(.secondary)
-                                .padding(.leading, 8)
+                                .foregroundStyle(Color.echoTextSecondary)
+                                .padding(.leading, Space.sm)
                         }
                     }
                 }
@@ -55,7 +59,7 @@ struct LobbyView: View {
             .scrollContentBackground(.hidden)
 
             if engine.isHost {
-                VStack(spacing: 14) {
+                VStack(spacing: Space.md) {
                     Picker("Mode", selection: Binding(
                         get: { engine.settings.mode },
                         set: { mode in
@@ -70,11 +74,11 @@ struct LobbyView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    VStack(spacing: 6) {
+                    VStack(spacing: Space.sm) {
                         HStack {
                             Label("Match length", systemImage: "timer")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color.echoTextSecondary)
                             Spacer()
                             Text(engine.settings.matchDuration.durationLabel)
                                 .font(.caption.bold().monospacedDigit())
@@ -90,14 +94,14 @@ struct LobbyView: View {
                         .pickerStyle(.segmented)
                     }
 
-                    HStack(spacing: 20) {
+                    HStack(spacing: Space.xl) {
                         statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
                         statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
                         statChip("bolt.fill", "\(engine.settings.damage) dmg")
                         statChip("heart.fill", "\(engine.settings.maxHP) hp")
                     }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
 
                     Button {
                         engine.startGame()
@@ -107,19 +111,19 @@ struct LobbyView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .tint(.red)
+                    .tint(Color.echoPrimary)
                 }
                 .padding(.horizontal)
             } else {
-                VStack(spacing: 8) {
+                VStack(spacing: Space.sm) {
                     ProgressView()
                     Text("Waiting for the host to start…")
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.echoTextSecondary)
                     Text("The host sets the mode and match length.")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Color.echoTextTertiary)
                 }
-                .padding(.bottom, 12)
+                .padding(.bottom, Space.md)
             }
         }
         .padding(.vertical)

@@ -5,15 +5,18 @@ import SwiftUI
 struct MatchSummaryView: View {
     @EnvironmentObject private var engine: GameEngine
 
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 40
+    @ScaledMetric(relativeTo: .title) private var statSize: CGFloat = 34
+
     private var result: MatchResult? { engine.matchResult }
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.echoBackground.ignoresSafeArea()
 
             if let result {
                 ScrollView {
-                    VStack(spacing: 22) {
+                    VStack(spacing: Space.xl) {
                         header(result)
                         if let me = result.me {
                             personalCard(me, placement: result.myPlacement)
@@ -21,8 +24,8 @@ struct MatchSummaryView: View {
                         standings(result)
                     }
                     .padding(.horizontal)
-                    .padding(.top, 28)
-                    .padding(.bottom, 12)
+                    .padding(.top, Space.xl)
+                    .padding(.bottom, Space.md)
                 }
                 .scrollBounceBehavior(.basedOnSize)
 
@@ -38,80 +41,87 @@ struct MatchSummaryView: View {
     // MARK: - Header
 
     private func header(_ result: MatchResult) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Space.sm) {
             Text("TIME")
-                .font(.system(size: 40, weight: .black, design: .rounded))
+                .font(.system(size: titleSize, weight: .black, design: .rounded))
                 .tracking(6)
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.echoText)
 
-            Text(headline(result))
+            headline(result)
                 .font(.title3.bold())
                 .multilineTextAlignment(.center)
                 .foregroundStyle(tint(result))
 
             Label(result.duration.durationLabel + " match", systemImage: "timer")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.echoTextSecondary)
         }
     }
 
-    private func headline(_ result: MatchResult) -> String {
-        if result.isDraw { return "DRAW — no clear winner" }
-        if result.didIWin { return "🏆  YOU WIN" }
-        return "🏆  \(result.winner?.name.displayCallSign.uppercased() ?? "—") WINS"
+    @ViewBuilder
+    private func headline(_ result: MatchResult) -> some View {
+        if result.isDraw {
+            Text("DRAW — no clear winner")
+        } else if result.didIWin {
+            Label("YOU WIN", systemImage: "trophy.fill")
+        } else {
+            Label("\(result.winner?.name.displayCallSign.uppercased() ?? "—") WINS",
+                  systemImage: "trophy.fill")
+        }
     }
 
     private func tint(_ result: MatchResult) -> Color {
-        if result.isDraw { return .orange }
-        return result.didIWin ? .green : .red
+        if result.isDraw { return .echoAccent }
+        return result.didIWin ? .echoSecondary : .echoDanger
     }
 
     // MARK: - Your line
 
     private func personalCard(_ me: Player, placement: Int?) -> some View {
-        VStack(spacing: 14) {
+        VStack(spacing: Space.md) {
             HStack {
                 Text("YOUR MATCH")
                     .font(.caption.bold())
                     .tracking(1.5)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
                 Spacer()
                 if let placement {
                     Text(placementLabel(placement))
                         .font(.caption.bold())
-                        .foregroundStyle(placement == 1 ? .yellow : .secondary)
+                        .foregroundStyle(placement == 1 ? Color.echoAccent : Color.echoTextSecondary)
                 }
             }
 
             HStack(spacing: 0) {
-                stat("KILLS", "\(me.kills)", .green)
+                stat("KILLS", "\(me.kills)", .echoSecondary)
                 divider
-                stat("DEATHS", "\(me.deaths)", .red)
+                stat("DEATHS", "\(me.deaths)", .echoDanger)
                 divider
-                stat("K/D", me.kdString, .white)
+                stat("K/D", me.kdString, .echoText)
             }
         }
-        .padding(18)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 16))
+        .padding(Space.lg)
+        .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
     }
 
     private var divider: some View {
         Rectangle()
-            .fill(.white.opacity(0.12))
+            .fill(Color.echoHairline)
             .frame(width: 1, height: 42)
     }
 
     private func stat(_ label: String, _ value: String, _ color: Color) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Space.xs) {
             Text(value)
-                .font(.system(size: 34, weight: .black, design: .rounded).monospacedDigit())
+                .font(.system(size: statSize, weight: .black, design: .rounded).monospacedDigit())
                 .foregroundStyle(color)
             Text(label)
                 .font(.caption2.bold())
                 .tracking(1)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.echoTextSecondary)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
     private func placementLabel(_ place: Int) -> String {
@@ -131,64 +141,71 @@ struct MatchSummaryView: View {
                 Text("FINAL STANDINGS")
                     .font(.caption.bold())
                     .tracking(1.5)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.echoTextSecondary)
                 Spacer()
                 Text("K / D / RATIO")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Color.echoTextTertiary)
             }
-            .padding(.bottom, 10)
+            .padding(.bottom, Space.md)
 
             ForEach(Array(result.standings.enumerated()), id: \.element.id) { index, player in
                 let isMe = player.name == result.myName
-                HStack(spacing: 12) {
+                HStack(spacing: Space.md) {
                     Text("\(index + 1)")
                         .font(.subheadline.bold().monospacedDigit())
-                        .foregroundStyle(index == 0 ? .yellow : .secondary)
+                        .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
                         .frame(width: 20, alignment: .leading)
 
                     Text(player.name.displayCallSign)
                         .font(isMe ? .body.bold() : .body)
-                        .foregroundStyle(isMe ? .white : .white.opacity(0.75))
+                        .foregroundStyle(isMe ? Color.echoText : Color.echoTextSecondary)
                         .lineLimit(1)
 
+                    // "You" is emphasis, not a new meaning — weight and a
+                    // surface tint carry it rather than another hue.
                     if isMe {
                         Text("you")
                             .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.blue.opacity(0.35), in: Capsule())
+                            .padding(.horizontal, Space.sm)
+                            .padding(.vertical, Space.xxs)
+                            .background(Color.echoSurface, in: Capsule())
                     }
 
-                    Spacer(minLength: 8)
+                    Spacer(minLength: Space.sm)
 
                     Text("\(player.kills)")
                         .font(.subheadline.bold().monospacedDigit())
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Color.echoSecondary)
                         .frame(width: 28, alignment: .trailing)
                     Text("\(player.deaths)")
                         .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(.red.opacity(0.85))
+                        .foregroundStyle(Color.echoDanger.opacity(Alpha.heavy))
                         .frame(width: 28, alignment: .trailing)
                     Text(player.kdString)
                         .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.echoTextSecondary)
                         .frame(width: 44, alignment: .trailing)
                 }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
-                .background(isMe ? .blue.opacity(0.14) : .clear,
-                            in: RoundedRectangle(cornerRadius: 10))
+                .padding(.vertical, Space.md)
+                .padding(.horizontal, Space.md)
+                .background(isMe ? Color.echoSurface : .clear,
+                            in: RoundedRectangle(cornerRadius: Radius.md))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(index + 1). \(player.name.displayCallSign)\(isMe ? ", you" : ""), "
+                    + "\(player.kills) kills, \(player.deaths) deaths"
+                )
             }
         }
-        .padding(16)
-        .background(.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+        .padding(Space.lg)
+        .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
     }
 
     // MARK: - Actions
 
     private var actions: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: Space.md) {
             Button {
                 engine.returnToLobby()
             } label: {
@@ -197,15 +214,16 @@ struct MatchSummaryView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .tint(.red)
+            .tint(Color.echoPrimary)
 
             Button("Leave Game", role: .destructive) { engine.leave() }
                 .font(.footnote)
         }
         .padding(.horizontal)
-        .padding(.bottom, 16)
+        .padding(.bottom, Space.lg)
         .background(
-            LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color.echoBackground.opacity(0), Color.echoBackground],
+                           startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         )
     }
