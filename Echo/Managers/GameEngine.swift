@@ -24,6 +24,11 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var lastFireTime: Date?
     @Published private(set) var respawnRemaining: TimeInterval = 0
     @Published private(set) var lastKilledBy: String?
+    /// Wall-clock end of our damage immunity. Enforced victim-side because each
+    /// phone is authoritative for its own HP — shooters resolve independently
+    /// and can't see each other, so this is the only place a crossfire can be
+    /// collapsed into one hit.
+    @Published private(set) var invulnerableUntil: Date?
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
     @Published private(set) var rangingAlert: String?
@@ -48,10 +53,19 @@ final class GameEngine: NSObject, ObservableObject {
     private var matchDeadline: Date?
     private var reloadTimer: Timer?
     private var pendingSnapshots: [String: (state: PlayerState, at: Date)] = [:]
+    private var dummyInvulnerableUntil: Date?   // the dummy's half of the same rule
 
     var myName: String { network?.myPeerID.displayName ?? playerName }
     var me: Player? { players[myName] }
     var isAlive: Bool { me?.isAlive ?? true }
+
+    /// Takes the date so the HUD can drive a countdown off a TimelineView tick
+    /// — `invulnerableUntil` publishes when the window opens, never when it
+    /// lapses, so nothing would repaint on expiry otherwise.
+    func isInvulnerable(at date: Date = Date()) -> Bool {
+        guard let until = invulnerableUntil else { return false }
+        return date < until
+    }
 
     var opponents: [Player] {
         players.values.filter { $0.name != myName }.sorted { $0.name < $1.name }
@@ -103,6 +117,7 @@ final class GameEngine: NSObject, ObservableObject {
         aimedTarget = nil
         lastFireTime = nil
         lastKilledBy = nil
+        invulnerableUntil = nil
         damageFlash = false
         rangingAlert = nil
         pendingSnapshots = [:]
@@ -130,6 +145,7 @@ final class GameEngine: NSObject, ObservableObject {
         killFeed = []
         lastKilledBy = nil
         lastFireTime = nil
+        invulnerableUntil = nil
         rangingAlert = nil
         // U2 iPhones (15/16) aim exclusively through the camera; if its
         // permission was denied, direction data can never arrive.
@@ -250,6 +266,11 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func applyHit(from shooter: String, damage: Int) {
         guard phase == .playing, isAlive, let net = network else { return }
+        // Absorbed: no damage, no flash, no healthUpdate — as far as the rest
+        // of the mesh is concerned this shot never landed.
+        let now = Date()
+        guard !isInvulnerable(at: now) else { return }
+        invulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         let newHP = max(0, (me?.hp ?? 0) - damage)
         players[myName]?.hp = newHP
         haptics.playDamage()
@@ -294,6 +315,9 @@ final class GameEngine: NSObject, ObservableObject {
         players[myName]?.isAlive = true
         cancelReload()
         ammo = settings.magazineSize
+        // Overwrites rather than extends any leftover hit i-frames: whoever
+        // killed us shouldn't get a shorter spawn window than anyone else.
+        invulnerableUntil = Date().addingTimeInterval(settings.spawnProtection)
         network?.send(.respawn(player: myName))
         haptics.playRespawn()
     }
@@ -361,6 +385,7 @@ final class GameEngine: NSObject, ObservableObject {
         killFeed = []
         lastKilledBy = nil
         lastFireTime = nil
+        invulnerableUntil = nil
         damageFlash = false
         for name in players.keys {
             players[name]?.hp = settings.maxHP
@@ -398,6 +423,7 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func spawnDummy() {
         players[TargetDummy.name] = Player(name: TargetDummy.name, hp: settings.maxHP)
+        dummyInvulnerableUntil = nil
         dummy.onReading = { [weak self] reading in
             self?.ranging.injectSyntheticReading(reading, for: TargetDummy.name)
         }
@@ -409,12 +435,18 @@ final class GameEngine: NSObject, ObservableObject {
         dummy.stop()
         ranging.removeSynthetic(TargetDummy.name)
         players[TargetDummy.name] = nil
+        dummyInvulnerableUntil = nil
     }
 
     /// Victim-side logic, played locally: the dummy takes damage, dies, and
     /// respawns at a new bearing so you have to hunt for it.
     private func hitDummy() {
         guard var target = players[TargetDummy.name], target.isAlive else { return }
+        // Unreachable while fireCooldown >= hitInvulnerability (you're the only
+        // shooter here), but it keeps practice honest if either is retuned.
+        let now = Date()
+        if let until = dummyInvulnerableUntil, now < until { return }
+        dummyInvulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         target.hp = max(0, target.hp - settings.damage)
         haptics.playHitMarker()
         if target.hp <= 0 {
@@ -430,6 +462,7 @@ final class GameEngine: NSObject, ObservableObject {
                       var revived = self.players[TargetDummy.name] else { return }
                 revived.hp = self.settings.maxHP
                 revived.isAlive = true
+                self.dummyInvulnerableUntil = Date().addingTimeInterval(self.settings.spawnProtection)
                 self.players[TargetDummy.name] = revived
             }
         }
