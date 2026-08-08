@@ -65,7 +65,23 @@ final class RangingManager: NSObject, ObservableObject {
     /// converged; nil once ready. Polled by the aim timer and debug view.
     private(set) var convergenceHints: [String: String] = [:]
 
-    var anyConvergenceHint: String? { convergenceHints.values.first }
+    /// Convergence is a property of *this* device's ARKit session, not of any
+    /// one peer, so a hint is only meaningful while nothing is producing
+    /// bearings. Live angle data outranks whatever the last convergence
+    /// callback said: the callback only fires on status *change*, so a hint
+    /// that is never contradicted would otherwise sit on the HUD forever.
+    var anyConvergenceHint: String? {
+        guard !isCameraAssistanceLive else { return nil }
+        // Sorted so the message is stable rather than dictionary-order roulette.
+        return convergenceHints.values.sorted().first
+    }
+
+    /// True when a real peer has yielded a usable bearing in the last second.
+    /// Deliberately ignores synthetic solo-practice targets — those fabricate
+    /// angles without ARKit, and would mask a genuine convergence problem.
+    private var isCameraAssistanceLive: Bool {
+        peers.keys.contains { latestDirectional(for: $0, within: 1) != nil }
+    }
 
     func convergenceHint(for name: String) -> String? { convergenceHints[name] }
 
@@ -229,6 +245,11 @@ extension RangingManager: NISessionDelegate {
                   let pr = self.peers[name],
                   let obj = nearbyObjects.first else { return }
             self.invalidationStreaks[name] = 0   // session is healthy again
+            if obj.direction != nil || obj.horizontalAngle != nil {
+                // A bearing arrived, so camera assistance converged for this
+                // peer whether or not the convergence callback said so.
+                self.convergenceHints[name] = nil
+            }
             pr.readings.append(RangingReading(
                 timestamp: Date(),
                 distance: obj.distance,
@@ -259,8 +280,13 @@ extension RangingManager: NISessionDelegate {
                 self.convergenceHints[name] = nil
             case .notConverged(let reasons):
                 self.convergenceHints[name] = Self.hint(for: reasons)
+            case .unknown:
+                // No status means no diagnosis to show. Falling through to
+                // `break` here left the previous hint asserting a specific fix
+                // ("sweep left-right") long after tracking had recovered.
+                self.convergenceHints[name] = nil
             @unknown default:
-                break
+                self.convergenceHints[name] = nil
             }
         }
     }
