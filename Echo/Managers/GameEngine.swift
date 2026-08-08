@@ -679,8 +679,16 @@ extension GameEngine: NetworkManagerDelegate {
 
         case .startGame(let settings):
             if phase == .playing {
-                self.settings = settings   // late-join resync; don't reset the match
+                // Late-join/reconnect resync; don't reset the match. A host
+                // ignores it — its own settings are the authoritative ones,
+                // and a rival host's broadcast must not rewrite a live match.
+                if !isHost { self.settings = settings }
             } else {
+                // Someone else's match is starting — whoever started it calls
+                // time. Without dropping the flag, a lobby host pulled into a
+                // running match would broadcast rival .endMatch tallies when
+                // its own clock hit zero.
+                isHost = false
                 beginMatch(with: settings)
             }
 
