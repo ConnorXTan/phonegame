@@ -16,7 +16,7 @@ struct GameHUDView: View {
     @ScaledMetric(relativeTo: .title2) private var fireLabelSize: CGFloat = 23
     @ScaledMetric(relativeTo: .title3) private var reloadLabelSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption2) private var ammoCountSize: CGFloat = 11
-    @ScaledMetric(relativeTo: .body) private var reloadGlyphSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .caption2) private var killSkullSize: CGFloat = 13
     @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 42
     /// Deliberately wider than the fire button — it's the situational-awareness
     /// display, so it should out-rank the control in the visual hierarchy.
@@ -120,7 +120,7 @@ struct GameHUDView: View {
                 HStack(spacing: 0) {
                     hudButton("list.number", "Scoreboard") { showScores = true }
                     hudButton("waveform.badge.magnifyingglass", "Ranging diagnostics") { showDebug = true }
-                    hudButton("xmark.circle", "Leave match") { engine.leave() }
+                    hudArtButton(.exitGame, "Leave match") { engine.leave() }
                 }
             }
             .font(.footnote)
@@ -155,6 +155,22 @@ struct GameHUDView: View {
             Image(systemName: symbol)
                 .font(.title3)
                 .frame(width: 44, height: 44)   // HIG minimum touch target
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(label)
+    }
+
+    /// The same 44pt chrome target as `hudButton`, but fronted by a hand-drawn
+    /// brand mark instead of an SF Symbol.
+    private func hudArtButton(_ art: Art,
+                              _ label: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(art: art)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)   // glyph inside the 44pt target
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel(label)
@@ -237,17 +253,21 @@ struct GameHUDView: View {
     /// A capsule so the text survives whatever the camera is pointed at; the
     /// newest is bold and full-strength so the freshest tag reads first.
     private func killToast(_ event: KillEvent, isLatest: Bool) -> some View {
-        (
+        HStack(spacing: Space.xs) {
             Text(event.killer.displayCallSign)
-            + Text("  \(Image(systemName: "bolt.fill"))  ")
-            + Text(event.victim.displayCallSign)
-        )
+            Image(art: .killSkull)
+                .resizable()
+                .scaledToFit()
+                .frame(height: killSkullSize)
+            Text(event.victim.displayCallSign)
+        }
         .font(isLatest ? .caption2.bold() : .caption2)
         .foregroundStyle(isLatest ? Color.echoText : Color.echoTextSecondary)
         .lineLimit(1)
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xs)
         .background(Color.echoBackground.opacity(Alpha.heavy), in: Capsule())
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
     }
 
@@ -376,9 +396,10 @@ struct GameHUDView: View {
 
     private var reloadButton: some View {
         Button { engine.startReload() } label: {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: reloadGlyphSize, weight: .bold))
-                .foregroundStyle(Color.echoText)
+            Image(art: .reload)
+                .resizable()
+                .scaledToFit()
+                .padding(Space.xs)
                 .frame(width: reloadDiameter, height: reloadDiameter)
                 .background(Color.echoBackground.opacity(Alpha.strong), in: Circle())
                 .overlay(Circle().stroke(Color.echoText.opacity(Alpha.muted), lineWidth: 1))
@@ -409,22 +430,22 @@ private struct HitMarkerView: View {
     @State private var opacity: Double = 0
     @State private var scale: CGFloat = 1
 
-    // Geometry, sized to sit inside the locked reticle ring (74pt).
-    private var tickLength: CGFloat { marker.isKill ? 16 : 13 }
-    private var tickRadius: CGFloat { marker.isKill ? 24 : 20 }
+    // Sized to sit inside the locked reticle ring (74pt); a kill reads bigger
+    // as well as danger-red, so the two never rely on the art's hue alone.
+    private var markerSize: CGFloat { marker.isKill ? 64 : 52 }
 
     var body: some View {
-        ZStack {
-            ForEach(0..<4, id: \.self) { arm in
-                Capsule()
-                    .fill(marker.isKill ? Color.echoDanger : Color.echoText)
-                    .frame(width: 3, height: tickLength)
-                    .offset(y: -tickRadius)
-                    .rotationEffect(.degrees(Double(arm) * 90 + 45))
-            }
-        }
-        .compositingGroup()
-        .shadow(color: Color.echoBackground.opacity(Alpha.heavy), radius: 2)
+        // Template-rendered so the black/red marker art picks up the HUD's own
+        // tokens: white for a hit, danger-red for a kill — the same read the
+        // drawn ticks had, and legible over any camera frame.
+        Image(art: marker.isKill ? .hitMarkerKill : .hitMarker)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(marker.isKill ? Color.echoDanger : Color.echoText)
+            .frame(width: markerSize, height: markerSize)
+            .compositingGroup()
+            .shadow(color: Color.echoBackground.opacity(Alpha.heavy), radius: 2)
         .opacity(opacity)
         .scaleEffect(scale)
         .onChange(of: marker) { _, _ in flash() }
