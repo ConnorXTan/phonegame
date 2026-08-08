@@ -81,20 +81,27 @@ struct GameHUDView: View {
 
     private var topBar: some View {
         VStack(spacing: Space.xs) {
-            HStack(spacing: Space.sm) {
+            // xs, not sm: the larger type and the 44pt targets already
+            // separate these — any more gap and the row runs off the edge.
+            HStack(spacing: Space.xs) {
                 Text(engine.myName.displayCallSign.uppercased())
-                    .font(.caption.bold())
+                    .font(.subheadline.bold())
                     .lineLimit(1)
-                    .truncationMode(.tail)   // a long call sign yields, the chrome doesn't
+                    // Everything else in the row is fixedSize, so the name eats
+                    // the whole deficit — shrink it a little before ellipsizing,
+                    // so a normal call sign still reads in full.
+                    .minimumScaleFactor(0.75)
+                    .truncationMode(.tail)
                 Text("\(engine.me?.hp ?? 0)")
-                    .font(.caption.monospacedDigit().bold())
+                    .font(.subheadline.monospacedDigit().bold())
                     .foregroundStyle(hpColor)
+                    .fixedSize()
                     .accessibilityLabel("\(engine.me?.hp ?? 0) hit points")
                 shieldBadge
                 Spacer()
                 matchClock
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
-                    .font(.caption2.monospacedDigit())
+                    .font(.footnote.monospacedDigit())
                     .foregroundStyle(Color.echoTextSecondary)
                     .fixedSize()
                     .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
@@ -122,7 +129,9 @@ struct GameHUDView: View {
             .accessibilityHidden(true)   // the numeric HP readout above covers this
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
-        .padding(.horizontal)
+        // Tighter than the usual inset: the 44pt targets end in transparent
+        // padding, so the glyphs still sit a comfortable distance from the edge.
+        .padding(.horizontal, Space.sm)
         .padding(.top, Space.sm)
     }
 
@@ -148,7 +157,7 @@ struct GameHUDView: View {
         TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let shielded = engine.isInvulnerable(at: context.date)
             Image(systemName: "shield.lefthalf.filled")
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundStyle(Color.echoAccent)
                 .opacity(shielded ? 1 : 0)
                 .accessibilityLabel(shielded ? "Shielded" : "")
@@ -168,7 +177,7 @@ struct GameHUDView: View {
         let remaining = engine.matchRemaining
         let urgent = remaining <= 30
         return Label(remaining.clockString, systemImage: "timer")
-            .font(.caption.bold().monospacedDigit())
+            .font(.subheadline.bold().monospacedDigit())
             .foregroundStyle(urgent ? Color.echoDanger : Color.echoText)
             .opacity(urgent && clockPulse ? Alpha.muted : 1)
             .animation(urgent ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default,
