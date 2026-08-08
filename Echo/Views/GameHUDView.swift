@@ -74,6 +74,7 @@ struct GameHUDView: View {
                 Text("\(engine.me?.hp ?? 0)")
                     .font(.caption.monospacedDigit().bold())
                     .foregroundStyle(hpColor)
+                shieldBadge
                 Spacer()
                 matchClock
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
@@ -106,6 +107,19 @@ struct GameHUDView: View {
         .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
         .padding(.horizontal)
         .padding(.top, 6)
+    }
+
+    /// Shield while damage immunity is running. Ticks on its own clock because
+    /// the window lapses on a wall-clock deadline, not on a state change — and
+    /// without a visible cue, absorbed shots just read as broken hit detection.
+    private var shieldBadge: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.caption)
+                .foregroundStyle(.cyan)
+                .opacity(engine.isInvulnerable(at: context.date) ? 1 : 0)
+        }
+        .fixedSize()
     }
 
     private var hpFraction: CGFloat {
