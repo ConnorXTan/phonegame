@@ -58,6 +58,7 @@ struct DebugRangingView: View {
 
     private func grid(reading: RangingReading, angle: Float?, inCone: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
+            row("reading age", String(format: "%.2f s", Date().timeIntervalSince(reading.timestamp)))
             row("distance", reading.distance.map { String(format: "%.2f m", $0) } ?? "—")
             row("direction", reading.direction.map {
                 String(format: "(%.2f, %.2f, %.2f)", $0.x, $0.y, $0.z)

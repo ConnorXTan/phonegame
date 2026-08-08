@@ -164,12 +164,14 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     /// The core algorithm: most-centered live target inside the aim cone and
-    /// weapon range, using a 0.3 s reading buffer so a single nil-direction
-    /// frame doesn't eat the shot.
+    /// weapon range, with a short reading buffer so a single nil-direction
+    /// frame doesn't eat the shot. The window is deliberately tight: camera-
+    /// assisted NI (U2 chips) can coast on a stale ARKit anchor after the
+    /// peer moves, and old readings must not hold a lock.
     func resolveShot() -> String? {
         var best: (name: String, angle: Float)?
         for player in opponents where player.isAlive {
-            guard let reading = ranging.latestDirectional(for: player.name, within: 0.3),
+            guard let reading = ranging.latestDirectional(for: player.name, within: 0.2),
                   let angle = reading.angleOffBoresight else { continue }
             let distance = reading.distance
                 ?? ranging.latestReading(for: player.name)?.distance
