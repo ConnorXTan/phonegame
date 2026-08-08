@@ -17,6 +17,9 @@ struct GameHUDView: View {
     @ScaledMetric(relativeTo: .caption2) private var ammoCountSize: CGFloat = 11
     @ScaledMetric(relativeTo: .body) private var reloadGlyphSize: CGFloat = 17
     @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 42
+    /// Deliberately wider than the fire button — it's the situational-awareness
+    /// display, so it should out-rank the control in the visual hierarchy.
+    @ScaledMetric(relativeTo: .largeTitle) private var miniMapDiameter: CGFloat = 150
 
     var body: some View {
         ZStack {
@@ -41,7 +44,14 @@ struct GameHUDView: View {
                                     in: RoundedRectangle(cornerRadius: Radius.sm))
                         .padding(.horizontal)
                 }
-                killFeedView
+                // Minimap left, kill feed right — they share the band under the
+                // status strip instead of stacking and eating the viewfinder.
+                HStack(alignment: .top, spacing: Space.sm) {
+                    MiniMapView()
+                        .frame(width: miniMapDiameter, height: miniMapDiameter)
+                        .padding(.leading)
+                    killFeedView   // carries its own trailing inset
+                }
                 Spacer()
                 fireControl
             }

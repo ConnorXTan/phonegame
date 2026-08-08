@@ -6,6 +6,21 @@ import SwiftUI
 struct DebugRangingView: View {
     @EnvironmentObject private var engine: GameEngine
 
+    /// One row per human. Every rejoin mints a fresh "#xxxx" wire name and the
+    /// old roster entry is kept during a match (so a reconnect doesn't wipe
+    /// their score), which otherwise stacks up a new row each time someone is
+    /// seen. Collapse by call sign and show whichever entry is actually live.
+    private var peers: [Player] {
+        Dictionary(grouping: engine.opponents, by: \.name.displayCallSign)
+            .values
+            .compactMap { entries in
+                entries.first { $0.isConnected && engine.ranging.latestReading(for: $0.name) != nil }
+                    ?? entries.first { $0.isConnected }
+                    ?? entries.first
+            }
+            .sorted { $0.name.displayCallSign < $1.name.displayCallSign }
+    }
+
     var body: some View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
@@ -17,11 +32,11 @@ struct DebugRangingView: View {
                             .frame(height: 180)
                             .listRowBackground(Color.echoBackground)
                     }
-                    if engine.opponents.isEmpty {
+                    if peers.isEmpty {
                         Text("No peers connected")
                             .foregroundStyle(Color.echoTextSecondary)
                     }
-                    ForEach(engine.opponents) { player in
+                    ForEach(peers) { player in
                         row(for: player)
                     }
                 }

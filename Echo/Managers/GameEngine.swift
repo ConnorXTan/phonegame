@@ -586,6 +586,11 @@ final class GameEngine: NSObject, ObservableObject {
     /// its own row, so never overwrite ours.
     private func apply(_ state: PlayerState) {
         guard state.name != myName else { return }
+        // A snapshot is the one path that can resurrect a spectator: whoever
+        // built it may have added the Mac as a player in peerDidConnect before
+        // its .spectatorHello landed, and every receiver would then recreate it
+        // as a shootable target even after correctly removing it.
+        guard !spectators.contains(state.name) else { return }
         var player = players[state.name] ?? Player(name: state.name, hp: state.hp)
         player.hp = state.hp
         player.isAlive = state.isAlive
