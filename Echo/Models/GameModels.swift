@@ -64,6 +64,8 @@ enum GameMessage: Codable {
     case respawn(player: String)
     case endMatch(finalStates: [PlayerState])   // host calls time; its tallies win
     case matchClock(remaining: TimeInterval)    // host re-syncs a late joiner's clock
+    case spectatorHello                         // sender is a spectator (laptop), not a player
+    case cameraRequest(active: Bool)            // spectator → player: stream me your viewfinder
 }
 
 struct Player: Identifiable {

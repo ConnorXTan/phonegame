@@ -60,6 +60,15 @@ struct MenuView: View {
             }
             .disabled(nameEmpty)
 
+            Button {
+                engine.enterSpectator(hosting: true)
+            } label: {
+                Label("Spectate & Host (big screen)", systemImage: "tv")
+                    .frame(maxWidth: 260)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+
             Text("Pick a short call sign — it's how other players see you.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
