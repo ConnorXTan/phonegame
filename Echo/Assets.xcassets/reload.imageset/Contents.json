@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "A5_reload.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
