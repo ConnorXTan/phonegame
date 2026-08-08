@@ -46,6 +46,7 @@ Echo's palette is a dark tactical HUD read over a live camera feed. Keep it that
 | `.echoPrimary` | Interactive and aimed-at: buttons, fire control, acquired lock |
 | `.echoSecondary` | Alive, connected, scored |
 | `.echoAccent` | Standout non-critical state: placement, urgency, host controls |
+| `.echoOnPrimary` | Labels *on* a filled primary/secondary/accent control — see below |
 | `.echoTextSecondary` / `.echoTextTertiary` | Supporting copy — a *dimmer primary*, never gray |
 | `.echoSurface` / `.echoHairline` | Card fills and dividers, as tints of the text color |
 | `.echoDanger` | Damage, death, enemy — deliberately its own token, not an alias |
@@ -54,6 +55,13 @@ Echo's palette is a dark tactical HUD read over a live camera feed. Keep it that
 
 Rules:
 
+- **Filled controls take `.echoOnPrimary` labels, never `.echoText`.** All three actives are light
+  (L 55–70%). White on `echoPrimary` measures 1.6:1 — illegible. The dark background color on the
+  same fill measures 12.4:1. If a fill can be either light or dark (the fire button, enabled vs.
+  disabled), the label color has to flip with it.
+- **Don't pair two actives that sit close on the wheel.** `echoAccent` is 20° from `echoPrimary`;
+  using one for "locked" and the other for "not locked" gives two greens nobody can separate under
+  pressure. When a ramp needs three legible steps, go `echoSecondary → echoWarning → echoDanger`.
 - **One accent.** A second "just for this button" accent destroys the first one's meaning.
 - **Semantic colors stay semantic.** Red means harm. If red also means "host" and "selected" and
   "recording," it means nothing. Reach for weight, size, or spacing before reaching for a new hue.

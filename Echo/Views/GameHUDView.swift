@@ -124,8 +124,12 @@ struct GameHUDView: View {
         CGFloat(engine.me?.hp ?? 0) / CGFloat(max(1, engine.settings.maxHP))
     }
 
+    /// Green to amber to red. The mid step is `echoWarning` rather than
+    /// `echoAccent` because accent sits 20° from secondary on the wheel — two
+    /// greens that no one can tell apart at a glance, on the one indicator
+    /// that has to be read at a glance.
     private var hpColor: Color {
-        hpFraction > 0.5 ? .echoSecondary : hpFraction > 0.25 ? .echoAccent : .echoDanger
+        hpFraction > 0.5 ? .echoSecondary : hpFraction > 0.25 ? .echoWarning : .echoDanger
     }
 
     /// Turns red and pulses over the last 30 seconds.
@@ -210,13 +214,13 @@ struct GameHUDView: View {
                                 radius: 12)
                     Circle()
                         .trim(from: 0, to: progress)
-                        .stroke(Color.echoText.opacity(Alpha.heavy),
+                        .stroke(fireLabelColor.opacity(Alpha.heavy),
                                 style: StrokeStyle(lineWidth: 5, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .padding(Space.xs)
                     Text("FIRE")
                         .font(.system(size: fireLabelSize, weight: .black, design: .rounded))
-                        .foregroundStyle(Color.echoText)
+                        .foregroundStyle(fireLabelColor)
                 }
             }
         }
@@ -225,6 +229,12 @@ struct GameHUDView: View {
         .disabled(!engine.isAlive)
         .padding(.bottom, Space.xl)
         .accessibilityLabel("Fire")
+    }
+
+    /// The enabled fill is a light green and the disabled fill is a dark slate,
+    /// so the label has to flip with it to stay readable.
+    private var fireLabelColor: Color {
+        engine.isAlive ? .echoOnPrimary : .echoText
     }
 
     private func cooldownProgress(at date: Date) -> CGFloat {

@@ -108,6 +108,7 @@ struct LobbyView: View {
                     } label: {
                         Text(roster.count < 2 ? "Start Anyway (solo test)" : "Start Game")
                             .frame(maxWidth: .infinity)
+                            .foregroundStyle(Color.echoOnPrimary)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)

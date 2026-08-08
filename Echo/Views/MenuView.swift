@@ -49,6 +49,7 @@ struct MenuView: View {
                 } label: {
                     Label("Host Game", systemImage: "antenna.radiowaves.left.and.right")
                         .frame(maxWidth: 260)
+                        .foregroundStyle(Color.echoOnPrimary)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)

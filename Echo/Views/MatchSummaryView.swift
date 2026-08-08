@@ -211,6 +211,7 @@ struct MatchSummaryView: View {
             } label: {
                 Text(engine.isHost ? "Back to Lobby — run it again" : "Back to Lobby")
                     .frame(maxWidth: .infinity)
+                    .foregroundStyle(Color.echoOnPrimary)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

@@ -89,7 +89,9 @@ struct RadarView: View {
         let r = min(distance / maxRange, 1.0) * radius
         let point = CGPoint(x: center.x + sin(angle) * r,
                             y: center.y - cos(angle) * r)
-        let color: Color = locked ? .echoPrimary : .echoAccent
+        // Neutral until locked: accent is only 20° from primary, so a green
+        // "not locked" blip was indistinguishable from a green "locked" one.
+        let color: Color = locked ? .echoPrimary : .echoTextSecondary
         ctx.fill(Path(ellipseIn: CGRect(x: point.x - 6, y: point.y - 6, width: 12, height: 12)),
                  with: .color(color))
         let label = Text("\(name) \(String(format: "%.1f", distance))m")
