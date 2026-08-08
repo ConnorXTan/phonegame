@@ -20,7 +20,9 @@ struct RadarView: View {
 
                 var blindList: [(String, Float)] = []
                 for player in engine.opponents where player.isAlive {
-                    guard let reading = engine.ranging.latestReading(for: player.name) else { continue }
+                    // Stale blips lie — drop anything not refreshed recently.
+                    guard let reading = engine.ranging.latestReading(for: player.name),
+                          Date().timeIntervalSince(reading.timestamp) < 1.5 else { continue }
                     let angle = blipAngle(reading)
                     if let angle {
                         let dist = CGFloat(reading.distance ?? Float(maxRange))

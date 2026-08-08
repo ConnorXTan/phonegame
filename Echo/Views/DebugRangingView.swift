@@ -10,6 +10,13 @@ struct DebugRangingView: View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
                 List {
+                    // Lives here rather than on the HUD: the game screen is the
+                    // camera viewfinder, so the top-down view is a diagnostic.
+                    Section("Radar") {
+                        RadarView()
+                            .frame(height: 180)
+                            .listRowBackground(Color.black)
+                    }
                     if engine.opponents.isEmpty {
                         Text("No peers connected")
                             .foregroundStyle(.secondary)
@@ -58,6 +65,7 @@ struct DebugRangingView: View {
 
     private func grid(reading: RangingReading, angle: Float?, inCone: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
+            row("reading age", String(format: "%.2f s", Date().timeIntervalSince(reading.timestamp)))
             row("distance", reading.distance.map { String(format: "%.2f m", $0) } ?? "—")
             row("direction", reading.direction.map {
                 String(format: "(%.2f, %.2f, %.2f)", $0.x, $0.y, $0.z)

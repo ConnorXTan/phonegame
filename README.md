@@ -7,6 +7,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 - **Aiming** — Nearby Interaction (the UWB chip behind AirTag precision finding) streams distance + 3D direction between iPhones at ~55 Hz. A shot hits when the target is inside the aim cone and weapon range; the most-centered target wins.
 - **Networking** — MultipeerConnectivity peer-to-peer mesh (Wi-Fi/Bluetooth, zero backend).
 - **Feedback** — Core Haptics: fire tick, shooter hit-marker, heavy ×3 damage burst, death rumble, target-lock tick.
+- **Match flow** — the host picks a match length; a live K/D readout and countdown sit in the HUD, and time expiring drops everyone into a match summary.
 
 ## Requirements
 
@@ -24,11 +25,13 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 ## How to play
 
 1. Everyone enters a call sign (a hidden random tag keeps identities distinct, so duplicates won't break anything — but unique names keep the kill feed readable).
-2. One player taps **Host Game** and picks a mode; everyone else taps **Join Game**. Nearby phones auto-mesh — the lobby fills in as they find each other.
+2. One player taps **Host Game** and picks a mode and **match length** (2 / 5 / 10 / 15 min); everyone else taps **Join Game**. Nearby phones auto-mesh — the lobby fills in as they find each other.
 3. Host taps **Start**. Phones exchange UWB tokens and ranging begins.
 4. **Hold the phone in portrait like you're photographing your target** — the UWB antenna cone points out the *back* of the phone. The crosshair locks (with a tick) when someone is in your sights.
 5. **FIRE.** Hit: their phone buzzes heavy ×3, flashes red, HP drops. At 0 HP: death screen, 5 s respawn.
 6. Bodies block UWB — **human shields are canon**.
+7. Your **kills and deaths** run live in the HUD next to the match clock (which turns red for the last 30 s); the ⅓-list button opens the full scoreboard mid-match.
+8. When the clock hits zero everyone gets the **match summary** — winner, your K/D, and the final standings. **Back to Lobby** keeps the mesh up so the host can run another round.
 
 | Mode | Range | Aim cone | Damage |
 |---|---|---|---|
@@ -40,9 +43,10 @@ Tuning lives in `GameSettings` presets (`Echo/Models/GameModels.swift`) — adju
 ## Architecture
 
 ```
-SwiftUI views      MenuView · LobbyView · GameHUDView · RadarView ·
-                   DeathView · DebugRangingView · ScoreboardView
-GameEngine         player state · HP · hit resolution · cooldowns · respawns
+SwiftUI views      MenuView · LobbyView · GameHUDView · CameraFeedView · DeathView ·
+                   RadarView · DebugRangingView · ScoreboardView · MatchSummaryView
+GameEngine         player state · HP · hit resolution · cooldowns · respawns ·
+                   match clock · end-of-match standings
 RangingManager     one NISession per peer · token exchange · 0.3 s reading buffer
 NetworkManager     MultipeerConnectivity full mesh · Codable GameMessage protocol
 HapticsManager     Core Haptics patterns + placeholder system sounds
@@ -50,7 +54,9 @@ HapticsManager     Core Haptics patterns + placeholder system sounds
 
 Hit resolution runs on the **shooter's** phone (it has the ranging data); the victim applies damage on receipt and broadcasts its own health/death/respawn. Host is source of truth for start + settings. Hackathon scale: trust the network.
 
-The in-game **radar** (top-down blips) and the **UWB Ranging debug sheet** (live distance / direction / angle-off-boresight per peer, via the magnifying-glass button in the HUD) are the Phase 2 milestone tools — use the debug sheet to verify ranging before playing, and the radar on a projector for the demo.
+Every phone counts the match clock down locally off a wall-clock deadline, but only the **host calls time** — it broadcasts `.endMatch` with its own tallies, so two phones can never crown different winners. If the host goes dark, each phone ends on its own tallies after a 5 s grace period. Late joiners get a `.matchClock` message so their clock doesn't start a full match length from scratch.
+
+The **UWB Ranging debug sheet** (magnifying-glass button in the HUD) shows live distance / direction / angle-off-boresight per peer plus the **radar** (top-down blips) — use it to verify ranging before playing, and on a projector for the demo.
 
 ## Troubleshooting
 

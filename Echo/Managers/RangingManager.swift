@@ -1,3 +1,4 @@
+import ARKit
 import Foundation
 import NearbyInteraction
 import simd
@@ -47,6 +48,12 @@ final class RangingManager: NSObject, ObservableObject {
     }
 
     weak var delegate: RangingManagerDelegate?
+
+    /// The viewfinder's ARSession, shared with every NISession so camera
+    /// assistance and the on-screen picture come from the same camera feed.
+    /// Set by GameEngine right after init.
+    var camera: AimCameraManager?
+
     @Published private(set) var peerNames: [String] = []
 
     private var peers: [String: PeerRanging] = [:]
@@ -192,6 +199,12 @@ final class RangingManager: NSObject, ObservableObject {
         let config = NINearbyPeerConfiguration(peerToken: token)
         if NISession.deviceCapabilities.supportsCameraAssistance {
             config.isCameraAssistanceEnabled = true   // widens FoV, adds horizontalAngle
+            // Hand over the viewfinder's session, already running. Skipping
+            // this makes NI create a hidden ARSession of its own, which would
+            // then fight the on-screen one for the camera.
+            if let arSession = camera?.start() {
+                pr.session.setARSession(arSession)
+            }
         }
         pr.session.run(config)
     }

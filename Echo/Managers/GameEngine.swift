@@ -5,7 +5,7 @@ import NearbyInteraction
 import UIKit
 
 enum GamePhase: Equatable {
-    case menu, lobby, playing
+    case menu, lobby, playing, summary
 }
 
 /// Source of truth for game state. Hit resolution runs on the SHOOTER's phone
@@ -28,14 +28,19 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var uwbWarning: String?
     @Published private(set) var rangingAlert: String?
     @Published private(set) var aimHint: String?
+    @Published private(set) var matchRemaining: TimeInterval = 0
+    @Published private(set) var matchResult: MatchResult?
 
     private(set) var network: NetworkManager?
     let ranging = RangingManager()
     let haptics = HapticsManager()
+    let camera = AimCameraManager()
     private let dummy = TargetDummy()
 
     private var aimTimer: Timer?
     private var respawnTimer: Timer?
+    private var matchTimer: Timer?
+    private var matchDeadline: Date?
     private var pendingSnapshots: [String: (state: PlayerState, at: Date)] = [:]
 
     var myName: String { network?.myPeerID.displayName ?? playerName }
@@ -49,6 +54,7 @@ final class GameEngine: NSObject, ObservableObject {
     override init() {
         super.init()
         ranging.delegate = self
+        ranging.camera = camera   // one ARSession: viewfinder + camera assistance
         if !RangingManager.isSupported {
             uwbWarning = "This device has no UWB chip (needs iPhone 11+, non-SE). Ranging won't work here."
         } else if !RangingManager.supportsAiming {
@@ -72,6 +78,9 @@ final class GameEngine: NSObject, ObservableObject {
         let wireName = net.myPeerID.displayName
         players = [wireName: Player(name: wireName, hp: settings.maxHP)]
         net.start()
+        // Ask now, not at match start — an open permission alert would race
+        // the first NISession.run() and the viewfinder's first frame.
+        camera.requestAccessIfNeeded()
         phase = .lobby
         UIApplication.shared.isIdleTimerDisabled = true   // auto-lock would drop the mesh
     }
@@ -81,6 +90,7 @@ final class GameEngine: NSObject, ObservableObject {
         network = nil
         despawnDummy()
         ranging.stopAll()
+        camera.stop()   // after the NI sessions that were using it
         stopTimers()
         players = [:]
         killFeed = []
@@ -90,6 +100,7 @@ final class GameEngine: NSObject, ObservableObject {
         damageFlash = false
         rangingAlert = nil
         pendingSnapshots = [:]
+        matchResult = nil
         isHost = false
         phase = .menu
         UIApplication.shared.isIdleTimerDisabled = false
@@ -127,9 +138,15 @@ final class GameEngine: NSObject, ObservableObject {
             apply(entry.state)
         }
         pendingSnapshots = [:]
+        matchResult = nil
         phase = .playing
         UIApplication.shared.isIdleTimerDisabled = true   // UWB needs the app foregrounded
+        // Before any NISession.run() below, so ranging attaches to a session
+        // that's already delivering frames. Also covers solo practice, where
+        // there are no peers and so no NI session to start it.
+        camera.start()
         startAimTimer()
+        startMatchClock(seconds: settings.matchDuration)
         haptics.playGameStart()
 
         // Pairwise UWB token exchange with every connected peer. Both sides
@@ -164,12 +181,14 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     /// The core algorithm: most-centered live target inside the aim cone and
-    /// weapon range, using a 0.3 s reading buffer so a single nil-direction
-    /// frame doesn't eat the shot.
+    /// weapon range, with a short reading buffer so a single nil-direction
+    /// frame doesn't eat the shot. The window is deliberately tight: camera-
+    /// assisted NI (U2 chips) can coast on a stale ARKit anchor after the
+    /// peer moves, and old readings must not hold a lock.
     func resolveShot() -> String? {
         var best: (name: String, angle: Float)?
         for player in opponents where player.isAlive {
-            guard let reading = ranging.latestDirectional(for: player.name, within: 0.3),
+            guard let reading = ranging.latestDirectional(for: player.name, within: 0.2),
                   let angle = reading.angleOffBoresight else { continue }
             let distance = reading.distance
                 ?? ranging.latestReading(for: player.name)?.distance
@@ -227,6 +246,76 @@ final class GameEngine: NSObject, ObservableObject {
         players[myName]?.isAlive = true
         network?.send(.respawn(player: myName))
         haptics.playRespawn()
+    }
+
+    // MARK: - Match clock
+
+    /// Everyone counts down locally off a wall-clock deadline (drift-free), but
+    /// only the host calls time — its `.endMatch` tallies are what everyone
+    /// shows, so two phones can never crown different winners. If the host goes
+    /// dark, a grace period lets each phone end on its own tallies rather than
+    /// stranding the match.
+    private func startMatchClock(seconds: TimeInterval) {
+        matchDeadline = Date().addingTimeInterval(seconds)
+        matchRemaining = seconds
+        matchTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.tickMatchClock()
+        }
+        RunLoop.main.add(timer, forMode: .common)   // keeps ticking during scroll tracking
+        matchTimer = timer
+    }
+
+    private func tickMatchClock() {
+        guard phase == .playing, let deadline = matchDeadline else { return }
+        let remaining = deadline.timeIntervalSinceNow
+        matchRemaining = max(0, remaining)
+        guard remaining <= 0 else { return }
+        if isHost {
+            let finals = players.values.map(PlayerState.init)
+            network?.send(.endMatch(finalStates: finals))
+            endMatch(with: Array(players.values))
+        } else if remaining <= -5 {
+            endMatch(with: Array(players.values))   // host never called it
+        }
+    }
+
+    private func endMatch(with finalPlayers: [Player]) {
+        guard phase == .playing else { return }
+        // Snapshot before despawning the dummy — in a solo test it holds the
+        // only opponent stats worth showing.
+        matchResult = MatchResult(
+            players: finalPlayers,
+            duration: settings.matchDuration,
+            myName: myName)
+        matchTimer?.invalidate()
+        matchTimer = nil
+        matchDeadline = nil
+        matchRemaining = 0
+        aimTimer?.invalidate()
+        aimTimer = nil
+        respawnTimer?.invalidate()
+        respawnTimer = nil
+        respawnRemaining = 0
+        aimedTarget = nil
+        despawnDummy()
+        phase = .summary
+        haptics.playMatchEnd()
+    }
+
+    /// Summary → lobby, mesh intact, so the host can run another match.
+    func returnToLobby() {
+        guard phase == .summary else { return }
+        matchResult = nil
+        killFeed = []
+        lastKilledBy = nil
+        lastFireTime = nil
+        damageFlash = false
+        for name in players.keys {
+            players[name]?.hp = settings.maxHP
+            players[name]?.isAlive = true
+        }
+        phase = .lobby
     }
 
     // MARK: - Aim indicator
@@ -327,6 +416,10 @@ final class GameEngine: NSObject, ObservableObject {
         respawnTimer?.invalidate()
         respawnTimer = nil
         respawnRemaining = 0
+        matchTimer?.invalidate()
+        matchTimer = nil
+        matchDeadline = nil
+        matchRemaining = 0
     }
 }
 
@@ -351,6 +444,10 @@ extension GameEngine: NetworkManagerDelegate {
             if isHost {
                 manager.send(.startGame(settings: settings), to: [peer])
                 manager.send(.stateSnapshot(players.values.map(PlayerState.init)), to: [peer])
+                // Their clock would otherwise start a full match length from now.
+                if let deadline = matchDeadline {
+                    manager.send(.matchClock(remaining: max(0, deadline.timeIntervalSinceNow)), to: [peer])
+                }
             } else if let mine = me {
                 manager.send(.stateSnapshot([PlayerState(mine)]), to: [peer])
             }
@@ -426,6 +523,27 @@ extension GameEngine: NetworkManagerDelegate {
             guard player != myName else { return }
             players[player]?.hp = settings.maxHP
             players[player]?.isAlive = true
+
+        case .endMatch(let finalStates):
+            guard phase == .playing else { return }
+            // Host's tallies are authoritative for the summary; fall back to
+            // our own row if the host somehow never saw us.
+            var finals = finalStates.map { state -> Player in
+                var player = players[state.name] ?? Player(name: state.name, hp: state.hp)
+                player.hp = state.hp
+                player.isAlive = state.isAlive
+                player.kills = state.kills
+                player.deaths = state.deaths
+                return player
+            }
+            if !finals.contains(where: { $0.name == myName }), let mine = me {
+                finals.append(mine)
+            }
+            endMatch(with: finals)
+
+        case .matchClock(let remaining):
+            guard phase == .playing, !isHost else { return }
+            startMatchClock(seconds: remaining)
         }
     }
 }
