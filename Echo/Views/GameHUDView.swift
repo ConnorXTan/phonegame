@@ -5,7 +5,6 @@ import SwiftUI
 struct GameHUDView: View {
     @EnvironmentObject private var engine: GameEngine
     @Environment(\.scenePhase) private var scenePhase
-    @State private var showDebug = false
     @State private var showScores = false
     @State private var clockPulse = false
     @State private var fireTriggerHeld = false
@@ -17,7 +16,9 @@ struct GameHUDView: View {
     @ScaledMetric(relativeTo: .title3) private var reloadLabelSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption2) private var ammoCountSize: CGFloat = 11
     @ScaledMetric(relativeTo: .caption2) private var killSkullSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 58
+    /// Fixed-geometry heart gauge in the status strip.
+    @ScaledMetric(relativeTo: .footnote) private var heartSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 74
     /// Deliberately wider than the fire button — it's the situational-awareness
     /// display, so it should out-rank the control in the visual hierarchy.
     @ScaledMetric(relativeTo: .largeTitle) private var miniMapDiameter: CGFloat = 150
@@ -75,7 +76,6 @@ struct GameHUDView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { engine.camera.resume() }
         }
-        .sheet(isPresented: $showDebug) { DebugRangingView() }
         .sheet(isPresented: $showScores) { ScoreboardView() }
     }
 
@@ -119,24 +119,17 @@ struct GameHUDView: View {
                 // target, so extra gap would only push the row wider.
                 HStack(spacing: 0) {
                     hudArtButton(.leaderboard, "Leaderboard") { showScores = true }
-                    hudButton("waveform.badge.magnifyingglass", "Ranging diagnostics") { showDebug = true }
                     hudArtButton(.exitGame, "Leave match") { engine.leave() }
                 }
             }
             .font(.footnote)
             .foregroundStyle(Color.echoText)
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.echoBackground.opacity(Alpha.muted))
-                    Capsule()
-                        .fill(hpColor)
-                        .frame(width: geo.size.width * max(0, hpFraction))
-                }
-                .animation(.easeOut(duration: 0.2), value: hpFraction)
-            }
-            .frame(height: 5)
-            .accessibilityHidden(true)   // the numeric HP readout above covers this
+            HeartBar(fraction: hpFraction, size: heartSize)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement()
+                .accessibilityLabel("Health")
+                .accessibilityValue("\(engine.me?.hp ?? 0) of \(engine.myRole.maxHP)")
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
         // Tighter than the usual inset: the 44pt targets end in transparent
@@ -195,8 +188,6 @@ struct GameHUDView: View {
     private var hpFraction: CGFloat {
         CGFloat(engine.me?.hp ?? 0) / CGFloat(max(1, engine.myRole.maxHP))
     }
-
-    private var hpColor: Color { .echoHealth(hpFraction) }
 
     /// Turns red and pulses over the last 30 seconds.
     private var matchClock: some View {
@@ -317,7 +308,7 @@ struct GameHUDView: View {
             fireButton
             if engine.isAlive && engine.ammo < engine.magazineSize && !engine.isReloading {
                 reloadButton
-                    .offset(x: fireDiameter * 0.85)   // clear of the ring, tracks its scale
+                    .offset(x: fireDiameter * 0.9)   // clear of the ring, tracks its scale
                     .transition(.scale.combined(with: .opacity))
             }
         }
