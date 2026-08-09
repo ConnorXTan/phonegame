@@ -4,6 +4,25 @@ struct MenuView: View {
     @EnvironmentObject private var engine: GameEngine
 
     @ScaledMetric(relativeTo: .largeTitle) private var logoWidth: CGFloat = 220
+    @ScaledMetric(relativeTo: .subheadline) private var subtitleKerning: CGFloat = 4
+
+    /// Two separate reasons the subtitle sits left of the wordmark, corrected
+    /// together.
+    ///
+    /// One: the logo art is not symmetric. The target glyph hangs off the left
+    /// of the L, so the green "LTN" letterforms span x 27–319 of a 326pt canvas
+    /// and their center is 10pt right of the image's. Centering the subtitle on
+    /// the *frame* parks it left of the letters the eye actually pairs it with,
+    /// so give back that same 3.1% of the logo's width.
+    ///
+    /// Two: letter spacing lands after the final character as well as between,
+    /// so the drawn glyphs carry a trailing gap that centering counts as ink.
+    /// That costs half a gap to the left. (`.kerning` is documented as spacing
+    /// *between* characters and was expected to avoid this; measuring the
+    /// render showed it does not, hence the explicit correction.)
+    private var wordmarkCenterOffset: CGFloat {
+        logoWidth * (10.0 / 326.0) + subtitleKerning / 2
+    }
     @ScaledMetric(relativeTo: .body) private var spectateGlyph: CGFloat = 18
     /// Brand glyph on the primary menu buttons (Host / Find).
     @ScaledMetric(relativeTo: .body) private var buttonGlyph: CGFloat = 20
@@ -35,8 +54,13 @@ struct MenuView: View {
 
                 Text("LASER TAG NOW")
                     .font(.app(.subheadline))
-                    .tracking(4)
+                    // kerning, not tracking: tracking adds its gap after every
+                    // character *including the last*, so a centered string ends
+                    // up sitting half a gap left of where it looks like it
+                    // should. kerning only goes between characters.
+                    .kerning(subtitleKerning)
                     .foregroundStyle(Color.ltnTextSecondary)
+                    .offset(x: wordmarkCenterOffset)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("LTN, Laser Tag Now")
