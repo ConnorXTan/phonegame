@@ -23,8 +23,18 @@ final class SoundManager {
     /// it happens on the first trigger pull.
     func prepare() {}
 
+    /// Killcam capture: every play() reports here so a clip can rebuild the
+    /// exact audio that accompanied it. Main-thread callers only.
+    var eventTap: ((_ name: String, _ volume: Float, _ rate: Float) -> Void)?
+
+    /// PCM for a named asset, for offline mixing into published clips.
+    func assetURL(_ name: String) -> URL? {
+        Bundle.main.url(forResource: name, withExtension: "wav")
+    }
+
     /// `rate` repitches — the kill confirm is the hitmarker played sharper.
     func play(_ name: String, volume: Float = 1.0, rate: Float = 1.0) {
+        eventTap?(name, volume, rate)
         guard let pool = pools[name], !pool.isEmpty else { return }
         let i = (nextIndex[name] ?? 0) % pool.count
         nextIndex[name] = i + 1

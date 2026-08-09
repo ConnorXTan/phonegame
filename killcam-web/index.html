@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LTN // KILLCAMS</title>
+<style>
+  :root {
+    --bg: #05070f;
+    --surface: rgba(255, 255, 255, 0.06);
+    --hairline: rgba(255, 255, 255, 0.1);
+    --text: #ffffff;
+    --text-dim: rgba(255, 255, 255, 0.6);
+    --primary: #4ce637;
+    --danger: #ef4040;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    min-height: 100vh;
+    padding: 32px 24px 64px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 16px;
+  }
+  h1 { font-size: 22px; font-weight: 800; letter-spacing: 3px; }
+  h1 span { color: var(--primary); }
+  #count { color: var(--text-dim); font-size: 13px; }
+  #savedToggle {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--hairline);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #savedToggle.on { color: var(--primary); border-color: var(--primary); }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .thumb {
+    position: relative;
+    cursor: pointer;
+  }
+  .thumb video {
+    width: 100%;
+    aspect-ratio: 9 / 16;
+    object-fit: cover;
+    display: block;
+    background: #000;
+    pointer-events: none;   /* the whole thumb is one click target */
+  }
+  .thumb .play {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 34px;
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  }
+  .card figcaption { padding: 10px 12px; font-size: 12px; line-height: 1.5; }
+  .card b { color: var(--primary); font-weight: 700; }
+  .card time { display: block; color: var(--text-dim); font-size: 11px; }
+  .actions { display: flex; gap: 8px; margin-top: 8px; }
+  .actions button {
+    background: none;
+    border: 1px solid var(--hairline);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .actions button.on-like { color: var(--danger); border-color: var(--danger); }
+  .actions button.on-save { color: var(--primary); border-color: var(--primary); }
+  #empty { color: var(--text-dim); padding: 48px 0; text-align: center; font-size: 14px; }
+
+  /* Lightbox: most of the screen, never native fullscreen, never cropped. */
+  #lightbox {
+    position: fixed;
+    inset: 0;
+    display: none;
+    place-items: center;
+    background: rgba(3, 4, 9, 0.92);
+    backdrop-filter: blur(6px);
+    z-index: 10;
+  }
+  #lightbox.open { display: grid; }
+  #lightbox .frame {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 92vw;
+  }
+  #lightbox video {
+    max-width: 92vw;
+    max-height: 82vh;
+    object-fit: contain;    /* true aspect — no zooming, no cropping */
+    border-radius: 12px;
+    background: #000;
+  }
+  #lightbox .caption { font-size: 13px; color: var(--text-dim); }
+  #lightbox .caption b { color: var(--primary); }
+  #lightboxClose {
+    position: fixed;
+    top: 18px;
+    right: 22px;
+    background: none;
+    border: 1px solid var(--hairline);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>LTN <span>//</span> KILLCAMS</h1>
+    <div id="count"></div>
+    <button id="savedToggle">Saved</button>
+  </header>
+  <main id="grid"></main>
+  <div id="empty" hidden>No killcams published yet.</div>
+
+  <div id="lightbox">
+    <button id="lightboxClose">Close ✕</button>
+    <div class="frame">
+      <video id="lightboxVideo" controls playsinline loop></video>
+      <div class="caption" id="lightboxCaption"></div>
+    </div>
+  </div>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const count = document.getElementById('count');
+    const empty = document.getElementById('empty');
+    const savedToggle = document.getElementById('savedToggle');
+    const lightbox = document.getElementById('lightbox');
+    const lightboxVideo = document.getElementById('lightboxVideo');
+    const lightboxCaption = document.getElementById('lightboxCaption');
+    const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+    // Anonymous per-browser identity: one like per device per clip. Minted
+    // once, kept in localStorage.
+    let device = localStorage.getItem('ltn-device');
+    if (!device) {
+      device = crypto.randomUUID().replace(/-/g, '');
+      localStorage.setItem('ltn-device', device);
+    }
+    fetch(`/api/react?action=visit&device=${device}`, { method: 'POST' });
+
+    let clips = [];
+    let savedOnly = false;
+    let lastKey = '';
+
+    savedToggle.onclick = () => {
+      savedOnly = !savedOnly;
+      savedToggle.classList.toggle('on', savedOnly);
+      lastKey = '';
+      render();
+    };
+
+    function openClip(key) {
+      const clip = clips.find((c) => c.key === key);
+      if (!clip) return;
+      lightboxVideo.src = clip.url;
+      lightboxVideo.muted = false;
+      lightboxCaption.innerHTML =
+        `<b>${esc(clip.killer)}</b> eliminated <b>${esc(clip.victim)}</b> · ${new Date(clip.timestamp).toLocaleString()}`;
+      lightbox.classList.add('open');
+      lightboxVideo.play().catch(() => {});
+    }
+    function closeClip() {
+      lightbox.classList.remove('open');
+      lightboxVideo.pause();
+      lightboxVideo.removeAttribute('src');
+      lightboxVideo.load();
+    }
+    window.openClip = openClip;
+    document.getElementById('lightboxClose').onclick = closeClip;
+    lightbox.onclick = (e) => { if (e.target === lightbox) closeClip(); };
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeClip(); });
+
+    async function react(key, action) {
+      const clip = clips.find((c) => c.key === key);
+      if (!clip) return;
+      // Optimistic flip; the next poll reconciles with the server's truth.
+      if (action === 'toggle-like') {
+        clip.liked = !clip.liked;
+        clip.likes += clip.liked ? 1 : -1;
+        fetch(`/api/react?action=${clip.liked ? 'like' : 'unlike'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
+      } else {
+        clip.saved = !clip.saved;
+        fetch(`/api/react?action=${clip.saved ? 'save' : 'unsave'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
+      }
+      lastKey = '';
+      render();
+    }
+    window.react = react;
+
+    function render() {
+      const visible = savedOnly ? clips.filter((c) => c.saved) : clips;
+      const key = visible.map((c) => `${c.url}|${c.likes}|${c.liked}|${c.saved}`).join('~');
+      if (key === lastKey) return;   // don't interrupt playing videos
+      lastKey = key;
+      count.textContent = `${visible.length} clip${visible.length === 1 ? '' : 's'}`;
+      empty.hidden = visible.length > 0;
+      grid.innerHTML = visible.map((c) => `
+        <figure class="card">
+          <div class="thumb" onclick="openClip('${esc(c.key)}')">
+            <video src="${esc(c.url)}" muted playsinline preload="metadata"></video>
+            <div class="play">&#9655;</div>
+          </div>
+          <figcaption>
+            <b>${esc(c.killer)}</b> eliminated <b>${esc(c.victim)}</b>
+            <time>${new Date(c.timestamp).toLocaleString()}</time>
+            <div class="actions">
+              <button class="${c.liked ? 'on-like' : ''}"
+                onclick="react('${esc(c.key)}', 'toggle-like')">&hearts; ${c.likes}</button>
+              <button class="${c.saved ? 'on-save' : ''}"
+                onclick="react('${esc(c.key)}', 'toggle-save')">${c.saved ? 'Saved' : 'Save'}</button>
+            </div>
+          </figcaption>
+        </figure>`).join('');
+    }
+
+    async function load() {
+      try {
+        const reply = await (await fetch(`/api/clips?device=${device}`)).json();
+        clips = reply.clips;
+        render();
+      } catch (e) { /* transient; next poll retries */ }
+    }
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>

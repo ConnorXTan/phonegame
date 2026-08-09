@@ -151,9 +151,57 @@ enum GameMessage: Codable {
     case spectatorHello                         // sender is a spectator (laptop), not a player
     case cameraRequest(active: Bool)            // spectator → player: stream me your viewfinder
     case hostEnded                              // host closed the game; everyone back to the menu
+    case playerLeft                             // sender left on purpose — remove them everywhere now
     case lobbyRoster(players: [String], spectators: [String])   // host-authoritative membership; drives mesh + UI
     case joinDenied(reason: String)             // host turned the sender's join down (e.g. lobby full)
     case overlayState(SpectatorOverlayState)    // streamer → spectator: HUD elements to redraw over the feed
+}
+
+/// A shooter's last ~5 s of viewfinder leading up to a confirmed kill —
+/// ordered JPEG frames at ~8 fps. Held locally during the match and
+/// transferred to spectators only after the end, so replays never compete
+/// with live gameplay for the radio.
+struct KillClip: Identifiable {
+    enum PublishState: Equatable {
+        case idle
+        case uploading
+        case published(URL)
+        case failed
+    }
+
+    let id: UUID
+    let killer: String       // wire names; render with .displayCallSign
+    let victim: String
+    let capturedAt: Date
+    let frames: [Data]
+    /// One per frame: the shooter's crosshair + enemy tags at that instant,
+    /// drawn over the replay and baked into the published MP4.
+    let overlays: [SpectatorOverlayState]
+    /// Game sounds that fired inside the clip window, replayed in the review
+    /// and mixed into the published MP4's audio track.
+    let sounds: [ClipSoundEvent]
+    /// Hit/kill markers that popped inside the window.
+    let markers: [ClipMarkerEvent]
+    var publishState: PublishState = .idle
+}
+
+/// One app sound inside a kill clip's window — enough to re-trigger the same
+/// bundled asset at the same moment with the same volume/pitch.
+struct ClipSoundEvent: Codable, Equatable {
+    let name: String
+    let volume: Float
+    let rate: Float
+    let offset: TimeInterval   // seconds from the clip's first frame
+}
+
+/// A hit/kill marker that popped at the crosshair inside the clip window,
+/// replayed with the same art and bloom-fade the live HUD uses.
+struct ClipMarkerEvent: Codable, Equatable {
+    let offset: TimeInterval   // seconds from the clip's first frame
+    let isKill: Bool
+
+    /// How long the marker stays visible — the HUD's 0.26 s bloom plus a hair.
+    static let duration: TimeInterval = 0.3
 }
 
 /// What the spectated player sees, reduced to the two things worth mirroring:

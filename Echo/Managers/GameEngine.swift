@@ -62,6 +62,7 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
     @Published private(set) var spectatorFrame: UIImage?
     @Published private(set) var spectatorOverlay: SpectatorOverlayState?   // their crosshair + enemy tags
+    @Published private(set) var killClips: [KillClip] = []   // spectator: post-match kill review, newest last
     @Published private(set) var spectators: Set<String> = []   // peers that are spectators, not targets
     @Published private(set) var joiningLobby: String?          // wire name of the host we're connecting to
     @Published private(set) var lobbyNotice: String?           // join failures ("lobby full") for the menu/browser
@@ -121,6 +122,17 @@ final class GameEngine: NSObject, ObservableObject {
         super.init()
         ranging.delegate = self
         ranging.camera = camera   // one ARSession: viewfinder + camera assistance
+        // Killcam: pair every buffered frame with the live HUD overlay, and
+        // log app sounds so clips can rebuild their audio.
+        camera.clipOverlayProvider = { [weak self] in self?.currentOverlayState() }
+        SoundManager.shared.eventTap = { [weak self] name, volume, rate in
+            guard let self, self.camera.clipBufferEnabled else { return }
+            self.soundLog.append((name, volume, rate, Date()))
+            let cutoff = Date().addingTimeInterval(-8)
+            if self.soundLog.first?.at ?? Date() < cutoff {
+                self.soundLog.removeAll { $0.at < cutoff }
+            }
+        }
         if !RangingManager.isSupported {
             uwbWarning = "This device has no UWB chip (needs iPhone 11+, non-SE). Ranging won't work here."
         } else if !RangingManager.supportsAiming {
@@ -310,10 +322,12 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     func leave() {
-        if isHost, phase != .menu, let net = network {
+        if phase != .menu, let net = network {
             // Tell everyone before tearing down, and give the reliable send a
-            // beat to flush — disconnect() right after send can drop it.
-            net.send(.hostEnded)
+            // beat to flush — disconnect() right after send can drop it. The
+            // explicit goodbye is what separates an intentional leave (remove
+            // me everywhere, now) from a radio blip (keep my seat).
+            net.send(isHost ? .hostEnded : .playerLeft)
             network = nil   // stale-guards drop any further callbacks
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { net.stop() }
         } else {
@@ -323,6 +337,10 @@ final class GameEngine: NSObject, ObservableObject {
         despawnDummy()
         ranging.stopAll()
         camera.frameTap = nil
+        camera.clipBufferEnabled = false
+        pendingKillClips = []
+        delayedCaptures = []
+        killClips = []
         camera.stop()   // after the NI sessions that were using it
         stopTimers()
         players = [:]
@@ -398,11 +416,13 @@ final class GameEngine: NSObject, ObservableObject {
 
     /// Streamer side: the HUD elements worth mirroring on the spectator's
     /// feed — crosshair lock and the floating enemy tags. Mirrors
-    /// EnemyHealthbarOverlay's projection, but into a fixed 3:4 viewport so
+    /// EnemyHealthbarOverlay's projection, but into a fixed 9:16 viewport so
     /// positions are normalized against the FULL portrait camera frame the
     /// spectator receives (the phone screen shows a crop; the stream doesn't).
     private func currentOverlayState() -> SpectatorOverlayState {
-        let viewport = CGSize(width: 300, height: 400)
+        // 9:16, matching the center-cropped frames the stream and killcams
+        // carry — projectPoint applies the same center crop for this aspect.
+        let viewport = CGSize(width: 270, height: 480)
         var tags: [SpectatorOverlayState.Tag] = []
         if let frame = camera.session.currentFrame {
             let now = Date()
@@ -495,6 +515,8 @@ final class GameEngine: NSObject, ObservableObject {
         }
         pendingSnapshots = [:]
         matchResult = nil
+        pendingKillClips = []
+        killClips = []          // spectator: last match's review makes way
         cancelReload()
         ammo = myRole.magazineSize
         phase = .playing
@@ -507,6 +529,7 @@ final class GameEngine: NSObject, ObservableObject {
         // that's already delivering frames. Also covers solo practice, where
         // there are no peers and so no NI session to start it.
         camera.start()
+        camera.clipBufferEnabled = true   // killcam: keep the last ~5 s rolling
         startAimTimer()
         haptics.prepare()
         SoundManager.shared.prepare()
@@ -582,10 +605,129 @@ final class GameEngine: NSObject, ObservableObject {
         autoFireTimer = nil
     }
 
+    // MARK: - Kill clips
+
+    /// Everything the shooter's viewfinder held for the last ~5 s, frozen the
+    /// moment the kill confirms. Held locally; shipped to spectators after
+    /// the match so replays never contend with live traffic.
+    private var pendingKillClips: [KillClip] = []
+    private var soundLog: [(name: String, volume: Float, rate: Float, at: Date)] = []
+    private var markerLog: [(isKill: Bool, at: Date)] = []
+    /// Kills waiting out the post-kill roll before their buffer is frozen.
+    private var delayedCaptures: [(id: UUID, victim: String)] = []
+    /// The clip keeps rolling this long past the kill, so the replay shows
+    /// the aftermath instead of cutting on the killing frame.
+    private static let postKillRoll: TimeInterval = 2.0
+
+    private func captureKillClip(victim: String) {
+        let requestID = UUID()
+        delayedCaptures.append((requestID, victim))
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.postKillRoll) { [weak self] in
+            self?.completeCapture(requestID)
+        }
+    }
+
+    /// Freeze the buffer for one pending kill. Also called by endMatch for
+    /// any still-waiting captures — a final-seconds kill must not lose its
+    /// clip to the buffer being disabled.
+    private func completeCapture(_ requestID: UUID) {
+        guard let index = delayedCaptures.firstIndex(where: { $0.id == requestID }) else { return }
+        let victim = delayedCaptures[index].victim
+        delayedCaptures.remove(at: index)
+        let snapshot = camera.snapshotClip()
+        guard !snapshot.frames.isEmpty else { return }
+        // The buffer's first frame is (count × interval) ago; sounds map to
+        // offsets from there so the review and the MP4 replay them in place.
+        let now = Date()
+        let duration = Double(snapshot.frames.count) * AimCameraManager.clipFrameInterval
+        let clipStart = now.addingTimeInterval(-duration)
+        let sounds = soundLog.compactMap { event -> ClipSoundEvent? in
+            let offset = event.at.timeIntervalSince(clipStart)
+            guard offset >= 0, offset <= duration else { return nil }
+            return ClipSoundEvent(name: event.name, volume: event.volume,
+                                  rate: event.rate, offset: offset)
+        }
+        let markers = markerLog.compactMap { event -> ClipMarkerEvent? in
+            let offset = event.at.timeIntervalSince(clipStart)
+            guard offset >= 0, offset <= duration else { return nil }
+            return ClipMarkerEvent(offset: offset, isKill: event.isKill)
+        }
+        pendingKillClips.append(KillClip(
+            id: UUID(), killer: myName, victim: victim, capturedAt: now,
+            frames: snapshot.frames, overlays: snapshot.overlays,
+            sounds: sounds, markers: markers))
+        if pendingKillClips.count > 10 { pendingKillClips.removeFirst() }
+    }
+
+    /// Spectator: encode a reviewed clip to MP4 and push it to the public
+    /// gallery. State transitions drive the Publish button.
+    func publishKillClip(_ id: UUID) {
+        guard isSpectator,
+              let index = killClips.firstIndex(where: { $0.id == id }),
+              killClips[index].publishState == .idle || killClips[index].publishState == .failed
+        else { return }
+        let clip = killClips[index]
+        killClips[index].publishState = .uploading
+        ClipEncoder.encodeMP4(frames: clip.frames, overlays: clip.overlays,
+                              sounds: clip.sounds, markers: clip.markers) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure:
+                self.setPublishState(.failed, for: id)
+            case .success(let mp4):
+                ReplayPublisher.publish(
+                    mp4: mp4,
+                    killer: clip.killer.displayCallSign,
+                    victim: clip.victim.displayCallSign,
+                    matchId: String(self.myName.suffix(4)),
+                    capturedAt: clip.capturedAt
+                ) { uploadResult in
+                    try? FileManager.default.removeItem(at: mp4)
+                    switch uploadResult {
+                    case .success(let url): self.setPublishState(.published(url), for: id)
+                    case .failure: self.setPublishState(.failed, for: id)
+                    }
+                }
+            }
+        }
+    }
+
+    private func setPublishState(_ state: KillClip.PublishState, for id: UUID) {
+        guard let index = killClips.firstIndex(where: { $0.id == id }) else { return }
+        killClips[index].publishState = state
+    }
+
+    /// Post-match: stagger the clips out to every spectator, ~0.5 s apart, so
+    /// the summary screen isn't fighting a megabyte burst per clip.
+    private func transferKillClips() {
+        guard !isSpectator, let net = network, !pendingKillClips.isEmpty, !spectators.isEmpty else {
+            pendingKillClips = []
+            return
+        }
+        let clips = pendingKillClips
+        pendingKillClips = []
+        let targets = spectators
+        for (index, clip) in clips.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.5) { [weak self] in
+                guard let self, self.network === net else { return }
+                for spectator in targets {
+                    net.sendKillClip(clip, to: spectator)
+                }
+            }
+        }
+    }
+
     /// Shooter-side hit confirmation — marker, tick, buzz. The kill variant
     /// fires separately when the victim's `.death` comes back over the wire.
     private func confirmHit(kill: Bool = false) {
         hitMarker = HitMarker(count: hitMarker.count + 1, isKill: kill)
+        if camera.clipBufferEnabled {
+            markerLog.append((kill, Date()))
+            let cutoff = Date().addingTimeInterval(-8)
+            if markerLog.first?.at ?? Date() < cutoff {
+                markerLog.removeAll { $0.at < cutoff }
+            }
+        }
         if kill {
             haptics.playKillConfirm()
         } else {
@@ -727,6 +869,16 @@ final class GameEngine: NSObject, ObservableObject {
         matchTimer = timer
     }
 
+    /// Host only: call the match right now instead of waiting for the clock.
+    /// Same authoritative path as the clock hitting zero — everyone gets the
+    /// host's tallies and lands on the summary together.
+    func endMatchEarly() {
+        guard phase == .playing, isHost else { return }
+        let finals = players.values.map(PlayerState.init)
+        network?.send(.endMatch(finalStates: finals))
+        endMatch(with: Array(players.values))
+    }
+
     private func tickMatchClock() {
         guard phase == .playing, let deadline = matchDeadline else { return }
         let remaining = deadline.timeIntervalSinceNow
@@ -763,8 +915,13 @@ final class GameEngine: NSObject, ObservableObject {
         cancelReload()
         aimedTarget = nil
         despawnDummy()
+        // A kill still waiting out its post-kill roll freezes with whatever
+        // the buffer holds — better a short clip than a lost one.
+        for capture in delayedCaptures { completeCapture(capture.id) }
+        camera.clipBufferEnabled = false
         phase = .summary
         haptics.playMatchEnd()
+        transferKillClips()   // ship the killcams to the review screen
     }
 
     /// Summary → lobby, mesh intact, so the host can run another match.
@@ -780,8 +937,17 @@ final class GameEngine: NSObject, ObservableObject {
             players[name]?.hp = player.role.maxHP
             players[name]?.isAlive = true
         }
+        // Whoever dropped mid-match and never came back isn't in the next
+        // one — no ghosts in the lobby roster.
+        for (name, player) in players where !player.isConnected && name != myName {
+            players[name] = nil
+        }
         phase = .lobby
+        if isHost { broadcastRoster() }
         refreshLobbyAdvertisement()   // back to "open" in the lobby list
+        // Leaving the review deletes the clips: published ones live on the
+        // gallery, unpublished ones are gone for good — nothing is kept.
+        killClips = []
     }
 
     // MARK: - Aim indicator
@@ -850,6 +1016,7 @@ final class GameEngine: NSObject, ObservableObject {
             killFeed.insert(KillEvent(killer: myName, victim: TargetDummy.name), at: 0)
             trimFeed()
             confirmHit(kill: true)
+            captureKillClip(victim: TargetDummy.name)
             dummy.relocate()
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.respawnDelay) { [weak self] in
                 guard let self, self.phase == .playing,
@@ -1097,7 +1264,10 @@ extension GameEngine: NetworkManagerDelegate {
             players[killedBy]?.kills += 1
             killFeed.insert(KillEvent(killer: killedBy, victim: player), at: 0)
             trimFeed()
-            if killedBy == myName { confirmHit(kill: true) }
+            if killedBy == myName {
+                confirmHit(kill: true)
+                captureKillClip(victim: player)
+            }
 
         case .respawn(let player):
             guard player != myName else { return }
@@ -1179,6 +1349,25 @@ extension GameEngine: NetworkManagerDelegate {
             leave()
             hostEndedNotice = "The host ended the game."
 
+        case .playerLeft:
+            // Deliberate departure: no blip protection, no ghost rows.
+            spectators.remove(peerName)
+            players[peerName] = nil
+            ranging.removePeer(peerName)
+            if streamingTo == peerName {
+                streamingTo = nil
+                camera.frameTap = nil
+            }
+            if watchingPlayer == peerName {
+                watchingPlayer = nil
+                spectatorFrame = nil
+                spectatorOverlay = nil
+            }
+            if isHost {
+                broadcastRoster()
+                refreshLobbyAdvertisement()
+            }
+
         case .lobbyRoster(let playerNames, let spectatorNames):
             guard !isHost else { return }   // members mirror the host's list
             spectators = Set(spectatorNames).subtracting([myName])
@@ -1200,6 +1389,13 @@ extension GameEngine: NetworkManagerDelegate {
             leave()
             lobbyNotice = reason
         }
+    }
+
+    func network(_ manager: NetworkManager, didReceiveKillClip clip: KillClip, from peerName: String) {
+        guard manager === network, isSpectator else { return }
+        guard !killClips.contains(where: { $0.id == clip.id }) else { return }
+        killClips.append(clip)
+        killClips.sort { $0.capturedAt < $1.capturedAt }
     }
 
     func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peerName: String) {

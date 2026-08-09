@@ -45,6 +45,25 @@ final class AimCameraManager: NSObject, ObservableObject {
     /// main queue at ~12 fps. Nil (the normal state) costs nothing per frame.
     var frameTap: ((Data) -> Void)?
 
+    /// Killcam capture: while enabled, a rolling ~5 s of viewfinder JPEGs is
+    /// kept (8 fps × 40 frames ≈ 1 MB), each paired with the HUD overlay
+    /// (crosshair + enemy tags) at that instant. Snapshotted the moment a
+    /// kill confirms; the encode pipeline is shared with the spectator tap.
+    var clipBufferEnabled = false {
+        didSet { if !clipBufferEnabled { clipBuffer.removeAll() } }
+    }
+    /// Asked (on main) for the current HUD overlay as each frame lands.
+    var clipOverlayProvider: (() -> SpectatorOverlayState?)?
+    private var clipBuffer: [(jpeg: Data, overlay: SpectatorOverlayState)] = []
+    private var lastClipAt = Date.distantPast
+    static let clipFrameInterval: TimeInterval = 1.0 / 8.0
+    private static let clipFrameCount = 56   // ~7 s: ~5 s of hunt + 2 s of aftermath
+
+    /// The last ~5 s of viewfinder, oldest first, with per-frame overlays.
+    func snapshotClip() -> (frames: [Data], overlays: [SpectatorOverlayState]) {
+        (clipBuffer.map(\.jpeg), clipBuffer.map(\.overlay))
+    }
+
     let session = ARSession()
 
     /// Vertical plane anchors by identifier, from the session delegate. ARKit
@@ -281,6 +300,20 @@ final class AimCameraManager: NSObject, ObservableObject {
     private func encodeJPEG(_ buffer: CVPixelBuffer) -> Data? {
         // Sensor frames are landscape; the game is portrait.
         var image = CIImage(cvPixelBuffer: buffer).oriented(.right)
+        // Center-crop the 4:3 sensor frame to 9:16 — full height, sides
+        // trimmed — matching both what the player's aspect-filled screen
+        // showed and how phone footage is expected to look. ARKit projects
+        // into a 9:16 viewport with the same center crop, so overlay
+        // coordinates stay aligned.
+        let extent = image.extent
+        let targetWidth = extent.height * 9.0 / 16.0
+        if targetWidth < extent.width {
+            let x = extent.minX + (extent.width - targetWidth) / 2
+            image = image.cropped(to: CGRect(x: x, y: extent.minY,
+                                             width: targetWidth, height: extent.height))
+            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX,
+                                                            y: -image.extent.minY))
+        }
         let scale = 416 / image.extent.width
         image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
@@ -324,9 +357,15 @@ extension AimCameraManager: ARSessionDelegate {
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         sampleWallChips(frame)
-        guard frameTap != nil, !encodingInFlight,
-              Date().timeIntervalSince(lastTapAt) >= 1.0 / 20.0 else { return }   // ack pacing is the real governor
-        lastTapAt = Date()
+        // One encode pipeline, two consumers with their own cadences: the
+        // spectator tap (≤20 fps; ack pacing is the real governor) and the
+        // killcam ring buffer (8 fps).
+        let now = Date()
+        let tapDue = frameTap != nil && now.timeIntervalSince(lastTapAt) >= 1.0 / 20.0
+        let clipDue = clipBufferEnabled && now.timeIntervalSince(lastClipAt) >= Self.clipFrameInterval
+        guard tapDue || clipDue, !encodingInFlight else { return }
+        if tapDue { lastTapAt = now }
+        if clipDue { lastClipAt = now }
         encodingInFlight = true
         let buffer = frame.capturedImage
         encodeQueue.async { [weak self] in
@@ -334,7 +373,16 @@ extension AimCameraManager: ARSessionDelegate {
             let jpeg = self.encodeJPEG(buffer)
             DispatchQueue.main.async {
                 self.encodingInFlight = false
-                if let jpeg { self.frameTap?(jpeg) }
+                guard let jpeg else { return }
+                if tapDue { self.frameTap?(jpeg) }
+                if clipDue, self.clipBufferEnabled {
+                    let overlay = self.clipOverlayProvider?()
+                        ?? SpectatorOverlayState(tags: [], lockedTarget: nil)
+                    self.clipBuffer.append((jpeg, overlay))
+                    if self.clipBuffer.count > Self.clipFrameCount {
+                        self.clipBuffer.removeFirst(self.clipBuffer.count - Self.clipFrameCount)
+                    }
+                }
             }
         }
     }

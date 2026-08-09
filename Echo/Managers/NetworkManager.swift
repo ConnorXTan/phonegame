@@ -4,6 +4,7 @@ import Network
 protocol NetworkManagerDelegate: AnyObject {
     func network(_ manager: NetworkManager, didReceive message: GameMessage, from peerName: String)
     func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peerName: String)
+    func network(_ manager: NetworkManager, didReceiveKillClip clip: KillClip, from peerName: String)
     func network(_ manager: NetworkManager, peerDidConnect peerName: String)
     func network(_ manager: NetworkManager, peerDidDisconnect peerName: String)
 }
@@ -383,6 +384,7 @@ final class NetworkManager: ObservableObject {
     private static let kindCameraFrame: UInt8 = 0x01
     private static let kindHello: UInt8 = 0x02
     private static let kindFrameAck: UInt8 = 0x03   // spectator → streamer: last camera frame arrived
+    private static let kindKillClip: UInt8 = 0x04   // post-match: a kill replay for the spectator
     private static let maxFrameBytes: UInt32 = 4 << 20   // sanity cap; largest real frame is a camera JPEG
 
     private static func frame(_ body: Data) -> Data {
@@ -439,6 +441,70 @@ final class NetworkManager: ObservableObject {
 
     func isConnected(_ peerName: String) -> Bool {
         links[peerName] != nil
+    }
+
+    // MARK: - Kill clips (post-match transfer)
+
+    private struct KillClipHeader: Codable {
+        let id: UUID
+        let killer: String
+        let victim: String
+        let ts: TimeInterval
+        let count: Int
+        // HUD overlay per frame + the sounds and hit markers inside the
+        // window; a few KB of JSON riding ahead of ~1 MB of JPEG.
+        let overlays: [SpectatorOverlayState]
+        let sounds: [ClipSoundEvent]
+        let markers: [ClipMarkerEvent]
+    }
+
+    /// One kill replay for a spectator. Sent only after the match ends, so a
+    /// ~1 MB burst can't contend with live game traffic. Body layout:
+    /// [2-byte BE header length][header JSON][count × (4-byte BE length + JPEG)].
+    func sendKillClip(_ clip: KillClip, to peerName: String) {
+        guard let link = links[peerName],
+              let header = try? JSONEncoder().encode(KillClipHeader(
+                  id: clip.id, killer: clip.killer, victim: clip.victim,
+                  ts: clip.capturedAt.timeIntervalSince1970, count: clip.frames.count,
+                  overlays: clip.overlays, sounds: clip.sounds, markers: clip.markers))
+        else { return }
+        var body = Data([Self.kindKillClip])
+        var headerLength = UInt16(header.count).bigEndian
+        withUnsafeBytes(of: &headerLength) { body.append(contentsOf: $0) }
+        body.append(header)
+        for jpeg in clip.frames {
+            var frameLength = UInt32(jpeg.count).bigEndian
+            withUnsafeBytes(of: &frameLength) { body.append(contentsOf: $0) }
+            body.append(jpeg)
+        }
+        guard body.count < Self.maxFrameBytes else { return }   // over-long clip: drop, don't kill the link
+        link.connection.send(content: Self.frame(body), completion: .contentProcessed { error in
+            if let error { print("[Network] kill clip send failed: \(error)") }
+        })
+    }
+
+    private func parseKillClip(_ payload: Data) -> KillClip? {
+        var data = payload[payload.startIndex...]
+        guard data.count >= 2 else { return nil }
+        let headerLength = Int(data[data.startIndex]) << 8 | Int(data[data.index(after: data.startIndex)])
+        data = data.dropFirst(2)
+        guard data.count >= headerLength,
+              let header = try? JSONDecoder().decode(KillClipHeader.self, from: data.prefix(headerLength))
+        else { return nil }
+        data = data.dropFirst(headerLength)
+        var frames: [Data] = []
+        for _ in 0..<header.count {
+            guard data.count >= 4 else { return nil }
+            let bytes = [UInt8](data.prefix(4))
+            let length = Int(bytes[0]) << 24 | Int(bytes[1]) << 16 | Int(bytes[2]) << 8 | Int(bytes[3])
+            data = data.dropFirst(4)
+            guard length > 0, data.count >= length else { return nil }
+            frames.append(Data(data.prefix(length)))
+            data = data.dropFirst(length)
+        }
+        return KillClip(id: header.id, killer: header.killer, victim: header.victim,
+                        capturedAt: Date(timeIntervalSince1970: header.ts), frames: frames,
+                        overlays: header.overlays, sounds: header.sounds, markers: header.markers)
     }
 
     // MARK: - Receiving
@@ -499,6 +565,10 @@ final class NetworkManager: ObservableObject {
             link.frameAckTimeout?.cancel()
             link.frameAckTimeout = nil
             link.cameraFrameInFlight = false
+        case Self.kindKillClip:
+            guard link.isEstablished, let name = link.name,
+                  let clip = parseKillClip(Data(payload)) else { return }
+            delegate?.network(self, didReceiveKillClip: clip, from: name)
         default:
             print("[Network] unknown packet kind \(kind)")
         }

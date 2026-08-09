@@ -9,6 +9,17 @@ struct SpectatorView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var winnerTitleSize: CGFloat = 40
     @ScaledMetric(relativeTo: .largeTitle) private var emptyGlyphSize: CGFloat = 56
 
+    // Kill review playback: which clip is open, its decoded frames, and when
+    // playback started (drives the flipbook clock).
+    @State private var reviewClipID: UUID?
+    @State private var reviewImages: [UIImage] = []
+    @State private var reviewStarted = Date()
+    @State private var showManageGallery = false
+
+    private var reviewClip: KillClip? {
+        reviewClipID.flatMap { id in engine.killClips.first { $0.id == id } }
+    }
+
     /// Alphabetical while the lobby fills; live standings once the match runs.
     private var roster: [Player] {
         let players = engine.opponents
@@ -30,6 +41,9 @@ struct SpectatorView: View {
                 Divider().overlay(Color.echoHairline)
                 if engine.phase == .summary, let result = engine.matchResult {
                     summary(result)
+                        .overlay {
+                            if let clip = reviewClip { replayOverlay(clip) }
+                        }
                 } else {
                     HStack(spacing: 0) {
                         playerRail
@@ -84,6 +98,17 @@ struct SpectatorView: View {
 
             Spacer()
 
+            if engine.phase == .playing, engine.isHost {
+                Button {
+                    engine.endMatchEarly()
+                } label: {
+                    Label("End Match", systemImage: "flag.checkered")
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.echoDanger)
+                .accessibilityHint("Ends the match now; final standings use current tallies")
+            }
+
             Label("\(roster.count)", systemImage: "iphone.gen3")
                 .font(.app(.callout).monospacedDigit())
                 .foregroundStyle(Color.echoTextSecondary)
@@ -91,6 +116,15 @@ struct SpectatorView: View {
                 .padding(.vertical, Space.xs)
                 .background(Color.echoSurface, in: Capsule())
                 .accessibilityLabel("\(roster.count) players connected")
+
+            Button {
+                showManageGallery = true
+            } label: {
+                Image(systemName: "photo.stack")
+                    .font(.title3)
+            }
+            .accessibilityLabel("Manage the killcam gallery")
+            .sheet(isPresented: $showManageGallery) { ManageGalleryView() }
 
             Button(role: .destructive) {
                 engine.leave()
@@ -441,23 +475,13 @@ struct SpectatorView: View {
                       width: size.width, height: size.height)
     }
 
-    /// The spectated player's crosshair: hot when they're locked, faint when
-    /// they're scanning — same semantics as their reticle.
-    @ViewBuilder
+    /// The spectated player's aim reference: a neutral crosshair only — the
+    /// hit markers and health bars carry the drama, no lock callout.
     private func spectatedCrosshair(_ overlay: SpectatorOverlayState, center: CGPoint) -> some View {
-        let locked = overlay.lockedTarget != nil
-        VStack(spacing: Space.xs) {
-            Image(systemName: locked ? "scope" : "plus")
-                .font(.system(size: 40, weight: .thin))
-                .foregroundStyle(locked ? Color.echoPrimary : Color.echoText.opacity(Alpha.muted))
-            if let target = overlay.lockedTarget {
-                Text("LOCKED · \(target.uppercased())")
-                    .font(.appBold(.caption2))
-                    .foregroundStyle(Color.echoPrimary)
-            }
-        }
-        .position(center)
-        .animation(.easeOut(duration: 0.15), value: locked)
+        Image(systemName: "plus")
+            .font(.system(size: 40, weight: .thin))
+            .foregroundStyle(Color.echoText.opacity(Alpha.muted))
+            .position(center)
     }
 
     /// Who's on air and how they're doing, pinned over the feed.
@@ -549,6 +573,10 @@ struct SpectatorView: View {
             }
             .frame(maxWidth: 460)
 
+            if !engine.killClips.isEmpty {
+                killReviewRail
+            }
+
             Button {
                 engine.returnToLobby()
             } label: {
@@ -560,6 +588,188 @@ struct SpectatorView: View {
             Spacer()
         }
         .padding()
+    }
+
+    // MARK: - Kill review
+
+    private var killReviewRail: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            Text("KILL REVIEW")
+                .font(.caption2.bold())
+                .tracking(2)
+                .foregroundStyle(Color.echoTextTertiary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Space.md) {
+                    ForEach(engine.killClips) { clip in
+                        killClipCard(clip)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 560)
+    }
+
+    private func killClipCard(_ clip: KillClip) -> some View {
+        Button {
+            openReview(clip)
+        } label: {
+            VStack(spacing: Space.xs) {
+                ZStack {
+                    if let first = clip.frames.first, let thumb = UIImage(data: first) {
+                        Image(uiImage: thumb)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.echoSurface
+                    }
+                    Image(systemName: "play.fill")
+                        .font(.title3)
+                        .foregroundStyle(Color.echoText.opacity(Alpha.heavy))
+                }
+                .frame(width: 96, height: 128)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                (
+                    Text(clip.killer.displayCallSign)
+                    + Text(" \(Image(systemName: "bolt.fill")) ")
+                    + Text(clip.victim.displayCallSign)
+                )
+                .font(.caption2.bold())
+                .lineLimit(1)
+                publishBadge(clip.publishState)
+            }
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+    }
+
+    @ViewBuilder
+    private func publishBadge(_ state: KillClip.PublishState) -> some View {
+        switch state {
+        case .idle:
+            Text("unpublished")
+                .font(.caption2)
+                .foregroundStyle(Color.echoTextTertiary)
+        case .uploading:
+            ProgressView().controlSize(.mini)
+        case .published:
+            Label("LIVE ON GALLERY", systemImage: "checkmark.circle.fill")
+                .font(.caption2.bold())
+                .foregroundStyle(Color.echoSecondary)
+        case .failed:
+            Label("failed — retry", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption2)
+                .foregroundStyle(Color.echoWarning)
+        }
+    }
+
+    private func openReview(_ clip: KillClip) {
+        reviewImages = clip.frames.compactMap(UIImage.init(data:))
+        reviewStarted = Date()
+        reviewClipID = clip.id
+        // First pass plays the clip's sounds in place; loops replay silently.
+        for event in clip.sounds {
+            DispatchQueue.main.asyncAfter(deadline: .now() + event.offset) { [weak engine] in
+                guard engine != nil, reviewClipID == clip.id else { return }
+                SoundManager.shared.play(event.name, volume: event.volume, rate: event.rate)
+            }
+        }
+    }
+
+    private func replayOverlay(_ clip: KillClip) -> some View {
+        ZStack {
+            Color.echoBackground.opacity(Alpha.opaque).ignoresSafeArea()
+            VStack(spacing: Space.lg) {
+                (
+                    Text(clip.killer.displayCallSign)
+                    + Text("  \(Image(systemName: "bolt.fill"))  ")
+                    + Text(clip.victim.displayCallSign)
+                )
+                .font(.headline)
+
+                TimelineView(.periodic(from: reviewStarted, by: 1.0 / 8.0)) { context in
+                    let elapsed = context.date.timeIntervalSince(reviewStarted)
+                    let index = reviewImages.isEmpty ? 0
+                        : Int(elapsed * 8) % reviewImages.count
+                    if reviewImages.indices.contains(index) {
+                        GeometryReader { geo in
+                            let fit = Self.fittedRect(image: reviewImages[index].size, in: geo.size)
+                            Image(uiImage: reviewImages[index])
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // The shooter's HUD at that instant: enemy tags
+                            // pinned into the frame plus their crosshair.
+                            if clip.overlays.indices.contains(index) {
+                                let overlay = clip.overlays[index]
+                                ForEach(overlay.tags, id: \.name) { tag in
+                                    EnemyTag(name: tag.name, hpFraction: CGFloat(tag.hp))
+                                        .position(x: fit.minX + CGFloat(tag.x) * fit.width,
+                                                  y: fit.minY + CGFloat(tag.y) * fit.height - 40)
+                                }
+                                spectatedCrosshair(overlay, center: CGPoint(x: fit.midX, y: fit.midY))
+                            }
+                            // Hit/kill markers replayed with the HUD's art and
+                            // bloom-fade, timed off the clip clock.
+                            let clipTime = Double(index) / 8.0
+                            ForEach(Array(clip.markers.enumerated()), id: \.offset) { item in
+                                let marker = item.element
+                                let age = clipTime - marker.offset
+                                if age >= 0, age < ClipMarkerEvent.duration {
+                                    let fade = age / ClipMarkerEvent.duration
+                                    Image(art: marker.isKill ? .hitMarkerKill : .hitMarker)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .foregroundStyle(marker.isKill ? Color.echoDanger : Color.echoText)
+                                        .frame(width: marker.isKill ? 22 : 16,
+                                               height: marker.isKill ? 22 : 16)
+                                        .opacity(1 - fade)
+                                        .scaleEffect(0.8 + 0.4 * fade)
+                                        .position(x: fit.midX, y: fit.midY)
+                                }
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                    }
+                }
+                .frame(maxWidth: 420, maxHeight: 540)
+
+                HStack(spacing: Space.lg) {
+                    switch clip.publishState {
+                    case .idle, .failed:
+                        Button {
+                            engine.publishKillClip(clip.id)
+                        } label: {
+                            Label(clip.publishState == .failed ? "Retry Publish" : "Publish to Gallery",
+                                  systemImage: "arrow.up.circle.fill")
+                                .foregroundStyle(Color.echoOnPrimary)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.echoPrimary)
+                    case .uploading:
+                        ProgressView("Publishing…")
+                    case .published(let url):
+                        Label("Published", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(Color.echoSecondary)
+                        Button {
+                            UIPasteboard.general.string = url.absoluteString
+                        } label: {
+                            Label("Copy Link", systemImage: "link")
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Color.echoText)
+                    }
+
+                    Button("Close") {
+                        reviewClipID = nil
+                        reviewImages = []
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color.echoText)
+                }
+            }
+            .padding(Space.xl)
+        }
     }
 
     @ViewBuilder
