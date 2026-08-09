@@ -271,13 +271,18 @@ enum ClipEncoder {
             else { return completion(.failure(EncodeError.writerFailed)) }
             export.outputURL = out
             export.outputFileType = .mp4
-            export.exportAsynchronously {
+            // AVAssetExportSession predates Sendable and its iOS 17 API reads
+            // status/error inside the completion handler by design. The session
+            // is owned solely by this closure after the call, so the capture is
+            // race-free; the Sendable-clean replacement (export(to:as:)) is iOS 18+.
+            nonisolated(unsafe) let session = export
+            session.exportAsynchronously {
                 try? FileManager.default.removeItem(at: video)
                 try? FileManager.default.removeItem(at: audio)
-                if export.status == .completed {
+                if session.status == .completed {
                     completion(.success(out))
                 } else {
-                    completion(.failure(export.error ?? EncodeError.writerFailed))
+                    completion(.failure(session.error ?? EncodeError.writerFailed))
                 }
             }
         }
