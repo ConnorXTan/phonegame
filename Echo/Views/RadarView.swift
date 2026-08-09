@@ -8,12 +8,16 @@ import simd
 struct RadarView: View {
     @EnvironmentObject private var engine: GameEngine
 
+    /// Meters at the dome's rim — a display scale for the blips, not a
+    /// gameplay limit; shots land at any distance.
+    private static let displayRange: CGFloat = 22.5
+
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
             Canvas { ctx, size in
                 let center = CGPoint(x: size.width / 2, y: size.height * 0.92)
                 let radius = min(size.width / 2, size.height * 0.88) - 6
-                let maxRange = CGFloat(engine.settings.weaponRange) * 1.5
+                let maxRange = Self.displayRange
 
                 drawGrid(ctx: ctx, center: center, radius: radius)
                 drawCone(ctx: ctx, center: center, radius: radius)

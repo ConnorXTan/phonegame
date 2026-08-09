@@ -52,15 +52,14 @@ struct DebugRangingView: View {
         let reading = engine.ranging.latestReading(for: player.name)
         let angle = reading?.angleOffBoresight
         let inCone = angle.map { $0 < engine.settings.aimConeRadians } ?? false
-        let inRange = (reading?.distance).map { $0 < engine.settings.weaponRange } ?? false
 
         return HStack(spacing: Space.sm) {
             Circle()
-                .fill(inCone && inRange
+                .fill(inCone
                       ? Color.ltnPrimary
                       : (reading != nil ? Color.ltnSecondary : Color.ltnInert))
                 .frame(width: 10, height: 10)
-                .accessibilityLabel(inCone && inRange
+                .accessibilityLabel(inCone
                                     ? "In your sights"
                                     : (reading != nil ? "Ranging" : "No signal"))
             Text(player.name.displayCallSign)

@@ -102,7 +102,6 @@ enum Team: String, Codable, CaseIterable, Identifiable {
 }
 
 struct GameSettings: Codable, Equatable {
-    var weaponRange: Float        // meters
     var aimConeDegrees: Float     // half-angle off boresight
     var respawnDelay: TimeInterval
     var spawnProtection: TimeInterval      // i-frames after respawning
@@ -113,7 +112,7 @@ struct GameSettings: Codable, Equatable {
     var aimConeRadians: Float { aimConeDegrees * .pi / 180 }
 
     static let standard = GameSettings(
-        weaponRange: 15, aimConeDegrees: 5,
+        aimConeDegrees: 5,
         respawnDelay: 5, spawnProtection: 1,
         matchDuration: 300, maxPlayers: 6)
 

@@ -20,6 +20,10 @@ struct MiniMapView: View {
     /// ±60° — the fan's half-angle, ≈ the UWB field of view.
     private static let halfAngle: CGFloat = .pi / 3
 
+    /// Meters at the fan's rim — a display scale for the blips and range
+    /// rings, not a gameplay limit; shots land at any distance.
+    private static let displayRange: CGFloat = 15
+
     /// One entry per human, newest reading wins — a rejoin mints a new wire
     /// name, and two blips for one person would be worse than none. Cloaked
     /// players drop out entirely: a blip with a name is exactly the reveal
@@ -39,7 +43,7 @@ struct MiniMapView: View {
                 let apex = CGPoint(x: size.width / 2, y: size.height - 8)   // room for the self dot
                 let radius = min(apex.y - 12,                               // label headroom above the rim
                                  (size.width / 2 - 2) / sin(Self.halfAngle))
-                let maxRange = CGFloat(engine.settings.weaponRange)
+                let maxRange = Self.displayRange
 
                 // The fan itself is the widget's surface — ltnBackground at
                 // Alpha.strong, the scrim weight that keeps everything on it
@@ -98,9 +102,8 @@ struct MiniMapView: View {
         return path
     }
 
-    /// Half, three-quarter, and full weapon range. The extra arc out near the
-    /// rim is where the reading matters most — that's the band a target is in
-    /// just before they walk into range.
+    /// Half, three-quarter, and full display range — distance reference
+    /// rings for reading a blip's radius, not a gameplay boundary.
     private func drawRangeArcs(ctx: GraphicsContext, apex: CGPoint, radius: CGFloat) {
         for fraction: CGFloat in [0.5, 0.75, 1.0] {
             var arc = Path()
