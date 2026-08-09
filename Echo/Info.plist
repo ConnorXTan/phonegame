@@ -13,5 +13,9 @@
 		<string>_lasertag._tcp</string>
 		<string>_lasertag._udp</string>
 	</array>
+	<key>UIAppFonts</key>
+	<array>
+		<string>fontregular.ttf</string>
+	</array>
 </dict>
 </plist>
