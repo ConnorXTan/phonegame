@@ -107,7 +107,7 @@ enum ClipEncoder {
                             at: CGPoint(x: CGFloat(tag.x) * size.width,
                                         y: CGFloat(tag.y) * size.height - 40))
                 }
-                drawCrosshair(locked: overlay.lockedTarget, in: size, context: ctx.cgContext)
+                drawCrosshair(in: size, context: ctx.cgContext)
             }
             for marker in markers {
                 drawMarker(marker, at: clipTime, in: size)
@@ -166,32 +166,17 @@ enum ClipEncoder {
         UIBezierPath(roundedRect: fillRect, cornerRadius: barHeight / 2).fill()
     }
 
-    private static func drawCrosshair(locked: String?, in size: CGSize, context: CGContext) {
+    /// Neutral aim reference only — no lock ring, no callout; the markers
+    /// and health bars carry the drama.
+    private static func drawCrosshair(in size: CGSize, context: CGContext) {
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        let radius: CGFloat = 26
-        let color = locked != nil ? lockedColor : UIColor.white.withAlphaComponent(0.4)
-        context.setStrokeColor(color.cgColor)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.4).cgColor)
         context.setLineWidth(2)
-        if locked != nil {
-            context.strokeEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
-                                             width: radius * 2, height: radius * 2))
-        }
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] as [(CGFloat, CGFloat)] {
             context.move(to: CGPoint(x: center.x + dx * 8, y: center.y + dy * 8))
-            context.addLine(to: CGPoint(x: center.x + dx * (radius + 6),
-                                        y: center.y + dy * (radius + 6)))
+            context.addLine(to: CGPoint(x: center.x + dx * 26, y: center.y + dy * 26))
         }
         context.strokePath()
-        if let locked {
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedSystemFont(ofSize: 12, weight: .bold),
-                .foregroundColor: color,
-            ]
-            let label = "LOCKED · \(locked.uppercased())" as NSString
-            let labelSize = label.size(withAttributes: attributes)
-            label.draw(at: CGPoint(x: center.x - labelSize.width / 2, y: center.y + radius + 10),
-                       withAttributes: attributes)
-        }
     }
 
     // MARK: - Audio reconstruction

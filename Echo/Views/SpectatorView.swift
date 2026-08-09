@@ -465,23 +465,13 @@ struct SpectatorView: View {
                       width: size.width, height: size.height)
     }
 
-    /// The spectated player's crosshair: hot when they're locked, faint when
-    /// they're scanning — same semantics as their reticle.
-    @ViewBuilder
+    /// The spectated player's aim reference: a neutral crosshair only — the
+    /// hit markers and health bars carry the drama, no lock callout.
     private func spectatedCrosshair(_ overlay: SpectatorOverlayState, center: CGPoint) -> some View {
-        let locked = overlay.lockedTarget != nil
-        VStack(spacing: Space.xs) {
-            Image(systemName: locked ? "scope" : "plus")
-                .font(.system(size: 40, weight: .thin))
-                .foregroundStyle(locked ? Color.echoPrimary : Color.echoText.opacity(Alpha.muted))
-            if let target = overlay.lockedTarget {
-                Text("LOCKED · \(target.uppercased())")
-                    .font(.caption2.bold())
-                    .foregroundStyle(Color.echoPrimary)
-            }
-        }
-        .position(center)
-        .animation(.easeOut(duration: 0.15), value: locked)
+        Image(systemName: "plus")
+            .font(.system(size: 40, weight: .thin))
+            .foregroundStyle(Color.echoText.opacity(Alpha.muted))
+            .position(center)
     }
 
     /// Who's on air and how they're doing, pinned over the feed.
