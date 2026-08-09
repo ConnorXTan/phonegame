@@ -10,3 +10,7 @@ DerivedData/
 
 # macOS
 .DS_Store
+# Xcode per-user state — window layout, open tabs; regenerated constantly
+xcuserdata/
+*.xcuserstate
+.DS_Store
