@@ -71,7 +71,7 @@ final class AimCameraManager: NSObject, ObservableObject {
         if !Self.isSupported { return "This device can't run the camera viewfinder." }
         switch authorization {
         case .denied, .restricted:
-            return "Camera access is off. Enable it in Settings → Apps → Echo → Camera to see what you're aiming at."
+            return "Camera access is off. Enable it in Settings → Apps → LTN → Camera to see what you're aiming at."
         case .notDetermined:
             return "Waiting for camera access…"
         default:
