@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LTN // KILLCAMS</title>
+<link rel="icon" type="image/png" href="/logo.png">
 <style>
   :root {
     --bg: #05070f;
@@ -24,12 +25,13 @@
   }
   header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 16px;
     margin-bottom: 28px;
     border-bottom: 1px solid var(--hairline);
     padding-bottom: 16px;
   }
+  #logo { height: 44px; width: auto; display: block; }
   h1 { font-size: 22px; font-weight: 800; letter-spacing: 3px; }
   h1 span { color: var(--primary); }
   #count { color: var(--text-dim); font-size: 13px; }
@@ -139,7 +141,8 @@
 </head>
 <body>
   <header>
-    <h1>LTN <span>//</span> KILLCAMS</h1>
+    <img id="logo" src="/logo.png" alt="LTN">
+    <h1><span>//</span> KILLCAMS</h1>
     <div id="count"></div>
     <button id="savedToggle">Saved</button>
   </header>
