@@ -49,9 +49,9 @@ struct GameHUDView: View {
                 if let alert = engine.rangingAlert {
                     Label(alert, systemImage: "exclamationmark.triangle.fill")
                         .font(.app(.caption2))
-                        .foregroundStyle(Color.echoWarning)
+                        .foregroundStyle(Color.ltnWarning)
                         .padding(Space.sm)
-                        .background(Color.echoBackground.opacity(Alpha.strong),
+                        .background(Color.ltnBackground.opacity(Alpha.strong),
                                     in: RoundedRectangle(cornerRadius: Radius.sm))
                         .padding(.horizontal)
                 }
@@ -101,11 +101,11 @@ struct GameHUDView: View {
     /// middle of the frame stays untouched.
     private var scrim: some View {
         VStack(spacing: 0) {
-            LinearGradient(colors: [Color.echoBackground.opacity(Alpha.strong), .clear],
+            LinearGradient(colors: [Color.ltnBackground.opacity(Alpha.strong), .clear],
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 130)
             Spacer()
-            LinearGradient(colors: [.clear, Color.echoBackground.opacity(Alpha.strong)],
+            LinearGradient(colors: [.clear, Color.ltnBackground.opacity(Alpha.strong)],
                            startPoint: .top, endPoint: .bottom)
                 .frame(height: 180)
         }
@@ -150,14 +150,14 @@ struct GameHUDView: View {
             } else {
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
                     .font(.app(.subheadline).monospacedDigit())
-                    .foregroundStyle(Color.echoTextSecondary)
+                    .foregroundStyle(Color.ltnTextSecondary)
                     .fixedSize()
                     .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
             }
         }
         .font(.app(.subheadline))
-        .foregroundStyle(Color.echoText)
-        .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
+        .foregroundStyle(Color.ltnText)
+        .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 3, y: 1)
         .padding(.horizontal, Space.lg)
         .padding(.top, Space.sm)
     }
@@ -167,7 +167,7 @@ struct GameHUDView: View {
     /// clears the left column so the minimap can start a row higher.
     private var heartGauge: some View {
         HeartBar(fraction: hpFraction, total: engine.myRole.maxHP, size: heartSize)
-            .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
+            .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 3, y: 1)
             .accessibilityElement()
             .accessibilityLabel("Health")
             .accessibilityValue("\(engine.me?.hp ?? 0) of \(engine.myRole.maxHP)")
@@ -214,11 +214,11 @@ struct GameHUDView: View {
         let theirKills = engine.teamKills(theirs)
         return (
             Text("\(mine.initial) \(myKills)")
-                .foregroundStyle(Color.echoTeamAlly)
+                .foregroundStyle(Color.ltnTeamAlly)
             + Text(" · ")
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
             + Text("\(theirs.initial) \(theirKills)")
-                .foregroundStyle(Color.echoDanger)
+                .foregroundStyle(Color.ltnDanger)
         )
         .font(.appBold(.subheadline).monospacedDigit())
         .fixedSize()
@@ -233,7 +233,7 @@ struct GameHUDView: View {
             let shielded = engine.isInvulnerable(at: context.date)
             Image(systemName: "shield.lefthalf.filled")
                 .font(.app(.headline))
-                .foregroundStyle(Color.echoAccent)
+                .foregroundStyle(Color.ltnAccent)
                 .opacity(shielded ? 1 : 0)
                 .accessibilityLabel(shielded ? "Shielded" : "")
                 .accessibilityHidden(!shielded)
@@ -266,7 +266,7 @@ struct GameHUDView: View {
         let urgent = remaining <= 30
         return Text(remaining.clockString)
             .font(.appBold(.headline).monospacedDigit())
-            .foregroundStyle(urgent ? Color.echoDanger : Color.echoText)
+            .foregroundStyle(urgent ? Color.ltnDanger : Color.ltnText)
             .accessibilityLabel("Match time \(remaining.clockString)")
             .opacity(urgent && clockPulse ? Alpha.muted : 1)
             .animation(urgent ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default,
@@ -330,16 +330,16 @@ struct GameHUDView: View {
         .lineLimit(1)
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xs)
-        .background(Color.echoBackground.opacity(Alpha.heavy), in: Capsule())
+        .background(Color.ltnBackground.opacity(Alpha.heavy), in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
     }
 
     private func toastNameColor(_ name: String, isLatest: Bool) -> Color {
         guard engine.settings.teamPlay else {
-            return isLatest ? .echoText : .echoTextSecondary
+            return isLatest ? .ltnText : .ltnTextSecondary
         }
-        return .echoTeam(engine.players[name]?.team, relativeTo: engine.myTeam)
+        return .ltnTeam(engine.players[name]?.team, relativeTo: engine.myTeam)
     }
 
     // MARK: - Scope
@@ -395,7 +395,7 @@ struct GameHUDView: View {
         ZStack {
             Circle()
                 .fill(fireFill)
-                .shadow(color: Color.echoPrimary.opacity(engine.ammo > 0 && engine.isAlive
+                .shadow(color: Color.ltnPrimary.opacity(engine.ammo > 0 && engine.isAlive
                                                          ? Alpha.strong : 0), radius: 12)
                 .padding(9)   // inset so the ammo ring reads against the camera, not the fill
 
@@ -433,16 +433,16 @@ struct GameHUDView: View {
     }
 
     private var fireFill: Color {
-        guard engine.isAlive else { return .echoInert }
-        if engine.isReloading { return .echoWarning }
+        guard engine.isAlive else { return .ltnInert }
+        if engine.isReloading { return .ltnWarning }
         // Empty still reads as the live control, just drained.
-        return engine.ammo > 0 ? .echoPrimary : Color.echoPrimary.opacity(Alpha.muted)
+        return engine.ammo > 0 ? .ltnPrimary : Color.ltnPrimary.opacity(Alpha.muted)
     }
 
     /// Live and reloading are both light fills, so the label goes dark on them
     /// and light only on the dark disabled slate.
     private var fireLabelColor: Color {
-        engine.isAlive ? .echoOnPrimary : .echoText
+        engine.isAlive ? .ltnOnPrimary : .ltnText
     }
 
     /// 0…1 while reloading, nil otherwise — drives the ring's refill sweep.
@@ -462,7 +462,7 @@ struct GameHUDView: View {
                 .frame(width: reloadDiameter, height: reloadDiameter)
                 // Scrim only — the art already draws its own ring, so a stroke
                 // here was a second circle around the first.
-                .background(Color.echoBackground.opacity(Alpha.strong), in: Circle())
+                .background(Color.ltnBackground.opacity(Alpha.strong), in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Reload")
@@ -471,7 +471,7 @@ struct GameHUDView: View {
     // MARK: - Damage flash
 
     private var damageOverlay: some View {
-        Color.echoDanger
+        Color.ltnDanger
             .opacity(engine.damageFlash ? Alpha.muted : 0)
             .ignoresSafeArea()
             .allowsHitTesting(false)
@@ -529,10 +529,10 @@ private struct HitMarkerView: View {
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .foregroundStyle(marker.isKill ? Color.echoDanger : Color.echoText)
+            .foregroundStyle(marker.isKill ? Color.ltnDanger : Color.ltnText)
             .frame(width: markerSize, height: markerSize)
             .compositingGroup()
-            .shadow(color: Color.echoBackground.opacity(Alpha.heavy), radius: 2)
+            .shadow(color: Color.ltnBackground.opacity(Alpha.heavy), radius: 2)
         .opacity(opacity)
         .scaleEffect(scale)
         .onChange(of: marker) { _, _ in flash() }
@@ -580,11 +580,11 @@ private struct AmmoRing: View {
         if let progress = reloadProgress {
             // Refill sweep: slots light up as the reload runs.
             let loaded = progress * Double(capacity)
-            return Double(slot) < loaded ? .echoWarning : Color.echoText.opacity(Alpha.subtle)
+            return Double(slot) < loaded ? .ltnWarning : Color.ltnText.opacity(Alpha.subtle)
         }
-        guard slot < ammo else { return Color.echoText.opacity(Alpha.subtle) }
+        guard slot < ammo else { return Color.ltnText.opacity(Alpha.subtle) }
         // Last two rounds read as a warning without needing the number.
-        return ammo <= 2 ? .echoDanger : .echoText
+        return ammo <= 2 ? .ltnDanger : .ltnText
     }
 }
 
@@ -613,7 +613,7 @@ private struct AmmoSegment: Shape {
 private struct ScopeReticle: View {
     let locked: Bool
 
-    private var color: Color { locked ? .echoPrimary : Color.echoText.opacity(Alpha.heavy) }
+    private var color: Color { locked ? .ltnPrimary : Color.ltnText.opacity(Alpha.heavy) }
     private var ringSize: CGFloat { locked ? 74 : 96 }
 
     var body: some View {
@@ -633,12 +633,12 @@ private struct ScopeReticle: View {
 
             // The laser dot itself.
             Circle()
-                .fill(Color.echoPrimary)
+                .fill(Color.ltnPrimary)
                 .frame(width: 8, height: 8)
-                .shadow(color: Color.echoPrimary.opacity(Alpha.heavy), radius: locked ? 10 : 5)
+                .shadow(color: Color.ltnPrimary.opacity(Alpha.heavy), radius: locked ? 10 : 5)
         }
         .compositingGroup()
-        .shadow(color: Color.echoBackground.opacity(Alpha.muted), radius: 2)
+        .shadow(color: Color.ltnBackground.opacity(Alpha.muted), radius: 2)
         .scaleEffect(locked ? 1.08 : 1.0)
         .animation(.spring(response: 0.22, dampingFraction: 0.6), value: locked)
     }

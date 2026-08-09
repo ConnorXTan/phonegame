@@ -32,7 +32,7 @@ struct ScoreboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.echoBackground.ignoresSafeArea()
+                Color.ltnBackground.ignoresSafeArea()
 
                 ScrollView {
                     VStack(spacing: 0) {
@@ -53,10 +53,10 @@ struct ScoreboardView: View {
             }
             .navigationTitle("Scoreboard")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color.echoBackground, for: .navigationBar)
+            .toolbarBackground(Color.ltnBackground, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
-        .presentationBackground(Color.echoBackground)
+        .presentationBackground(Color.ltnBackground)
     }
 
     // MARK: - Header
@@ -78,12 +78,12 @@ struct ScoreboardView: View {
         .font(.appBold(.caption2))
         .tracking(1)
         .lineLimit(1)   // a wrapped column label stops naming its column
-        .foregroundStyle(Color.echoTextTertiary)
+        .foregroundStyle(Color.ltnTextTertiary)
         .padding(.horizontal, Space.sm)   // matches the rows, so columns line up
         .padding(.bottom, Space.sm)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.echoHairline)
+                .fill(Color.ltnHairline)
                 .frame(height: 1)
         }
         .accessibilityHidden(true)   // each row already speaks its own values
@@ -93,18 +93,18 @@ struct ScoreboardView: View {
     private func teamHeader(_ team: Team) -> some View {
         HStack(spacing: Space.sm) {
             Circle()
-                .fill(Color.echoTeam(team, relativeTo: engine.myTeam))
+                .fill(Color.ltnTeam(team, relativeTo: engine.myTeam))
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             Text("\(team.displayName) · \(engine.teamKills(team)) kills")
             if team == engine.myTeam {
                 Text("your team")
-                    .foregroundStyle(Color.echoTeamAlly)
+                    .foregroundStyle(Color.ltnTeamAlly)
             }
             Spacer()
         }
         .font(.appBold(.caption))
-        .foregroundStyle(Color.echoTextSecondary)
+        .foregroundStyle(Color.ltnTextSecondary)
         .padding(.horizontal, Space.sm)
         .padding(.top, Space.lg)
         .padding(.bottom, Space.xs)
@@ -123,14 +123,14 @@ struct ScoreboardView: View {
         return HStack(spacing: Space.md) {
             Text("\(rank)")
                 .font(.app(.headline).monospacedDigit())
-                .foregroundStyle(rank == 1 ? Color.echoAccent : Color.echoTextSecondary)
+                .foregroundStyle(rank == 1 ? Color.ltnAccent : Color.ltnTextSecondary)
                 .frame(width: rankWidth, alignment: .leading)
 
             Text(player.name.displayCallSign)
                 .font(isMe ? .appBold(.headline) : .app(.headline))
                 .foregroundStyle(player.isConnected
-                                 ? Color.echoText
-                                 : Color.echoTextSecondary)
+                                 ? Color.ltnText
+                                 : Color.ltnTextSecondary)
                 .lineLimit(1)
 
             Spacer(minLength: Space.sm)
@@ -140,14 +140,14 @@ struct ScoreboardView: View {
 
             Text("\(player.hp)")
                 .font(.app(.subheadline).monospacedDigit())
-                .foregroundStyle(Color.echoText)
+                .foregroundStyle(Color.ltnText)
                 .frame(width: hpWidth, alignment: .trailing)
         }
         .padding(.vertical, Space.sm)
         .padding(.horizontal, Space.sm)
         // "You" is emphasis, not a new meaning — a surface tint and the bold
         // name carry it rather than another hue.
-        .background(isMe ? Color.echoSurface : .clear,
+        .background(isMe ? Color.ltnSurface : .clear,
                     in: RoundedRectangle(cornerRadius: Radius.sm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -165,11 +165,11 @@ struct ScoreboardView: View {
     private func killDeath(_ player: Player) -> some View {
         (
             Text("\(player.kills)")
-                .foregroundStyle(Color.echoSecondary)
+                .foregroundStyle(Color.ltnSecondary)
             + Text(" | ")
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
             + Text("\(player.deaths)")
-                .foregroundStyle(Color.echoDanger.opacity(Alpha.heavy))
+                .foregroundStyle(Color.ltnDanger.opacity(Alpha.heavy))
         )
         .font(.app(.subheadline).monospacedDigit())
     }

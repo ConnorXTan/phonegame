@@ -3,7 +3,7 @@ import SwiftUI
 /// Named references for the hand-drawn brand art in `Assets.xcassets`.
 ///
 /// These raster marks are a deliberate exception to the SF-Symbols-only rule in
-/// the design guide: they carry Echo's identity (the reticle logo, the marker
+/// the design guide: they carry LTN's identity (the reticle logo, the marker
 /// hit crosses, the eliminated skull) and can't be expressed as a system glyph.
 /// Everything else in the interface still comes from SF Symbols. Referencing the
 /// art through this enum keeps the raw asset strings out of the views — the same
@@ -52,10 +52,10 @@ extension ConsumableKind {
     /// reads as one thing. Reuses existing tokens rather than new literals.
     var tint: Color {
         switch self {
-        case .medpack: .echoSecondary   // green
-        case .drink:   .echoDanger      // red
-        case .cloak:   .echoTeamAlly    // blue
-        case .armor:   .echoWarning     // yellow
+        case .medpack: .ltnSecondary   // green
+        case .drink:   .ltnDanger      // red
+        case .cloak:   .ltnTeamAlly    // blue
+        case .armor:   .ltnWarning     // yellow
         }
     }
 }

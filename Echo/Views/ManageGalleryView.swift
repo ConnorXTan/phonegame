@@ -20,13 +20,13 @@ struct ManageGalleryView: View {
                 } else if let errorText {
                     VStack(spacing: Space.md) {
                         Text(errorText)
-                            .foregroundStyle(Color.echoTextSecondary)
+                            .foregroundStyle(Color.ltnTextSecondary)
                         Button("Retry") { load() }
                             .buttonStyle(.bordered)
                     }
                 } else if clips.isEmpty {
                     Text("The gallery is empty.")
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                 } else {
                     List {
                         ForEach(clips) { clip in
@@ -66,22 +66,22 @@ struct ManageGalleryView: View {
                 .font(.appBold(.headline))
                 Text(clip.date.formatted(date: .abbreviated, time: .shortened))
                     .font(.app(.caption2))
-                    .foregroundStyle(Color.echoTextSecondary)
+                    .foregroundStyle(Color.ltnTextSecondary)
             }
             Spacer()
             Label("\(clip.likes)", systemImage: "heart.fill")
                 .font(.app(.caption).monospacedDigit())
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
             if deleting.contains(clip.key) {
                 ProgressView().controlSize(.small)
             } else if confirming == clip.key {
                 Button("Confirm delete") { performDelete(clip.key) }
                     .buttonStyle(.borderedProminent)
-                    .tint(Color.echoDanger)
+                    .tint(Color.ltnDanger)
             } else {
                 Button("Delete") { confirming = clip.key }
                     .buttonStyle(.bordered)
-                    .tint(Color.echoDanger)
+                    .tint(Color.ltnDanger)
             }
         }
         .padding(.vertical, Space.xs)

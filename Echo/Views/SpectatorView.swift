@@ -35,12 +35,12 @@ struct SpectatorView: View {
 
     var body: some View {
         ZStack {
-            Color.echoBackground.ignoresSafeArea()
+            Color.ltnBackground.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
                     .padding(.horizontal, Space.lg)
                     .padding(.vertical, Space.md)
-                Divider().overlay(Color.echoHairline)
+                Divider().overlay(Color.ltnHairline)
                 if engine.phase == .summary, let result = engine.matchResult {
                     summary(result)
                         .overlay {
@@ -50,7 +50,7 @@ struct SpectatorView: View {
                     HStack(spacing: 0) {
                         playerRail
                             .frame(width: 280)
-                        Divider().overlay(Color.echoHairline)
+                        Divider().overlay(Color.ltnHairline)
                         if engine.phase == .lobby {
                             if !engine.isHost {
                                 waitingForHostPanel
@@ -67,7 +67,7 @@ struct SpectatorView: View {
             }
         }
         .font(.app(.body))
-        .foregroundStyle(Color.echoText)
+        .foregroundStyle(Color.ltnText)
     }
 
     // MARK: - Header
@@ -76,7 +76,7 @@ struct SpectatorView: View {
         HStack(spacing: Space.lg) {
             HStack(spacing: Space.sm) {
                 Image(systemName: "tv")
-                    .foregroundStyle(Color.echoPrimary)
+                    .foregroundStyle(Color.ltnPrimary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("LTN")
@@ -85,14 +85,14 @@ struct SpectatorView: View {
                     Text("GAME MASTER")
                         .font(.app(.caption2))
                         .tracking(2)
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                 }
             }
 
             if engine.phase == .playing {
                 Text(engine.matchRemaining.clockString)
                     .font(.app(.title2).monospacedDigit().bold())
-                    .foregroundStyle(engine.matchRemaining < 30 ? Color.echoDanger : Color.echoText)
+                    .foregroundStyle(engine.matchRemaining < 30 ? Color.ltnDanger : Color.ltnText)
                     .accessibilityLabel("Time remaining \(engine.matchRemaining.clockString)")
                 if engine.settings.teamPlay {
                     teamScoreChip
@@ -108,16 +108,16 @@ struct SpectatorView: View {
                     Label("End Match", systemImage: "flag.checkered")
                 }
                 .buttonStyle(.bordered)
-                .tint(Color.echoDanger)
+                .tint(Color.ltnDanger)
                 .accessibilityHint("Ends the match now; final standings use current tallies")
             }
 
             Label("\(roster.count)", systemImage: "iphone.gen3")
                 .font(.app(.callout).monospacedDigit())
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
                 .padding(.horizontal, Space.md)
                 .padding(.vertical, Space.xs)
-                .background(Color.echoSurface, in: Capsule())
+                .background(Color.ltnSurface, in: Capsule())
                 .accessibilityLabel("\(roster.count) players connected")
 
             Button {
@@ -143,10 +143,10 @@ struct SpectatorView: View {
         Text(text)
             .font(.appBold(.caption2))
             .tracking(1)
-            .foregroundStyle(Color.echoTextSecondary)
+            .foregroundStyle(Color.ltnTextSecondary)
             .padding(.horizontal, Space.sm)
             .padding(.vertical, Space.xxs)
-            .background(Color.echoSurface, in: Capsule())
+            .background(Color.ltnSurface, in: Capsule())
     }
 
     /// The broadcast has no side, so team colors are absolute here: alpha
@@ -154,16 +154,16 @@ struct SpectatorView: View {
     private var teamScoreChip: some View {
         HStack(spacing: Space.xs) {
             Text("ALPHA \(engine.teamKills(.alpha))")
-                .foregroundStyle(Color.echoTeamAbsolute(.alpha))
+                .foregroundStyle(Color.ltnTeamAbsolute(.alpha))
             Text("·")
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
             Text("BRAVO \(engine.teamKills(.bravo))")
-                .foregroundStyle(Color.echoTeamAbsolute(.bravo))
+                .foregroundStyle(Color.ltnTeamAbsolute(.bravo))
         }
         .font(.appBold(.caption2).monospacedDigit())
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xxs)
-        .background(Color.echoSurface, in: Capsule())
+        .background(Color.ltnSurface, in: Capsule())
         .accessibilityLabel("Team alpha \(engine.teamKills(.alpha)), team bravo \(engine.teamKills(.bravo))")
     }
 
@@ -176,10 +176,10 @@ struct SpectatorView: View {
                     Text("MATCH SETUP")
                         .font(.appBold(.caption))
                         .tracking(3)
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                     Text("Players join from their phones — the roster fills itself.")
                         .font(.app(.caption2))
-                        .foregroundStyle(Color.echoTextTertiary)
+                        .foregroundStyle(Color.ltnTextTertiary)
                 }
 
                 VStack(spacing: Space.lg) {
@@ -222,20 +222,20 @@ struct SpectatorView: View {
                             in: 2...8,
                             step: 1
                         )
-                        .tint(Color.echoPrimary)
+                        .tint(Color.ltnPrimary)
                     }
 
-                    Divider().overlay(Color.echoHairline)
+                    Divider().overlay(Color.ltnHairline)
 
                     HStack(spacing: Space.xl) {
                         statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
                         statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
                     }
                     .font(.app(.caption))
-                    .foregroundStyle(Color.echoTextSecondary)
+                    .foregroundStyle(Color.ltnTextSecondary)
                 }
                 .padding(Space.xl)
-                .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
+                .background(Color.ltnSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
                 .frame(maxWidth: 560)
 
                 Button {
@@ -245,17 +245,17 @@ struct SpectatorView: View {
                           systemImage: "play.fill")
                         .font(.app(.headline))
                         .frame(minWidth: 260)
-                        .foregroundStyle(Color.echoOnPrimary)
+                        .foregroundStyle(Color.ltnOnPrimary)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(Color.echoPrimary)
+                .tint(Color.ltnPrimary)
                 .disabled(roster.count < 2)
 
                 if !roster.isEmpty {
                     Text(roster.count < 2 ? "Matches need at least two players." : "\(roster.count) in — you can keep waiting or start now.")
                         .font(.app(.caption2))
-                        .foregroundStyle(Color.echoTextTertiary)
+                        .foregroundStyle(Color.ltnTextTertiary)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -269,11 +269,11 @@ struct SpectatorView: View {
         VStack(spacing: Space.md) {
             ProgressView()
             Text("Waiting for the host to start the match…")
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
             Text("You're spectating — the host controls settings and start. Once the match runs, click a player to watch their view.")
                 .font(.app(.caption2))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
                 .frame(maxWidth: 380)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -285,16 +285,16 @@ struct SpectatorView: View {
         VStack(spacing: Space.lg) {
             Image(systemName: "lock.fill")
                 .font(.system(size: emptyGlyphSize, weight: .thin))
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
                 .accessibilityHidden(true)
             Text("MATCH IN PROGRESS")
                 .font(.appBold(.caption))
                 .tracking(3)
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
             Text("A game with \(engine.externalMatchPlayers) players is already running on the phones. The laptop can't join or take over a live match — this screen unlocks the moment it ends.")
                 .font(.app(.callout))
                 .multilineTextAlignment(.center)
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
                 .frame(maxWidth: 400)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -304,7 +304,7 @@ struct SpectatorView: View {
         VStack(alignment: .leading, spacing: Space.sm) {
             Label(label, systemImage: icon)
                 .font(.appBold(.caption))
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
             control()
         }
     }
@@ -321,7 +321,7 @@ struct SpectatorView: View {
                 Text(engine.phase == .lobby ? "ROSTER" : "STANDINGS")
                     .font(.appBold(.caption2))
                     .tracking(2)
-                    .foregroundStyle(Color.echoTextTertiary)
+                    .foregroundStyle(Color.ltnTextTertiary)
                     .padding(.horizontal, Space.xs)
 
                 if roster.isEmpty {
@@ -329,7 +329,7 @@ struct SpectatorView: View {
                         ProgressView()
                         Text("Waiting for players…")
                             .font(.app(.caption))
-                            .foregroundStyle(Color.echoTextSecondary)
+                            .foregroundStyle(Color.ltnTextSecondary)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.top, Space.xxl)
@@ -352,7 +352,7 @@ struct SpectatorView: View {
                     if let rank {
                         Text("\(rank)")
                             .font(.app(.caption).monospacedDigit().bold())
-                            .foregroundStyle(rank == 1 ? Color.echoAccent : Color.echoTextTertiary)
+                            .foregroundStyle(rank == 1 ? Color.ltnAccent : Color.ltnTextTertiary)
                             .frame(width: 16)
                     }
                     Circle()
@@ -364,26 +364,26 @@ struct SpectatorView: View {
                         .lineLimit(1)
                     Label(player.role.label.uppercased(), systemImage: player.role.symbol)
                         .font(.app(.caption2))
-                        .foregroundStyle(Color.echoTextTertiary)
+                        .foregroundStyle(Color.ltnTextTertiary)
                     if engine.settings.teamPlay, let team = player.team {
                         Text(team.displayName.uppercased())
                             .font(.appBold(.caption2))
                             .tracking(1)
-                            .foregroundStyle(Color.echoTeamAbsolute(team))
+                            .foregroundStyle(Color.ltnTeamAbsolute(team))
                     }
                     Spacer()
                     if watching {
                         Label("LIVE", systemImage: "record.circle.fill")
                             .font(.appBold(.caption2))
-                            .foregroundStyle(Color.echoPrimary)
+                            .foregroundStyle(Color.ltnPrimary)
                     }
                 }
                 GeometryReader { geo in
                     let frac = CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.echoText.opacity(Alpha.subtle))
+                        Capsule().fill(Color.ltnText.opacity(Alpha.subtle))
                         Capsule()
-                            .fill(Color.echoHealth(frac))
+                            .fill(Color.ltnHealth(frac))
                             .frame(width: geo.size.width * max(0, frac))
                     }
                 }
@@ -395,14 +395,14 @@ struct SpectatorView: View {
                     Text("\(player.kills) K · \(player.deaths) D")
                 }
                 .font(.app(.caption2).monospacedDigit())
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
             }
             .padding(Space.md)
-            .background(watching ? Color.echoPrimary.opacity(Alpha.surface) : Color.echoSurface,
+            .background(watching ? Color.ltnPrimary.opacity(Alpha.surface) : Color.ltnSurface,
                         in: RoundedRectangle(cornerRadius: Radius.md))
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.md)
-                    .stroke(watching ? Color.echoPrimary : .clear, lineWidth: 1.5)
+                    .stroke(watching ? Color.ltnPrimary : .clear, lineWidth: 1.5)
             )
         }
         .buttonStyle(.plain)
@@ -411,8 +411,8 @@ struct SpectatorView: View {
     }
 
     private func statusColor(for player: Player) -> Color {
-        guard player.isConnected else { return .echoInert }
-        return player.isAlive ? .echoSecondary : .echoDanger
+        guard player.isConnected else { return .ltnInert }
+        return player.isAlive ? .ltnSecondary : .ltnDanger
     }
 
     private func statusLabel(for player: Player) -> String {
@@ -448,16 +448,16 @@ struct SpectatorView: View {
                 VStack(spacing: Space.md) {
                     ProgressView()
                     Text("Connecting to \(watching.displayCallSign)'s viewfinder…")
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                 }
             } else {
                 VStack(spacing: Space.md) {
                     Image(systemName: "tv")
                         .font(.system(size: emptyGlyphSize, weight: .thin))
-                        .foregroundStyle(Color.echoTextTertiary)
+                        .foregroundStyle(Color.ltnTextTertiary)
                         .accessibilityHidden(true)
                     Text("Click a player to watch their view")
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                 }
             }
         }
@@ -483,7 +483,7 @@ struct SpectatorView: View {
     private func spectatedCrosshair(_ overlay: SpectatorOverlayState, center: CGPoint) -> some View {
         Image(systemName: "plus")
             .font(.system(size: 40, weight: .thin))
-            .foregroundStyle(Color.echoText.opacity(Alpha.muted))
+            .foregroundStyle(Color.ltnText.opacity(Alpha.muted))
             .position(center)
     }
 
@@ -495,21 +495,21 @@ struct SpectatorView: View {
                 Label("LIVE · \(watching.displayCallSign.uppercased())",
                       systemImage: "dot.radiowaves.left.and.right")
                     .font(.appBold(.caption))
-                    .foregroundStyle(Color.echoOnPrimary)
+                    .foregroundStyle(Color.ltnOnPrimary)
                     .padding(.horizontal, Space.md)
                     .padding(.vertical, Space.xs)
-                    .background(Color.echoPrimary, in: Capsule())
+                    .background(Color.ltnPrimary, in: Capsule())
                 Spacer()
                 Text("\(player.hp) HP · \(player.kills) K · \(player.deaths) D")
                     .font(.app(.caption).monospacedDigit().bold())
                 Capsule()
-                    .fill(Color.echoHealth(CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))))
+                    .fill(Color.ltnHealth(CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))))
                     .frame(width: 72 * max(0, CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))), height: 6)
                     .frame(width: 72, alignment: .leading)
-                    .background(Color.echoText.opacity(Alpha.subtle), in: Capsule())
+                    .background(Color.ltnText.opacity(Alpha.subtle), in: Capsule())
             }
             .padding(Space.md)
-            .background(Color.echoBackground.opacity(Alpha.strong))
+            .background(Color.ltnBackground.opacity(Alpha.strong))
         }
     }
 
@@ -525,13 +525,13 @@ struct SpectatorView: View {
                     Text(event.victim.displayCallSign)
                 }
                 .font(.app(.caption).monospacedDigit())
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
                 .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Space.md)
-        .background(Color.echoBackground.opacity(Alpha.strong))
+        .background(Color.ltnBackground.opacity(Alpha.strong))
     }
 
     // MARK: - Summary
@@ -541,7 +541,7 @@ struct SpectatorView: View {
             Spacer()
             winnerHeadline(result)
                 .font(.appBold(fixedSize: winnerTitleSize))
-                .foregroundStyle(result.isDraw ? Color.echoText : Color.echoAccent)
+                .foregroundStyle(result.isDraw ? Color.ltnText : Color.ltnAccent)
 
             chip((engine.settings.teamPlay ? "TEAMS · " : "") + result.duration.durationLabel)
 
@@ -550,11 +550,11 @@ struct SpectatorView: View {
                     HStack(spacing: Space.lg) {
                         Text("\(index + 1)")
                             .font(.app(.headline).monospacedDigit())
-                            .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
+                            .foregroundStyle(index == 0 ? Color.ltnAccent : Color.ltnTextSecondary)
                             .frame(width: 28)
                         if result.teamPlay, let team = player.team {
                             Circle()
-                                .fill(Color.echoTeamAbsolute(team))
+                                .fill(Color.ltnTeamAbsolute(team))
                                 .frame(width: 8, height: 8)
                                 .accessibilityLabel("Team \(team.displayName)")
                         }
@@ -565,15 +565,15 @@ struct SpectatorView: View {
                             .font(.app(.subheadline).monospacedDigit())
                         Text("\(player.deaths) D")
                             .font(.app(.subheadline).monospacedDigit())
-                            .foregroundStyle(Color.echoTextSecondary)
+                            .foregroundStyle(Color.ltnTextSecondary)
                         Text(player.kdString)
                             .font(.app(.caption).monospacedDigit())
-                            .foregroundStyle(Color.echoTextSecondary)
+                            .foregroundStyle(Color.ltnTextSecondary)
                             .frame(width: 48, alignment: .trailing)
                     }
                     .padding(.horizontal, Space.lg)
                     .padding(.vertical, Space.sm)
-                    .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.md))
+                    .background(Color.ltnSurface, in: RoundedRectangle(cornerRadius: Radius.md))
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -587,10 +587,10 @@ struct SpectatorView: View {
                 engine.returnToLobby()
             } label: {
                 Label("Back to Lobby", systemImage: "arrow.uturn.left")
-                    .foregroundStyle(Color.echoOnPrimary)
+                    .foregroundStyle(Color.ltnOnPrimary)
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color.echoPrimary)
+            .tint(Color.ltnPrimary)
             Spacer()
         }
         .padding()
@@ -603,7 +603,7 @@ struct SpectatorView: View {
             Text("KILL REVIEW")
                 .font(.appBold(.caption2))
                 .tracking(2)
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Space.md) {
                     ForEach(engine.killClips) { clip in
@@ -626,11 +626,11 @@ struct SpectatorView: View {
                             .resizable()
                             .scaledToFill()
                     } else {
-                        Color.echoSurface
+                        Color.ltnSurface
                     }
                     Image(systemName: "play.fill")
                         .font(.title3)
-                        .foregroundStyle(Color.echoText.opacity(Alpha.heavy))
+                        .foregroundStyle(Color.ltnText.opacity(Alpha.heavy))
                 }
                 .frame(width: 96, height: 128)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
@@ -657,17 +657,17 @@ struct SpectatorView: View {
         case .idle:
             Text("unpublished")
                 .font(.app(.caption2))
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
         case .uploading:
             ProgressView().controlSize(.mini)
         case .published:
             Label("LIVE ON GALLERY", systemImage: "checkmark.circle.fill")
                 .font(.appBold(.caption2))
-                .foregroundStyle(Color.echoSecondary)
+                .foregroundStyle(Color.ltnSecondary)
         case .failed:
             Label("failed — retry", systemImage: "exclamationmark.triangle.fill")
                 .font(.app(.caption2))
-                .foregroundStyle(Color.echoWarning)
+                .foregroundStyle(Color.ltnWarning)
         }
     }
 
@@ -686,7 +686,7 @@ struct SpectatorView: View {
 
     private func replayOverlay(_ clip: KillClip) -> some View {
         ZStack {
-            Color.echoBackground.opacity(Alpha.opaque).ignoresSafeArea()
+            Color.ltnBackground.opacity(Alpha.opaque).ignoresSafeArea()
             VStack(spacing: Space.lg) {
                 HStack(spacing: Space.sm) {
                     Text(clip.killer.displayCallSign)
@@ -732,7 +732,7 @@ struct SpectatorView: View {
                                         .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
-                                        .foregroundStyle(marker.isKill ? Color.echoDanger : Color.echoText)
+                                        .foregroundStyle(marker.isKill ? Color.ltnDanger : Color.ltnText)
                                         // Same reticle-relative read as the live
                                         // HUD, against this view's 40pt
                                         // crosshair rather than its 74pt ring.
@@ -757,22 +757,22 @@ struct SpectatorView: View {
                         } label: {
                             Label(clip.publishState == .failed ? "Retry Publish" : "Publish to Gallery",
                                   systemImage: "arrow.up.circle.fill")
-                                .foregroundStyle(Color.echoOnPrimary)
+                                .foregroundStyle(Color.ltnOnPrimary)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(Color.echoPrimary)
+                        .tint(Color.ltnPrimary)
                     case .uploading:
                         ProgressView("Publishing…")
                     case .published(let url):
                         Label("Published", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(Color.echoSecondary)
+                            .foregroundStyle(Color.ltnSecondary)
                         Button {
                             UIPasteboard.general.string = url.absoluteString
                         } label: {
                             Label("Copy Link", systemImage: "link")
                         }
                         .buttonStyle(.bordered)
-                        .tint(Color.echoText)
+                        .tint(Color.ltnText)
                     }
 
                     Button("Close") {
@@ -780,7 +780,7 @@ struct SpectatorView: View {
                         reviewImages = []
                     }
                     .buttonStyle(.bordered)
-                    .tint(Color.echoText)
+                    .tint(Color.ltnText)
                 }
             }
             .padding(Space.xl)

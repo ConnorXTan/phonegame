@@ -48,7 +48,7 @@ struct HeartBar: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundStyle(Color.echoText.opacity(Alpha.subtle))
+                .foregroundStyle(Color.ltnText.opacity(Alpha.subtle))
         }
     }
 }

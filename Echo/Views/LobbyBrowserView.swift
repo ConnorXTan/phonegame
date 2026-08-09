@@ -11,7 +11,7 @@ struct LobbyBrowserView: View {
 
     var body: some View {
         ZStack {
-            Color.echoBackground.ignoresSafeArea()
+            Color.ltnBackground.ignoresSafeArea()
             VStack(spacing: Space.xl) {
                 HStack {
                     Button("Back", role: .cancel) { engine.leave() }
@@ -26,9 +26,9 @@ struct LobbyBrowserView: View {
                 if let notice = engine.lobbyNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill")
                         .font(.app(.footnote))
-                        .foregroundStyle(Color.echoWarning)
+                        .foregroundStyle(Color.ltnWarning)
                         .padding(Space.md)
-                        .background(Color.echoWarning.opacity(Alpha.surface),
+                        .background(Color.ltnWarning.opacity(Alpha.surface),
                                     in: RoundedRectangle(cornerRadius: Radius.md))
                         .padding(.horizontal, Space.xl)
                 }
@@ -38,7 +38,7 @@ struct LobbyBrowserView: View {
                         HStack {
                             ProgressView()
                             Text("Searching for nearby lobbies…")
-                                .foregroundStyle(Color.echoTextSecondary)
+                                .foregroundStyle(Color.ltnTextSecondary)
                                 .padding(.leading, Space.sm)
                         }
                     }
@@ -52,11 +52,11 @@ struct LobbyBrowserView: View {
                      ? "You'll join as a spectator — watching, never playing."
                      : "Lobbies appear automatically when a host opens one nearby.")
                     .font(.app(.caption2))
-                    .foregroundStyle(Color.echoTextTertiary)
+                    .foregroundStyle(Color.ltnTextTertiary)
             }
             .padding(.vertical)
         }
-        .foregroundStyle(Color.echoText)
+        .foregroundStyle(Color.ltnText)
     }
 
     private func lobbyRow(_ lobby: DiscoveredLobby) -> some View {
@@ -67,7 +67,7 @@ struct LobbyBrowserView: View {
         } label: {
             HStack(spacing: Space.md) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .foregroundStyle(blocked ? Color.echoInert : Color.echoPrimary)
+                    .foregroundStyle(blocked ? Color.ltnInert : Color.ltnPrimary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     Text("\(lobby.hostName.displayCallSign)'s lobby")
@@ -75,7 +75,7 @@ struct LobbyBrowserView: View {
                     Text((lobby.isLive ? "Match in progress" : "In lobby")
                          + (lobby.isTeams ? " · Teams" : ""))
                         .font(.app(.caption2))
-                        .foregroundStyle(lobby.isLive ? Color.echoAccent : Color.echoTextSecondary)
+                        .foregroundStyle(lobby.isLive ? Color.ltnAccent : Color.ltnTextSecondary)
                 }
                 Spacer()
                 if joining {
@@ -83,7 +83,7 @@ struct LobbyBrowserView: View {
                 } else {
                     Text("\(lobby.playerCount)/\(lobby.capacity)")
                         .font(.app(.callout).monospacedDigit().bold())
-                        .foregroundStyle(blocked ? Color.echoDanger : Color.echoTextSecondary)
+                        .foregroundStyle(blocked ? Color.ltnDanger : Color.ltnTextSecondary)
                         .accessibilityLabel("\(lobby.playerCount) of \(lobby.capacity) players")
                 }
             }

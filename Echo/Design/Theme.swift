@@ -37,33 +37,33 @@ extension Color {
     // Base palette.
 
     /// Primary copy.
-    static let echoText = Color(h: 0, s: 0, l: 1.0)
+    static let ltnText = Color(h: 0, s: 0, l: 1.0)
     /// The surface everything sits on.
-    static let echoBackground = Color(h: 231, s: 0.68, l: 0.04)
+    static let ltnBackground = Color(h: 231, s: 0.68, l: 0.04)
     /// Interactive and aimed-at: buttons, the fire control, an acquired lock.
-    static let echoPrimary = Color(h: 114, s: 0.80, l: 0.55)
+    static let ltnPrimary = Color(h: 114, s: 0.80, l: 0.55)
     /// Alive, connected, scored.
-    static let echoSecondary = Color(h: 142, s: 1.0, l: 0.64)
+    static let ltnSecondary = Color(h: 142, s: 1.0, l: 0.64)
     /// Standout non-critical state: placement, urgency, host controls.
-    static let echoAccent = Color(h: 94, s: 1.0, l: 0.70)
+    static let ltnAccent = Color(h: 94, s: 1.0, l: 0.70)
 
     /// Copy and glyphs sitting *on* a filled primary/secondary/accent surface.
     ///
-    /// All three actives are light (L 55–70%), so `echoText` on top of them
+    /// All three actives are light (L 55–70%), so `ltnText` on top of them
     /// lands near 1.5:1 — illegible. The background color inverts to roughly
     /// 13:1 instead. Any filled control must use this for its label.
-    static let echoOnPrimary = Color.echoBackground
+    static let ltnOnPrimary = Color.ltnBackground
 
     // Derived text weights. Secondary is a dimmer primary, never gray — gray on
     // a tinted or photographic background reads as muddy.
 
-    static let echoTextSecondary = Color.echoText.opacity(Alpha.heavy)
-    static let echoTextTertiary = Color.echoText.opacity(Alpha.muted)
+    static let ltnTextSecondary = Color.ltnText.opacity(Alpha.heavy)
+    static let ltnTextTertiary = Color.ltnText.opacity(Alpha.muted)
 
     // Surfaces, as tints of the text color over the background.
 
-    static let echoSurface = Color.echoText.opacity(Alpha.surface)
-    static let echoHairline = Color.echoText.opacity(Alpha.surface)
+    static let ltnSurface = Color.ltnText.opacity(Alpha.surface)
+    static let ltnHairline = Color.ltnText.opacity(Alpha.surface)
 
     // Semantic states outside the five-token palette.
     //
@@ -73,14 +73,14 @@ extension Color {
     // minimal exceptions — do not add a fourth without a similarly hard reason.
 
     /// Damage, death, enemy.
-    static let echoDanger = Color(h: 0, s: 0.85, l: 0.60)
+    static let ltnDanger = Color(h: 0, s: 0.85, l: 0.60)
     /// Recoverable problems: no UWB, ranging degraded.
-    static let echoWarning = Color(h: 45, s: 1.0, l: 0.60)
+    static let ltnWarning = Color(h: 45, s: 1.0, l: 0.60)
     /// Disconnected, disabled, out of play. Desaturated to the background's
     /// hue so it reads as absence rather than as another color. Lightness is
     /// set so status dots clear 3:1 against the background (4.3:1) — a darker
     /// slate vanished into it.
-    static let echoInert = Color(h: 231, s: 0.15, l: 0.50)
+    static let ltnInert = Color(h: 231, s: 0.15, l: 0.50)
 
     /// Powerups: consumable drops on the field and the countdown rings of
     /// running effects — wherever they appear (own HUD, enemy tags, minimap).
@@ -89,38 +89,38 @@ extension Color {
     /// the wheel is spoken for, and violet clears the greens, the ally blue,
     /// and the danger red at a glance. Glyph shape still carries WHICH
     /// powerup — the hue only says "powerup".
-    static let echoPowerup = Color(h: 270, s: 1.0, l: 0.72)
+    static let ltnPowerup = Color(h: 270, s: 1.0, l: 0.72)
 
     /// Team play: YOUR side. Everything already on the wheel is spoken for —
     /// the three greens mean interactive/alive/accent and red means harm — so
     /// allies take the one hue the HUD hasn't spent. Blue also survives every
-    /// common color deficiency against `echoDanger` red, and clears 7:1 on the
+    /// common color deficiency against `ltnDanger` red, and clears 7:1 on the
     /// background. Enemies need no token of their own: "enemy" is already
-    /// `echoDanger`'s documented job.
-    static let echoTeamAlly = Color(h: 210, s: 1.0, l: 0.64)
+    /// `ltnDanger`'s documented job.
+    static let ltnTeamAlly = Color(h: 210, s: 1.0, l: 0.64)
 
     /// Relationship tint as seen from `mine`: your own team reads ally-blue,
     /// the other side reads enemy-red. A player whose team hasn't arrived yet
     /// renders as an enemy — over-marking a threat is the safe failure.
-    static func echoTeam(_ team: Team?, relativeTo mine: Team?) -> Color {
-        team != nil && team == mine ? .echoTeamAlly : .echoDanger
+    static func ltnTeam(_ team: Team?, relativeTo mine: Team?) -> Color {
+        team != nil && team == mine ? .ltnTeamAlly : .ltnDanger
     }
 
     /// Broadcast screens (the Mac) have no side, so the mapping is fixed:
     /// alpha is always blue, bravo always red.
-    static func echoTeamAbsolute(_ team: Team) -> Color {
-        team == .alpha ? .echoTeamAlly : .echoDanger
+    static func ltnTeamAbsolute(_ team: Team) -> Color {
+        team == .alpha ? .ltnTeamAlly : .ltnDanger
     }
 
     /// The health ramp, shared by the player's own HUD, the spectator rail,
     /// and the floating enemy tags, so the same HP reads the same way wherever
     /// it appears.
     ///
-    /// The middle step is `echoWarning` rather than `echoAccent` because
+    /// The middle step is `ltnWarning` rather than `ltnAccent` because
     /// accent sits 20° from secondary on the wheel — two greens nobody can
     /// separate at a glance, on an indicator that only gets a glance.
-    static func echoHealth(_ fraction: CGFloat) -> Color {
-        fraction > 0.5 ? .echoSecondary : fraction > 0.25 ? .echoWarning : .echoDanger
+    static func ltnHealth(_ fraction: CGFloat) -> Color {
+        fraction > 0.5 ? .ltnSecondary : fraction > 0.25 ? .ltnWarning : .ltnDanger
     }
 }
 
