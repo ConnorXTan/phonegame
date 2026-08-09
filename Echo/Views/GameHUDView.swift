@@ -146,7 +146,7 @@ struct GameHUDView: View {
     /// and exit glyphs — it lines the gauge up with the chrome it belongs to and
     /// clears the left column so the minimap can start a row higher.
     private var heartGauge: some View {
-        HeartBar(fraction: hpFraction, size: heartSize)
+        HeartBar(fraction: hpFraction, total: engine.myRole.maxHP, size: heartSize)
             .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
             .accessibilityElement()
             .accessibilityLabel("Health")
