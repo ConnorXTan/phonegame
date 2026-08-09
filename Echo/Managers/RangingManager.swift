@@ -8,6 +8,10 @@ struct RangingReading {
     let distance: Float?          // meters
     let direction: simd_float3?   // unit vector in phone coordinates; nil = out of FoV
     let horizontalAngle: Float?   // radians, from camera assistance
+    /// Camera pose when the reading arrived. A bearing is measured in the
+    /// device frame *at that moment* — cast from a later pose it swings with
+    /// the camera (readings land at ~5 Hz, panning happens at frame rate).
+    let cameraTransform: simd_float4x4?
 
     /// Radians off boresight. Boresight = straight out the BACK of the phone,
     /// which is -Z in the device coordinate frame (aim like taking a photo).
@@ -183,6 +187,68 @@ final class RangingManager: NSObject, ObservableObject {
         return simd_float3(t.x, t.y, t.z)
     }
 
+    /// Where shots on this peer actually land, as a world position — the one
+    /// estimate every overlay should draw from. Prefers the fused
+    /// `worldTransform` (world-anchored, frame-rate), but the shoot path
+    /// resolves on raw bearings, and a camera-assisted anchor can coast after
+    /// the peer moves while the radio keeps reporting the truth. So when the
+    /// fused point sits outside the aim cone around the current bearing, the
+    /// bearing wins — a tag drawn on the coasted anchor marks a spot where
+    /// shots cleanly miss. Nil once readings go stale (~1 s), same rule as
+    /// the shoot path: old data must not pin a tag to empty space.
+    func displayWorldPosition(for peerName: String, at date: Date) -> simd_float3? {
+        guard let reading = latestReading(for: peerName),
+              date.timeIntervalSince(reading.timestamp) < 1.0 else { return nil }
+        var ray: (origin: simd_float3, direction: simd_float3)?
+        var alongBearing: simd_float3?
+        if let bearing = latestDirectional(for: peerName, within: 1.0),
+           let r = worldRay(from: bearing) {
+            ray = r
+            alongBearing = r.origin + r.direction * (bearing.distance ?? 5)
+        }
+        guard let fused = worldPosition(for: peerName) else { return alongBearing }
+        if let ray, let alongBearing {
+            let toFused = fused - ray.origin
+            // Point-blank the angle is all noise — trust the anchor there.
+            if simd_length(toFused) > 0.3 {
+                let cosAngle = simd_dot(simd_normalize(toFused), ray.direction)
+                if acos(max(-1, min(1, cosAngle))) > Self.bearingDivergenceLimit {
+                    return alongBearing
+                }
+            }
+        }
+        return fused
+    }
+
+    /// The default aim-cone half-angle (`GameSettings.aimConeDegrees`): past
+    /// this, fused and radio disagree about whether a centered shot hits.
+    private static let bearingDivergenceLimit: Float = 5 * .pi / 180
+
+    /// A bearing as a world-space ray, cast from the camera pose captured
+    /// when it was measured — world-anchored, so it holds still while the
+    /// local camera pans. (Unstamped readings fall back to the current pose.)
+    private func worldRay(from reading: RangingReading)
+        -> (origin: simd_float3, direction: simd_float3)? {
+        let deviceDirection: simd_float3
+        if let d = reading.direction {
+            deviceDirection = d
+        } else if let h = reading.horizontalAngle {
+            deviceDirection = simd_float3(sin(h), 0, -cos(h))   // + = to the right, eye level
+        } else {
+            return nil
+        }
+        guard let t = reading.cameraTransform
+            ?? camera?.session.currentFrame?.camera.transform else { return nil }
+        // NI's device frame (portrait: +X right, +Y top, -Z out the back) is
+        // ARKit's camera frame rotated 90° about Z — camera +X runs down the
+        // long axis toward the home-button end.
+        let deviceToCamera = simd_quatf(angle: .pi / 2, axis: simd_float3(0, 0, 1))
+        let inCamera = deviceToCamera.act(deviceDirection)
+        let world4 = t * simd_float4(inCamera, 0)
+        return (origin: simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z),
+                direction: simd_normalize(simd_float3(world4.x, world4.y, world4.z)))
+    }
+
     /// Readings per second over the last second — for the debug view.
     func sampleRate(for peerName: String) -> Int {
         let cutoff = Date().addingTimeInterval(-1)
@@ -282,7 +348,8 @@ extension RangingManager: NISessionDelegate {
                 timestamp: Date(),
                 distance: obj.distance,
                 direction: obj.direction,
-                horizontalAngle: obj.horizontalAngle))
+                horizontalAngle: obj.horizontalAngle,
+                cameraTransform: self.camera?.session.currentFrame?.camera.transform))
             let cutoff = Date().addingTimeInterval(-1)
             if pr.readings.first.map({ $0.timestamp < cutoff }) == true {
                 pr.readings.removeAll { $0.timestamp < cutoff }

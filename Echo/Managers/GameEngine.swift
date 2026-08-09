@@ -482,14 +482,8 @@ final class GameEngine: NSObject, ObservableObject {
             let now = Date()
             for player in opponents where player.isAlive && player.isConnected
                 && !isCloaked(player.name, at: now) {
-                guard let reading = ranging.latestReading(for: player.name),
-                      now.timeIntervalSince(reading.timestamp) < 1.0 else { continue }
-                var world = ranging.worldPosition(for: player.name)
-                if world == nil,
-                   let directional = ranging.latestDirectional(for: player.name, within: 1.0) {
-                    world = Self.synthesizedWorld(from: directional, camera: frame.camera)
-                }
-                guard let world else { continue }
+                guard let world = ranging.displayWorldPosition(for: player.name, at: now)
+                else { continue }
                 let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
                 guard inCamera.z < 0 else { continue }   // behind the lens projects to a mirrored ghost
                 let point = frame.camera.projectPoint(world, orientation: .portrait, viewportSize: viewport)
@@ -503,26 +497,6 @@ final class GameEngine: NSObject, ObservableObject {
             }
         }
         return SpectatorOverlayState(tags: tags, lockedTarget: aimedTarget?.displayCallSign)
-    }
-
-    /// Same fallback EnemyHealthbarOverlay uses when no world transform
-    /// exists: cast the device-frame reading out from the camera pose.
-    private static func synthesizedWorld(from reading: RangingReading, camera: ARCamera) -> simd_float3? {
-        let deviceDirection: simd_float3
-        if let d = reading.direction {
-            deviceDirection = d
-        } else if let h = reading.horizontalAngle {
-            deviceDirection = simd_float3(sin(h), 0, -cos(h))
-        } else {
-            return nil
-        }
-        let deviceToCamera = simd_quatf(angle: .pi / 2, axis: simd_float3(0, 0, 1))
-        let inCamera = deviceToCamera.act(deviceDirection)
-        let t = camera.transform
-        let world4 = t * simd_float4(inCamera, 0)
-        let origin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
-        let direction = simd_normalize(simd_float3(world4.x, world4.y, world4.z))
-        return origin + direction * (reading.distance ?? 5)
     }
 
     /// Host taps Start: broadcast settings, then start locally. The game
@@ -1076,15 +1050,12 @@ final class GameEngine: NSObject, ObservableObject {
         }
     }
 
-    /// Same two position sources as EnemyHealthbarOverlay, cached so a spawn
-    /// can be placed even for peers currently outside the UWB field of view.
+    /// Same position estimate the floating tags draw from, cached so a spawn
+    /// can be placed even for peers that later leave the UWB field of view.
     private func cachePeerPositions() {
-        guard let frame = camera.session.currentFrame else { return }
+        let now = Date()
         for player in opponents where player.isConnected {
-            if let world = ranging.worldPosition(for: player.name) {
-                lastKnownPositions[player.name] = world
-            } else if let directional = ranging.latestDirectional(for: player.name, within: 1.0),
-                      let world = Self.synthesizedWorld(from: directional, camera: frame.camera) {
+            if let world = ranging.displayWorldPosition(for: player.name, at: now) {
                 lastKnownPositions[player.name] = world
             }
         }
