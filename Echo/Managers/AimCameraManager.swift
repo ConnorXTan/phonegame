@@ -52,6 +52,14 @@ final class AimCameraManager: NSObject, ObservableObject {
     /// map fills in progressively as the player looks around.
     private var verticalPlanes: [UUID: ARPlaneAnchor] = [:]
 
+    /// Fast-feedback wall marks, keyed by a coarse (0.75 m) world grid cell.
+    /// Plane anchors need seconds of parallax and wall texture before ARKit
+    /// promotes them — on a phone without LiDAR, often never for blank walls.
+    /// Raycasts against *estimated* planes answer from the current feature
+    /// cloud in under a second, so aiming at a wall marks it almost at once.
+    private var wallChips: [SIMD2<Int>: WallSegment] = [:]
+    private var lastChipSampleAt = Date.distantPast
+
     private let encodeQueue = DispatchQueue(label: "echo.frame-encode")
     private let ciContext = CIContext()
     private var encodingInFlight = false
@@ -112,6 +120,7 @@ final class AimCameraManager: NSObject, ObservableObject {
         // ARKit raises the camera permission prompt itself if it's still
         // undetermined, and starts delivering frames once it's granted.
         verticalPlanes = [:]   // .removeExistingAnchors wipes them in ARKit too
+        wallChips = [:]        // chips live in the old world frame; resetTracking orphans them
         session.run(Self.makeConfiguration(), options: [.resetTracking, .removeExistingAnchors])
         applyExposureCap()
         isRunning = true
@@ -134,10 +143,22 @@ final class AimCameraManager: NSObject, ObservableObject {
 
     // MARK: - Walls (minimap)
 
-    /// Detected walls as floor-plan segments. Seen from above, a vertical
-    /// rectangle collapses to a line — the two projected corners farthest
-    /// apart are that line, whichever local axis ARKit made the "width".
+    /// Detected walls as floor-plan segments: anchored planes plus raycast
+    /// chips. Chips are provisional — once a real anchor covers that wall its
+    /// segment draws instead, so the same wall never double-strokes.
     var wallSegments: [WallSegment] {
+        let anchored = anchoredSegments
+        let chips = wallChips.values.filter { chip in
+            let mid = (chip.start + chip.end) / 2
+            return !anchored.contains { Self.distance(mid, toSegment: $0.start, $0.end) < 0.7 }
+        }
+        return anchored + chips
+    }
+
+    /// Seen from above, a vertical rectangle collapses to a line — the two
+    /// projected corners farthest apart are that line, whichever local axis
+    /// ARKit made the "width".
+    private var anchoredSegments: [WallSegment] {
         verticalPlanes.values.compactMap { anchor in
             let extent = anchor.planeExtent
             // Corners of the extent rectangle (rotated about local Y) in
@@ -157,10 +178,51 @@ final class AimCameraManager: NSObject, ObservableObject {
                     if d > best.d { best = (corners[i], corners[j], d) }
                 }
             }
-            // Footprints under 0.3 m are detection noise, not walls.
-            guard best.d > 0.09 else { return nil }
+            // Only degenerate (near-point) footprints are dropped: an early
+            // anchor is small, and hiding it until it grows reads as "wall
+            // detection doesn't work" to the player aiming right at it.
+            guard best.d > 0.01 else { return nil }
             return WallSegment(start: best.a, end: best.b)
         }
+    }
+
+    /// Instant wall feedback where the player aims. Three rays across the
+    /// centre of the view a few times a second; each estimated-plane hit
+    /// drops a short chip into the world grid. Newest hit wins its cell, so
+    /// re-aiming refreshes rather than duplicates.
+    private func sampleWallChips(_ frame: ARFrame) {
+        guard Date().timeIntervalSince(lastChipSampleAt) >= 0.25 else { return }
+        guard case .normal = frame.camera.trackingState else { return }   // initializing/relocalizing rays are garbage
+        lastChipSampleAt = Date()
+        // Normalized image coordinates; a spread on one image axis crosses
+        // the screen whichever way the sensor is rotated under the display.
+        for point in [CGPoint(x: 0.5, y: 0.3), CGPoint(x: 0.5, y: 0.5), CGPoint(x: 0.5, y: 0.7)] {
+            let query = frame.raycastQuery(from: point, allowing: .estimatedPlane, alignment: .vertical)
+            guard let hit = session.raycast(query).first else { continue }
+            let t = hit.worldTransform
+            let normal = SIMD3<Float>(t.columns.1.x, t.columns.1.y, t.columns.1.z)
+            guard abs(normal.y) < 0.5 else { continue }   // slanted surface, not a wall
+            let position = SIMD3<Float>(t.columns.3.x, t.columns.3.y, t.columns.3.z)
+            let cam = frame.camera.transform.columns.3
+            let range = simd_distance(SIMD3<Float>(cam.x, cam.y, cam.z), position)
+            guard range > 0.5, range < 10 else { continue }   // estimated depth degrades fast past ~10 m
+            // The wall's horizontal run: up × normal, flattened to the floor.
+            var tangent = SIMD2<Float>(normal.z, -normal.x)
+            let length = simd_length(tangent)
+            guard length > 0.001 else { continue }
+            tangent /= length
+            let ground = SIMD2<Float>(position.x, position.z)
+            let cell = SIMD2<Int>(Int((ground.x / 0.75).rounded()), Int((ground.y / 0.75).rounded()))
+            wallChips[cell] = WallSegment(start: ground - tangent * 0.4, end: ground + tangent * 0.4)
+        }
+    }
+
+    private static func distance(_ p: SIMD2<Float>, toSegment a: SIMD2<Float>, _ b: SIMD2<Float>) -> Float {
+        let ab = b - a
+        let lengthSquared = simd_length_squared(ab)
+        guard lengthSquared > 0 else { return simd_distance(p, a) }
+        let t = max(0, min(1, simd_dot(p - a, ab) / lengthSquared))
+        return simd_distance(p, a + ab * t)
     }
 
     /// Nil until ARKit delivers frames, or while the phone points straight
@@ -261,6 +323,7 @@ extension AimCameraManager: ARSessionDelegate {
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        sampleWallChips(frame)
         guard frameTap != nil, !encodingInFlight,
               Date().timeIntervalSince(lastTapAt) >= 1.0 / 20.0 else { return }   // ack pacing is the real governor
         lastTapAt = Date()
