@@ -300,6 +300,20 @@ final class AimCameraManager: NSObject, ObservableObject {
     private func encodeJPEG(_ buffer: CVPixelBuffer) -> Data? {
         // Sensor frames are landscape; the game is portrait.
         var image = CIImage(cvPixelBuffer: buffer).oriented(.right)
+        // Center-crop the 4:3 sensor frame to 9:16 — full height, sides
+        // trimmed — matching both what the player's aspect-filled screen
+        // showed and how phone footage is expected to look. ARKit projects
+        // into a 9:16 viewport with the same center crop, so overlay
+        // coordinates stay aligned.
+        let extent = image.extent
+        let targetWidth = extent.height * 9.0 / 16.0
+        if targetWidth < extent.width {
+            let x = extent.minX + (extent.width - targetWidth) / 2
+            image = image.cropped(to: CGRect(x: x, y: extent.minY,
+                                             width: targetWidth, height: extent.height))
+            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX,
+                                                            y: -image.extent.minY))
+        }
         let scale = 416 / image.extent.width
         image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }

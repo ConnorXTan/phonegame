@@ -47,4 +47,59 @@ enum ReplayPublisher {
     private struct UploadReply: Decodable {
         let url: String
     }
+
+    // MARK: - Gallery management (game master only)
+
+    struct GalleryClip: Identifiable, Decodable {
+        let url: String
+        let key: String
+        let killer: String
+        let victim: String
+        let timestamp: Double
+        let likes: Int
+
+        var id: String { key }
+        var date: Date { Date(timeIntervalSince1970: timestamp / 1000) }
+    }
+
+    private struct ClipsReply: Decodable {
+        let clips: [GalleryClip]
+    }
+
+    /// The gallery's current contents, for the manage view.
+    static func fetchClips(completion: @escaping (Result<[GalleryClip], Error>) -> Void) {
+        func finish(_ result: Result<[GalleryClip], Error>) {
+            DispatchQueue.main.async { completion(result) }
+        }
+        let url = endpoint.appendingPathComponent("api/clips")
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            if let error { return finish(.failure(error)) }
+            guard let data,
+                  let reply = try? JSONDecoder().decode(ClipsReply.self, from: data)
+            else { return finish(.failure(PublishError.malformedReply)) }
+            finish(.success(reply.clips))
+        }.resume()
+    }
+
+    /// Removal rides the same secret as publishing — viewers can't delete.
+    static func deleteClip(key: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        func finish(_ result: Result<Void, Error>) {
+            DispatchQueue.main.async { completion(result) }
+        }
+        var components = URLComponents(url: endpoint.appendingPathComponent("api/delete"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "clip", value: key)]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "POST"
+        request.setValue(uploadKey, forHTTPHeaderField: "X-Upload-Key")
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            if let error { return finish(.failure(error)) }
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200 {
+                finish(.success(()))
+            } else {
+                finish(.failure(PublishError.badResponse(status)))
+            }
+        }.resume()
+    }
 }

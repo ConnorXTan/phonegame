@@ -416,11 +416,13 @@ final class GameEngine: NSObject, ObservableObject {
 
     /// Streamer side: the HUD elements worth mirroring on the spectator's
     /// feed — crosshair lock and the floating enemy tags. Mirrors
-    /// EnemyHealthbarOverlay's projection, but into a fixed 3:4 viewport so
+    /// EnemyHealthbarOverlay's projection, but into a fixed 9:16 viewport so
     /// positions are normalized against the FULL portrait camera frame the
     /// spectator receives (the phone screen shows a crop; the stream doesn't).
     private func currentOverlayState() -> SpectatorOverlayState {
-        let viewport = CGSize(width: 300, height: 400)
+        // 9:16, matching the center-cropped frames the stream and killcams
+        // carry — projectPoint applies the same center crop for this aspect.
+        let viewport = CGSize(width: 270, height: 480)
         var tags: [SpectatorOverlayState.Tag] = []
         if let frame = camera.session.currentFrame {
             let now = Date()
