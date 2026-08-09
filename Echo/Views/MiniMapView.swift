@@ -41,7 +41,8 @@ struct MiniMapView: View {
                     if let angle = bearing(reading) {
                         drawBlip(ctx: ctx, center: center, at: scaled, angle: CGFloat(angle),
                                  name: player.name.displayCallSign, distance: distance,
-                                 locked: engine.aimedTarget == player.name)
+                                 locked: engine.aimedTarget == player.name,
+                                 isAlly: engine.settings.teamPlay && !engine.isEnemy(player))
                     } else {
                         // Ranged but out of the UWB cone: the distance is solid,
                         // the direction isn't. A ring says exactly that.
@@ -93,13 +94,19 @@ struct MiniMapView: View {
     }
 
     private func drawBlip(ctx: GraphicsContext, center: CGPoint, at r: CGFloat, angle: CGFloat,
-                          name: String, distance: Float, locked: Bool) {
+                          name: String, distance: Float, locked: Bool, isAlly: Bool) {
         let point = CGPoint(x: center.x + sin(angle) * r, y: center.y - cos(angle) * r)
         // Neutral until locked: echoAccent sits only 20° from echoPrimary, so
         // two greens would be indistinguishable at a glance under pressure.
-        let color: Color = locked ? .echoPrimary : .echoTextSecondary
-        ctx.fill(Path(ellipseIn: CGRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10)),
-                 with: .color(color))
+        let color: Color = isAlly ? .echoTeamAlly : locked ? .echoPrimary : .echoTextSecondary
+        let dot = Path(ellipseIn: CGRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10))
+        if isAlly {
+            // Hollow, so allies differ from enemies by shape as well as hue —
+            // an ally can never be locked, so this never fights the lock cue.
+            ctx.stroke(dot, with: .color(color), lineWidth: 2)
+        } else {
+            ctx.fill(dot, with: .color(color))
+        }
         drawLabel(ctx: ctx, "\(name) \(String(format: "%.1f", distance))m", color,
                   at: CGPoint(x: point.x, y: point.y - 12))
     }

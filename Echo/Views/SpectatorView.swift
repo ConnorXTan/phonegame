@@ -77,6 +77,9 @@ struct SpectatorView: View {
                     .font(.title2.monospacedDigit().bold())
                     .foregroundStyle(engine.matchRemaining < 30 ? Color.echoDanger : Color.echoText)
                     .accessibilityLabel("Time remaining \(engine.matchRemaining.clockString)")
+                if engine.settings.teamPlay {
+                    teamScoreChip
+                }
             }
 
             Spacer()
@@ -109,6 +112,24 @@ struct SpectatorView: View {
             .background(Color.echoSurface, in: Capsule())
     }
 
+    /// The broadcast has no side, so team colors are absolute here: alpha
+    /// blue, bravo red — the names carry the meaning either way.
+    private var teamScoreChip: some View {
+        HStack(spacing: Space.xs) {
+            Text("ALPHA \(engine.teamKills(.alpha))")
+                .foregroundStyle(Color.echoTeamAbsolute(.alpha))
+            Text("·")
+                .foregroundStyle(Color.echoTextTertiary)
+            Text("BRAVO \(engine.teamKills(.bravo))")
+                .foregroundStyle(Color.echoTeamAbsolute(.bravo))
+        }
+        .font(.caption2.bold().monospacedDigit())
+        .padding(.horizontal, Space.sm)
+        .padding(.vertical, Space.xxs)
+        .background(Color.echoSurface, in: Capsule())
+        .accessibilityLabel("Team alpha \(engine.teamKills(.alpha)), team bravo \(engine.teamKills(.bravo))")
+    }
+
     // MARK: - Lobby: match setup (host parity with LobbyView)
 
     private var setupPanel: some View {
@@ -125,10 +146,25 @@ struct SpectatorView: View {
                 }
 
                 VStack(spacing: Space.lg) {
+                    settingRow(label: "Mode — \(engine.settings.teamPlay ? "two teams" : "free-for-all")",
+                               icon: "flag.2.crossed") {
+                        Picker("Mode", selection: Binding(
+                            get: { engine.settings.teamPlay },
+                            set: { engine.setTeamPlay($0) }
+                        )) {
+                            Text("Solo").tag(false)
+                            Text("Teams").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
                     settingRow(label: "Match length", icon: "timer") {
                         Picker("Match length", selection: Binding(
                             get: { engine.settings.matchDuration },
-                            set: { engine.settings.matchDuration = $0 }
+                            set: {
+                                engine.settings.matchDuration = $0
+                                engine.hostSettingsChanged()
+                            }
                         )) {
                             ForEach(GameSettings.durationChoices, id: \.self) { seconds in
                                 Text(seconds.durationLabel).tag(seconds)
@@ -143,7 +179,7 @@ struct SpectatorView: View {
                                 get: { Double(engine.settings.maxPlayers) },
                                 set: {
                                     engine.settings.maxPlayers = Int($0.rounded())
-                                    engine.refreshLobbyAdvertisement()
+                                    engine.hostSettingsChanged()
                                 }
                             ),
                             in: 2...8,
@@ -292,6 +328,12 @@ struct SpectatorView: View {
                     Label(player.role.label.uppercased(), systemImage: player.role.symbol)
                         .font(.caption2)
                         .foregroundStyle(Color.echoTextTertiary)
+                    if engine.settings.teamPlay, let team = player.team {
+                        Text(team.displayName.uppercased())
+                            .font(.caption2.bold())
+                            .tracking(1)
+                            .foregroundStyle(Color.echoTeamAbsolute(team))
+                    }
                     Spacer()
                     if watching {
                         Label("LIVE", systemImage: "record.circle.fill")
@@ -471,7 +513,7 @@ struct SpectatorView: View {
                 .font(.system(size: winnerTitleSize, weight: .black, design: .rounded))
                 .foregroundStyle(result.isDraw ? Color.echoText : Color.echoAccent)
 
-            chip(result.duration.durationLabel)
+            chip((engine.settings.teamPlay ? "TEAMS · " : "") + result.duration.durationLabel)
 
             VStack(spacing: Space.sm) {
                 ForEach(Array(result.standings.enumerated()), id: \.element.id) { index, player in
@@ -480,6 +522,12 @@ struct SpectatorView: View {
                             .font(.headline.monospacedDigit())
                             .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
                             .frame(width: 28)
+                        if result.teamPlay, let team = player.team {
+                            Circle()
+                                .fill(Color.echoTeamAbsolute(team))
+                                .frame(width: 8, height: 8)
+                                .accessibilityLabel("Team \(team.displayName)")
+                        }
                         Text(player.name.displayCallSign)
                             .font(.headline)
                         Spacer()
@@ -518,6 +566,9 @@ struct SpectatorView: View {
     private func winnerHeadline(_ result: MatchResult) -> some View {
         if result.isDraw {
             Text("DRAW")
+        } else if result.teamPlay {
+            Label("TEAM \(result.winningTeam?.displayName.uppercased() ?? "") WINS",
+                  systemImage: "trophy.fill")
         } else {
             Label("\(result.winner?.name.displayCallSign.uppercased() ?? "") WINS",
                   systemImage: "trophy.fill")

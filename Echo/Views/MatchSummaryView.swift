@@ -19,6 +19,9 @@ struct MatchSummaryView: View {
                 ScrollView {
                     VStack(spacing: Space.xl) {
                         header(result)
+                        if result.teamPlay {
+                            teamTotals(result)
+                        }
                         if let me = result.me {
                             personalCard(me, placement: result.myPlacement)
                         }
@@ -63,6 +66,13 @@ struct MatchSummaryView: View {
     private func headline(_ result: MatchResult) -> some View {
         if result.isDraw {
             Text("DRAW — no clear winner")
+        } else if result.teamPlay {
+            if result.didIWin {
+                Label("YOUR TEAM WINS", systemImage: "trophy.fill")
+            } else {
+                Label("TEAM \(result.winningTeam?.displayName.uppercased() ?? "—") WINS",
+                      systemImage: "trophy.fill")
+            }
         } else if result.didIWin {
             Label { Text("YOU WIN") } icon: { trophy }
         } else {
@@ -82,6 +92,23 @@ struct MatchSummaryView: View {
     private func tint(_ result: MatchResult) -> Color {
         if result.isDraw { return .echoAccent }
         return result.didIWin ? .echoSecondary : .echoDanger
+    }
+
+    // MARK: - Team score
+
+    /// The two team totals side by side, your side first and tinted ally-blue.
+    /// A viewer with no team (shouldn't happen for a player) falls back to
+    /// alpha-first.
+    private func teamTotals(_ result: MatchResult) -> some View {
+        let mine = result.myTeam ?? .alpha
+        let theirs = mine.other
+        return HStack(spacing: 0) {
+            stat(mine.displayName.uppercased(), "\(result.kills(for: mine))", .echoTeamAlly)
+            divider
+            stat(theirs.displayName.uppercased(), "\(result.kills(for: theirs))", .echoDanger)
+        }
+        .padding(Space.lg)
+        .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
     }
 
     // MARK: - Your line
@@ -165,6 +192,13 @@ struct MatchSummaryView: View {
                         .font(.subheadline.bold().monospacedDigit())
                         .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
                         .frame(width: 20, alignment: .leading)
+
+                    if result.teamPlay {
+                        Circle()
+                            .fill(Color.echoTeam(player.team, relativeTo: result.myTeam))
+                            .frame(width: 8, height: 8)
+                            .accessibilityLabel("Team \(player.team?.displayName ?? "unknown")")
+                    }
 
                     Text(player.name.displayCallSign)
                         .font(isMe ? .body.bold() : .body)

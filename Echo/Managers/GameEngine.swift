@@ -89,6 +89,21 @@ final class GameEngine: NSObject, ObservableObject {
     var myName: String { network?.myName ?? playerName }
     var me: Player? { players[myName] }
     var isAlive: Bool { me?.isAlive ?? true }
+    var myTeam: Team? { me?.team }
+
+    /// Whether `player` is a legal target. Solo: everyone. Team play: only the
+    /// other side — a player whose team hasn't arrived yet counts as an enemy,
+    /// so a dropped teamChange can't make anyone unkillable; the victim's own
+    /// same-team check absorbs the rare false positive.
+    func isEnemy(_ player: Player) -> Bool {
+        guard settings.teamPlay, let mine = myTeam else { return true }
+        return player.team != mine
+    }
+
+    /// Combined kills for one side — the team-play score.
+    func teamKills(_ team: Team) -> Int {
+        players.values.filter { $0.team == team }.reduce(0) { $0 + $1.kills }
+    }
 
     /// Takes the date so the HUD can drive a countdown off a TimelineView tick
     /// — `invulnerableUntil` publishes when the window opens, never when it
@@ -184,6 +199,7 @@ final class GameEngine: NSObject, ObservableObject {
         // the first NISession.run() and the viewfinder's first frame.
         camera.requestAccessIfNeeded()
         phase = .lobby
+        autoAssignTeamIfNeeded()   // re-hosting with team play still on from last time
         UIApplication.shared.isIdleTimerDisabled = true   // auto-lock would drop the mesh
     }
 
@@ -236,7 +252,48 @@ final class GameEngine: NSObject, ObservableObject {
         network?.updateLobbyAdvertisement(
             playerCount: players.keys.filter { $0 != TargetDummy.name }.count,
             capacity: settings.maxPlayers,
-            isLive: phase == .playing)
+            isLive: phase == .playing,
+            isTeams: settings.teamPlay)
+    }
+
+    /// Host edited a lobby setting: push the whole struct so joiners' lobby
+    /// screens track it live — without this they'd learn about team play only
+    /// when the match starts, too late to pick a side.
+    func hostSettingsChanged() {
+        guard isHost, phase == .lobby else { return }
+        network?.send(.settingsUpdate(settings: settings))
+        refreshLobbyAdvertisement()
+    }
+
+    /// Host flips the mode between solo and teams.
+    func setTeamPlay(_ on: Bool) {
+        guard isHost, phase == .lobby else { return }
+        settings.teamPlay = on
+        hostSettingsChanged()
+        if on { autoAssignTeamIfNeeded() }
+    }
+
+    /// Pick a side (or switch) while in the lobby. Team choice is
+    /// self-authoritative, like every other row field.
+    func selectTeam(_ team: Team) {
+        guard settings.teamPlay, !isSpectator, phase == .lobby,
+              players[myName] != nil, myTeam != team else { return }
+        players[myName]?.team = team
+        network?.send(.teamChange(player: myName, team: team))
+    }
+
+    /// First contact with team play and no side yet: join the emptier team.
+    /// Ties go to alpha, so the host seeds alpha and the first joiner lands
+    /// bravo. Two simultaneous joiners can land together — that's what the
+    /// manual switch is for.
+    private func autoAssignTeamIfNeeded() {
+        guard settings.teamPlay, !isSpectator, phase == .lobby,
+              let mine = players[myName], mine.team == nil else { return }
+        let alphaCount = players.values.filter { $0.team == .alpha }.count
+        let bravoCount = players.values.filter { $0.team == .bravo }.count
+        let team: Team = bravoCount < alphaCount ? .bravo : .alpha
+        players[myName]?.team = team
+        network?.send(.teamChange(player: myName, team: team))
     }
 
     /// Host only: tell everyone who's in — players and spectators separately.
@@ -408,6 +465,9 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func beginMatch(with settings: GameSettings) {
         self.settings = settings
+        // Backstop for a joiner who connected right as the host hit Start and
+        // never saw a .settingsUpdate — phase is still .lobby here.
+        autoAssignTeamIfNeeded()
         for (name, player) in players {
             players[name]?.hp = player.role.maxHP
             players[name]?.isAlive = true
@@ -573,7 +633,7 @@ final class GameEngine: NSObject, ObservableObject {
     /// peer moves, and old readings must not hold a lock.
     func resolveShot() -> String? {
         var best: (name: String, angle: Float)?
-        for player in opponents where player.isAlive {
+        for player in opponents where player.isAlive && isEnemy(player) {
             guard let reading = ranging.latestDirectional(for: player.name, within: 0.2),
                   let angle = reading.angleOffBoresight else { continue }
             let distance = reading.distance
@@ -589,6 +649,10 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func applyHit(from shooter: String, damage: Int) {
         guard phase == .playing, isAlive, let net = network else { return }
+        // Friendly fire never lands. The shooter already filters teammates,
+        // but its team table can lag right after a switch — the victim is the
+        // authority on its own team, so this is where the rule is final.
+        if settings.teamPlay, let mine = myTeam, players[shooter]?.team == mine { return }
         // Absorbed: no damage, no flash, no healthUpdate — as far as the rest
         // of the mesh is concerned this shot never landed.
         let now = Date()
@@ -684,7 +748,8 @@ final class GameEngine: NSObject, ObservableObject {
         matchResult = MatchResult(
             players: finalPlayers,
             duration: settings.matchDuration,
-            myName: myName)
+            myName: myName,
+            teamPlay: settings.teamPlay)
         matchTimer?.invalidate()
         matchTimer = nil
         matchDeadline = nil
@@ -747,7 +812,11 @@ final class GameEngine: NSObject, ObservableObject {
     // MARK: - Target dummy (solo practice)
 
     private func spawnDummy() {
-        players[TargetDummy.name] = Player(name: TargetDummy.name)   // a Regular, 100 HP
+        var target = Player(name: TargetDummy.name)   // a Regular, 100 HP
+        // Solo practice with teams on: the dummy mans the other side, so the
+        // enemy-only aim filter still finds it.
+        if settings.teamPlay { target.team = myTeam?.other ?? .bravo }
+        players[TargetDummy.name] = target
         dummyInvulnerableUntil = nil
         dummy.onReading = { [weak self] reading in
             self?.ranging.injectSyntheticReading(reading, for: TargetDummy.name)
@@ -811,6 +880,8 @@ final class GameEngine: NSObject, ObservableObject {
         player.isAlive = state.isAlive
         player.kills = state.kills
         player.deaths = state.deaths
+        // A snapshot without a team must not erase one we learned directly.
+        if let team = state.team { player.team = team }
         players[state.name] = player
     }
 
@@ -857,6 +928,11 @@ extension GameEngine: NetworkManagerDelegate {
         // Roster rows are created when the peer declares itself via
         // .hello/.spectatorHello — a bare connection isn't membership.
         manager.send(isSpectator ? .spectatorHello : .hello(playerName: myName, role: myRole), to: [name])
+        // Same link, so TCP ordering lands this after the hello that creates
+        // our row on their side.
+        if settings.teamPlay, let team = myTeam {
+            manager.send(.teamChange(player: myName, team: team), to: [name])
+        }
     }
 
     func network(_ manager: NetworkManager, peerDidDisconnect name: String) {
@@ -911,6 +987,11 @@ extension GameEngine: NetworkManagerDelegate {
             if isHost {
                 broadcastRoster()
                 refreshLobbyAdvertisement()
+                // Joiners can't see lobby settings otherwise — and the team
+                // picker only appears once they know team play is on.
+                if phase == .lobby {
+                    manager.send(.settingsUpdate(settings: settings), to: [peerName])
+                }
             }
             if phase == .playing {
                 if !isSpectator { despawnDummy() }   // a real target arrived
@@ -942,6 +1023,16 @@ extension GameEngine: NetworkManagerDelegate {
             if let reply = ranging.receiveToken(data, from: peerName) {
                 manager.send(.discoveryToken(reply), to: [peerName])
             }
+
+        case .settingsUpdate(let settings):
+            // Hosts ignore it — their own settings are the ones being mirrored.
+            guard !isHost, phase == .lobby else { return }
+            self.settings = settings
+            autoAssignTeamIfNeeded()
+
+        case .teamChange(let player, let team):
+            guard player != myName else { return }   // our own choice is authoritative
+            players[player]?.team = team
 
         case .startGame(let settings):
             let fromSpectator = spectators.contains(peerName)
@@ -1028,6 +1119,7 @@ extension GameEngine: NetworkManagerDelegate {
                 player.isAlive = state.isAlive
                 player.kills = state.kills
                 player.deaths = state.deaths
+                if let team = state.team { player.team = team }
                 return player
             }
             if !finals.contains(where: { $0.name == myName }), let mine = me {

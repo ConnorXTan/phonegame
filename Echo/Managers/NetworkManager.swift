@@ -21,6 +21,7 @@ struct DiscoveredLobby: Identifiable, Equatable {
     let playerCount: Int
     let capacity: Int
     let isLive: Bool         // a match is underway
+    let isTeams: Bool        // host has team play switched on
 
     var id: String { hostName }
     var isFull: Bool { playerCount >= capacity }
@@ -179,13 +180,14 @@ final class NetworkManager: ObservableObject {
     /// Host only: refresh the advertised occupancy/capacity/live state.
     /// Resetting the listener's service republishes the Bonjour record with
     /// the new TXT — no restart needed.
-    func updateLobbyAdvertisement(playerCount: Int, capacity: Int, isLive: Bool) {
+    func updateLobbyAdvertisement(playerCount: Int, capacity: Int, isLive: Bool, isTeams: Bool) {
         guard role == .host else { return }
         lobbyTXT = [
             "r": "h",
             "c": String(playerCount),
             "x": String(capacity),
             "s": isLive ? "live" : "open",
+            "m": isTeams ? "t" : "s",
         ]
         listener?.service = NWListener.Service(
             name: myName, type: Self.serviceType, domain: nil, txtRecord: Self.txtData(lobbyTXT))
@@ -290,7 +292,8 @@ final class NetworkManager: ObservableObject {
                     hostName: name,
                     playerCount: Int(txt["c"] ?? "") ?? 0,
                     capacity: Int(txt["x"] ?? "") ?? 6,
-                    isLive: txt["s"] == "live"))
+                    isLive: txt["s"] == "live",
+                    isTeams: txt["m"] == "t"))
             }
         }
         lobbies = found.sorted { $0.hostName < $1.hostName }

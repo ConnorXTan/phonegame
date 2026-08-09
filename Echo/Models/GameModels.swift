@@ -89,6 +89,18 @@ enum PlayerRole: String, Codable, CaseIterable, Identifiable {
     var isAutomatic: Bool { self == .light }
 }
 
+/// The two sides in team play. Named, not colored — every screen renders a
+/// team relative to the viewer (yours reads ally, the other reads enemy), so
+/// a color name would lie to half the lobby.
+enum Team: String, Codable, CaseIterable, Identifiable {
+    case alpha, bravo
+    var id: String { rawValue }
+    var displayName: String { rawValue.capitalized }
+    /// One-letter form for the HUD score readout ("A 4 · B 2").
+    var initial: String { displayName.prefix(1).uppercased() }
+    var other: Team { self == .alpha ? .bravo : .alpha }
+}
+
 struct GameSettings: Codable, Equatable {
     var weaponRange: Float        // meters
     var aimConeDegrees: Float     // half-angle off boresight
@@ -97,6 +109,7 @@ struct GameSettings: Codable, Equatable {
     var spawnProtection: TimeInterval      // i-frames after respawning
     var matchDuration: TimeInterval   // seconds; host picks, ends the match
     var maxPlayers: Int               // lobby capacity; spectators don't count
+    var teamPlay: Bool = false        // two teams, no friendly fire, team kill totals win
 
     var aimConeRadians: Float { aimConeDegrees * .pi / 180 }
 
@@ -133,6 +146,8 @@ enum GameMessage: Codable {
     case hello(playerName: String, role: PlayerRole)
     case roleSelect(player: String, role: PlayerRole)   // lobby-only loadout change
     case discoveryToken(Data)          // archived NIDiscoveryToken (per-session, per-peer)
+    case settingsUpdate(settings: GameSettings)   // host edited lobby settings; joiners mirror (mode, teams, length)
+    case teamChange(player: String, team: Team)   // sender picked a side (team play)
     case startGame(settings: GameSettings)
     case stateSnapshot([PlayerState])  // late-join / reconnect sync
     case shotFired(by: String)         // for sound/muzzle-flash on others
@@ -174,6 +189,7 @@ struct Player: Identifiable {
     var kills: Int = 0
     var deaths: Int = 0
     var isConnected: Bool = true
+    var team: Team? = nil   // nil in solo play, or before this player has picked
     var id: String { name }
 
     init(name: String, role: PlayerRole = .regular) {
@@ -190,6 +206,7 @@ struct PlayerState: Codable {
     let isAlive: Bool
     let kills: Int
     let deaths: Int
+    let team: Team?
 
     init(_ player: Player) {
         name = player.name
@@ -198,6 +215,7 @@ struct PlayerState: Codable {
         isAlive = player.isAlive
         kills = player.kills
         deaths = player.deaths
+        team = player.team
     }
 }
 
@@ -232,8 +250,9 @@ struct MatchResult {
     let standings: [Player]      // ranked: kills desc, then fewest deaths, then name
     let duration: TimeInterval
     let myName: String
+    let teamPlay: Bool
 
-    init(players: [Player], duration: TimeInterval, myName: String) {
+    init(players: [Player], duration: TimeInterval, myName: String, teamPlay: Bool = false) {
         standings = players.sorted { a, b in
             if a.kills != b.kills { return a.kills > b.kills }
             if a.deaths != b.deaths { return a.deaths < b.deaths }
@@ -241,20 +260,38 @@ struct MatchResult {
         }
         self.duration = duration
         self.myName = myName
+        self.teamPlay = teamPlay
     }
 
     var me: Player? { standings.first { $0.name == myName } }
+    var myTeam: Team? { me?.team }
     var myPlacement: Int? { standings.firstIndex { $0.name == myName }.map { $0 + 1 } }
 
     /// Nil when the top two are tied on kills — a draw has no winner to crown.
+    /// Solo only; team play crowns a team, not a player.
     var winner: Player? {
+        guard !teamPlay else { return nil }
         guard let top = standings.first, top.kills > 0 || standings.count == 1 else { return nil }
         if standings.count > 1, standings[1].kills == top.kills { return nil }
         return top
     }
 
-    var isDraw: Bool { winner == nil }
-    var didIWin: Bool { winner?.name == myName }
+    func kills(for team: Team) -> Int {
+        standings.filter { $0.team == team }.reduce(0) { $0 + $1.kills }
+    }
+
+    /// Team play: most combined kills wins; nil on a tie.
+    var winningTeam: Team? {
+        guard teamPlay else { return nil }
+        let alpha = kills(for: .alpha), bravo = kills(for: .bravo)
+        guard alpha != bravo else { return nil }
+        return alpha > bravo ? .alpha : .bravo
+    }
+
+    var isDraw: Bool { teamPlay ? winningTeam == nil : winner == nil }
+    var didIWin: Bool {
+        teamPlay ? (winningTeam != nil && winningTeam == myTeam) : winner?.name == myName
+    }
 }
 
 extension Player {

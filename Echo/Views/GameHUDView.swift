@@ -105,11 +105,17 @@ struct GameHUDView: View {
             HStack(spacing: 0) {
                 HStack(spacing: Space.xs) {
                     matchClock
-                    Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(Color.echoTextSecondary)
-                        .fixedSize()
-                        .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
+                    // Team play: the score that decides the match outranks a
+                    // personal K/D (which still lives in the scoreboard).
+                    if engine.settings.teamPlay {
+                        teamScore
+                    } else {
+                        Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
+                            .font(.footnote.monospacedDigit())
+                            .foregroundStyle(Color.echoTextSecondary)
+                            .fixedSize()
+                            .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
+                    }
                     shieldBadge
                 }
 
@@ -167,6 +173,27 @@ struct GameHUDView: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel(label)
+    }
+
+    /// Your side's kills against theirs, yours first — the "am I winning"
+    /// glance. Letters echo the team names; color pairs with position so the
+    /// readout survives color-deficient vision.
+    private var teamScore: some View {
+        let mine = engine.myTeam ?? .alpha
+        let theirs = mine.other
+        let myKills = engine.teamKills(mine)
+        let theirKills = engine.teamKills(theirs)
+        return (
+            Text("\(mine.initial) \(myKills)")
+                .foregroundStyle(Color.echoTeamAlly)
+            + Text(" · ")
+                .foregroundStyle(Color.echoTextTertiary)
+            + Text("\(theirs.initial) \(theirKills)")
+                .foregroundStyle(Color.echoDanger)
+        )
+        .font(.footnote.bold().monospacedDigit())
+        .fixedSize()
+        .accessibilityLabel("Team \(mine.displayName) \(myKills), team \(theirs.displayName) \(theirKills)")
     }
 
     /// Shield while damage immunity is running. Ticks on its own clock because
@@ -242,24 +269,33 @@ struct GameHUDView: View {
     }
 
     /// A capsule so the text survives whatever the camera is pointed at; the
-    /// newest is bold and full-strength so the freshest tag reads first.
+    /// newest is bold and full-strength so the freshest tag reads first. In
+    /// team play each name carries its side's tint.
     private func killToast(_ event: KillEvent, isLatest: Bool) -> some View {
         HStack(spacing: Space.xs) {
             Text(event.killer.displayCallSign)
+                .foregroundStyle(toastNameColor(event.killer, isLatest: isLatest))
             Image(art: .killSkull)
                 .resizable()
                 .scaledToFit()
                 .frame(height: killSkullSize)
             Text(event.victim.displayCallSign)
+                .foregroundStyle(toastNameColor(event.victim, isLatest: isLatest))
         }
         .font(isLatest ? .caption2.bold() : .caption2)
-        .foregroundStyle(isLatest ? Color.echoText : Color.echoTextSecondary)
         .lineLimit(1)
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xs)
         .background(Color.echoBackground.opacity(Alpha.heavy), in: Capsule())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
+    }
+
+    private func toastNameColor(_ name: String, isLatest: Bool) -> Color {
+        guard engine.settings.teamPlay else {
+            return isLatest ? .echoText : .echoTextSecondary
+        }
+        return .echoTeam(engine.players[name]?.team, relativeTo: engine.myTeam)
     }
 
     // MARK: - Scope
