@@ -7,11 +7,11 @@ import UIKit
 /// the shared ARSession. Reads only state that already flows — UWB ranging and
 /// the synced `players` table — so it adds nothing to the shoot path.
 ///
-/// Position comes from `RangingManager.displayWorldPosition` — drawn on the
-/// raw bearing the shoot path fires on whenever one is fresh, so the bar
-/// sits where shots actually land; the fused world transform only fills
-/// bearing dropouts. It goes nil once readings stale out (~1 s), which is
-/// what hides the bar: old data must not pin it to empty space.
+/// Position comes from `RangingManager.displayWorldPosition` — the raw
+/// bearing the shoot path fires on, cast from the current camera pose, and
+/// nothing else. No bearing means no bar: a coasted world anchor must not
+/// float hearts over empty space, and stale data (~1 s) hides it the same
+/// way.
 struct EnemyHealthbarOverlay: View {
     @EnvironmentObject private var engine: GameEngine
 
@@ -56,7 +56,7 @@ struct EnemyHealthbarOverlay: View {
             // dropping the smoother state means the reappearance snaps into
             // place instead of gliding in from a five-second-old position.
             guard !engine.isCloaked(player.name, at: date),
-                  let world = engine.ranging.displayWorldPosition(for: player.name, at: date) else {
+                  let world = engine.ranging.displayWorldPosition(for: player.name) else {
                 smoother.drop(player.name)
                 continue
             }
