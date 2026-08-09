@@ -3,12 +3,22 @@ import SwiftUI
 @main
 struct LTNApp: App {
     @StateObject private var engine = GameEngine()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(engine)
                 .preferredColorScheme(.dark)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // .inactive keeps advertising: it fires for Control Center and
+            // the app switcher, where the mesh is still answerable.
+            switch phase {
+            case .background: engine.appDidEnterBackground()
+            case .active: engine.appDidBecomeActive()
+            default: break
+            }
         }
     }
 }

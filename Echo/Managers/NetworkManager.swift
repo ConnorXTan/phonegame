@@ -37,13 +37,23 @@ struct DiscoveredLobby: Identifiable, Equatable {
 /// the ONE host they picked, and members dial each other only when the
 /// host's roster names them (the lexicographically smaller name dials), so
 /// every pair in a lobby connects exactly once and different lobbies never
-/// touch. A connection joins the mesh only after a hello frame carries the
+/// touch. Bonjour's own record removal can't be trusted here — goodbye
+/// packets ride lossy AWDL multicast and a crashed host's record sits in
+/// the mDNS cache for up to 75 minutes — so hosts prove liveness by bumping
+/// a beat in their TXT record and browsers age out lobbies whose record
+/// stops changing. A connection joins the mesh only after a hello frame carries the
 /// remote's wire name; dropped links self-heal — the dialer redials from
 /// cached browse results on a short cadence, and TCP keepalive surfaces
 /// silently dead links. Browsing can run alone (`startDiscovery`) so the
 /// menu pre-warms the peer cache before the player commits.
 final class NetworkManager: ObservableObject {
     static let serviceType = "_lasertag._tcp"   // must match NSBonjourServices in Info.plist
+
+    /// Hosts touch their TXT record this often; browsers hide a lobby after
+    /// three missed beats. This pair is the ghost-lobby defense — without it
+    /// a vanished host stays listed until the mDNS cache expires.
+    private static let heartbeatInterval: TimeInterval = 10
+    private static let lobbyStaleAfter: TimeInterval = 30
 
     @Published private(set) var connectedPeers: [String] = []
     @Published private(set) var lobbies: [DiscoveredLobby] = []
@@ -64,12 +74,26 @@ final class NetworkManager: ObservableObject {
     private var isActive = false
     private var isBrowsing = false
     private var retryTimer: Timer?
+    private var heartbeatTimer: Timer?                   // hosts: bumps the TXT beat
+    private var heartbeat = 0                            // monotonic; "b" in our TXT
+    private var advertisingSuspended = false             // backgrounded: record unpublished
+    private var lobbySweepTimer: Timer?                  // ages quiet lobbies out of the list
+    private var lobbySightings: [String: LobbySighting] = [:]   // hostName → last TXT + when it changed
     private var discovered: [String: NWEndpoint] = [:]   // wire name → Bonjour endpoint
     private var links: [String: PeerLink] = [:]          // established mesh members
     private var pending: [PeerLink] = []                 // dialed or accepted, hello not yet seen
     private var rosterNames: Set<String> = []            // lobby-mates we should be meshed with
     private var chosenHost: String?                      // the lobby we joined (non-hosts)
     private var lobbyTXT: [String: String] = ["r": "p"]  // what our service advertises
+
+    /// Liveness bookkeeping for one advertised lobby: when its TXT record
+    /// last changed, and what it said. An unchanged record keeps its old
+    /// timestamp, so a frozen advertisement ages out of the lobby list.
+    private struct LobbySighting {
+        var lobby: DiscoveredLobby
+        var txt: [String: String]
+        var lastChange: Date
+    }
 
     /// One TCP connection per peer. `name` is the dial target for outbound
     /// links and is confirmed (outbound) or learned (inbound) by the hello.
@@ -103,6 +127,15 @@ final class NetworkManager: ObservableObject {
         guard !isBrowsing else { return }
         isBrowsing = true
         startBrowser()
+        // Staleness needs its own clock — no browse event fires when a
+        // record merely goes quiet.
+        lobbySweepTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] timer in
+            guard let self, self.isBrowsing else {
+                timer.invalidate()
+                return
+            }
+            self.publishLobbies()
+        }
     }
 
     /// Go live in a role: publish our service (hosts advertise their lobby in
@@ -113,7 +146,7 @@ final class NetworkManager: ObservableObject {
         guard !isActive else { return }
         self.role = role
         switch role {
-        case .host: lobbyTXT = ["r": "h", "c": "1", "x": "6", "s": "open"]
+        case .host: lobbyTXT = ["r": "h", "c": "1", "x": "6", "s": "open", "b": String(heartbeat)]
         case .player: lobbyTXT = ["r": "p"]
         case .spectator: lobbyTXT = ["r": "s"]
         }
@@ -136,13 +169,30 @@ final class NetworkManager: ObservableObject {
             }
             self.dialEligiblePeers()
         }
+        if role == .host {
+            // The TXT beat is the browsers' liveness signal (see
+            // updateDiscovered): a lobby whose record stops changing ages
+            // out of their lists.
+            heartbeatTimer = Timer.scheduledTimer(withTimeInterval: Self.heartbeatInterval, repeats: true) { [weak self] timer in
+                guard let self, self.isActive else {
+                    timer.invalidate()
+                    return
+                }
+                self.bumpHeartbeat()
+            }
+        }
     }
 
     func stop() {
         isActive = false
         isBrowsing = false
+        advertisingSuspended = false
         retryTimer?.invalidate()
         retryTimer = nil
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        lobbySweepTimer?.invalidate()
+        lobbySweepTimer = nil
         delegate = nil   // neutralizes callbacks already queued on main
         listener?.cancel()
         listener = nil
@@ -153,6 +203,7 @@ final class NetworkManager: ObservableObject {
         pending = []
         links = [:]
         discovered = [:]
+        lobbySightings = [:]
         connectedPeers = []
         lobbies = []
         rosterNames = []
@@ -168,6 +219,17 @@ final class NetworkManager: ObservableObject {
         chosenHost = lobby.hostName
         rosterNames.insert(lobby.hostName)
         dialEligiblePeers()
+    }
+
+    /// A join attempt timed out: stop dialing that host and age its lobby
+    /// out immediately instead of leaving a dead row tappable. A host that's
+    /// actually alive revives the row with its next TXT beat.
+    func abandonJoin(_ hostName: String) {
+        if chosenHost == hostName { chosenHost = nil }
+        rosterNames.remove(hostName)
+        for link in pending where link.name == hostName { link.connection.cancel() }
+        lobbySightings[hostName]?.lastChange = .distantPast
+        publishLobbies()
     }
 
     /// Host-authoritative membership update: these are the wire names we
@@ -189,9 +251,43 @@ final class NetworkManager: ObservableObject {
             "x": String(capacity),
             "s": isLive ? "live" : "open",
             "m": isTeams ? "t" : "s",
+            "b": String(heartbeat),
         ]
+        republishService()
+    }
+
+    /// Touch the TXT record so browsers see us alive (any TXT change counts;
+    /// the monotonic beat guarantees one even when nothing else moved).
+    private func bumpHeartbeat() {
+        heartbeat += 1
+        lobbyTXT["b"] = String(heartbeat)
+        republishService()
+    }
+
+    /// The one place our Bonjour record gets (re)published.
+    private func republishService() {
+        guard !advertisingSuspended else { return }
         listener?.service = NWListener.Service(
             name: myName, type: Self.serviceType, domain: nil, txtRecord: Self.txtData(lobbyTXT))
+    }
+
+    /// Backgrounded: unpublish our record (Bonjour sends a goodbye) while
+    /// the process can't accept connections — mDNSResponder otherwise keeps
+    /// a suspended app's record advertised indefinitely, which is the ghost
+    /// lobby other phones see but can't join. The listener socket stays up;
+    /// dead links redial on their own once we return.
+    func suspendAdvertising() {
+        guard isActive, !advertisingSuspended else { return }
+        advertisingSuspended = true
+        listener?.service = nil
+    }
+
+    /// Foregrounded again: republish, with a fresh beat so browsers that
+    /// aged our lobby out while we were gone revive it immediately.
+    func resumeAdvertising() {
+        guard isActive, advertisingSuspended else { return }
+        advertisingSuspended = false
+        if role == .host { bumpHeartbeat() } else { republishService() }
     }
 
     /// Bonjour TXT wire format: per entry, one length byte then "key=value".
@@ -226,8 +322,6 @@ final class NetworkManager: ObservableObject {
     private func startListener() {
         do {
             let listener = try NWListener(using: Self.connectionParameters())
-            listener.service = NWListener.Service(
-                name: myName, type: Self.serviceType, domain: nil, txtRecord: Self.txtData(lobbyTXT))
             listener.newConnectionHandler = { [weak self] connection in
                 guard let self, self.isActive else {
                     connection.cancel()
@@ -245,6 +339,7 @@ final class NetworkManager: ObservableObject {
             }
             listener.start(queue: .main)
             self.listener = listener
+            republishService()
         } catch {
             print("[Network] failed to listen: \(error)")
             restartListenerLater()
@@ -282,23 +377,46 @@ final class NetworkManager: ObservableObject {
 
     private func updateDiscovered(with results: Set<NWBrowser.Result>) {
         discovered = [:]
-        var found: [DiscoveredLobby] = []
+        var currentHosts: Set<String> = []
+        let now = Date()
         for result in results {
             guard case .service(let name, _, _, _) = result.endpoint,
                   name != myName   // our own advertisement
             else { continue }
             discovered[name] = result.endpoint
-            if case .bonjour(let txt) = result.metadata, txt["r"] == "h" {
-                found.append(DiscoveredLobby(
-                    hostName: name,
-                    playerCount: Int(txt["c"] ?? "") ?? 0,
-                    capacity: Int(txt["x"] ?? "") ?? 6,
-                    isLive: txt["s"] == "live",
-                    isTeams: txt["m"] == "t"))
+            guard case .bonjour(let txt) = result.metadata, txt["r"] == "h" else { continue }
+            currentHosts.insert(name)
+            // A changed TXT is the host's proof of life (it beats every
+            // heartbeatInterval); an unchanged one keeps its old timestamp
+            // so a frozen record — dead host, cached forever by mDNS —
+            // ages out below.
+            if lobbySightings[name]?.txt != txt.dictionary {
+                lobbySightings[name] = LobbySighting(
+                    lobby: DiscoveredLobby(
+                        hostName: name,
+                        playerCount: Int(txt["c"] ?? "") ?? 0,
+                        capacity: Int(txt["x"] ?? "") ?? 6,
+                        isLive: txt["s"] == "live",
+                        isTeams: txt["m"] == "t"),
+                    txt: txt.dictionary,
+                    lastChange: now)
             }
         }
-        lobbies = found.sorted { $0.hostName < $1.hostName }
+        // Bonjour removal, when it does arrive, still counts immediately.
+        lobbySightings = lobbySightings.filter { currentHosts.contains($0.key) }
+        publishLobbies()
         if isActive { dialEligiblePeers() }
+    }
+
+    /// The lobby list the UI sees: every sighted lobby whose host has proven
+    /// life within the staleness window.
+    private func publishLobbies() {
+        let cutoff = Date().addingTimeInterval(-Self.lobbyStaleAfter)
+        let fresh = lobbySightings.values
+            .filter { $0.lastChange > cutoff }
+            .map(\.lobby)
+            .sorted { $0.hostName < $1.hostName }
+        if lobbies != fresh { lobbies = fresh }   // sweep ticks mostly change nothing
     }
 
     // MARK: - Dialing (main queue only)

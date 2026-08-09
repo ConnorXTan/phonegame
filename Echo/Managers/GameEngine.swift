@@ -304,7 +304,22 @@ final class GameEngine: NSObject, ObservableObject {
             guard let self, self.phase == .browsing, self.joiningLobby == target else { return }
             self.joiningLobby = nil
             self.lobbyNotice = "Couldn't reach \(target.displayCallSign)'s lobby — move closer and retry."
+            // Likely a ghost record (dead host, mDNS cache) — stop redialing
+            // it and hide the row until its advertisement beats again.
+            self.network?.abandonJoin(target)
         }
+    }
+
+    /// Backgrounded: a suspended app keeps its Bonjour record registered
+    /// with mDNSResponder, so without this the phone keeps advertising a
+    /// lobby it can no longer answer — the ghost "match in progress" row
+    /// nobody can join.
+    func appDidEnterBackground() {
+        network?.suspendAdvertising()
+    }
+
+    func appDidBecomeActive() {
+        network?.resumeAdvertising()
     }
 
     /// Host only: re-advertise occupancy/capacity/live state after changes.
