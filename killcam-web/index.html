@@ -5,7 +5,23 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LTN // KILLCAMS</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preload" href="/fonts/Myfont-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="/fonts/Myfont-Bold.ttf" as="font" type="font/ttf" crossorigin>
 <style>
+  /* The brand face the app ships (Echo/Fonts); weights beyond 400/700 would
+     synthesize, so the sheet only ever asks for these two. */
+  @font-face {
+    font-family: "Myfont";
+    src: url("/fonts/Myfont-Regular.ttf") format("truetype");
+    font-weight: 400;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "Myfont";
+    src: url("/fonts/Myfont-Bold.ttf") format("truetype");
+    font-weight: 700;
+    font-display: swap;
+  }
   :root {
     --bg: #05070f;
     --surface: rgba(255, 255, 255, 0.06);
@@ -19,7 +35,7 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+    font-family: "Myfont", ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
     min-height: 100vh;
     padding: 32px 24px 64px;
   }
@@ -31,7 +47,7 @@
     border-bottom: 1px solid var(--hairline);
     padding-bottom: 16px;
   }
-  h1 { font-size: 22px; font-weight: 800; letter-spacing: 3px; }
+  h1 { font-size: 22px; font-weight: 700; letter-spacing: 3px; }
   h1 span { color: var(--primary); }
   #count { color: var(--text-dim); font-size: 13px; }
   #savedToggle {
