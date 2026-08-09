@@ -572,6 +572,7 @@ final class GameEngine: NSObject, ObservableObject {
         }
         pendingSnapshots = [:]
         matchResult = nil
+        soloSince = nil
         pendingKillClips = []
         killClips = []          // spectator: last match's review makes way
         consumables = []
@@ -962,6 +963,7 @@ final class GameEngine: NSObject, ObservableObject {
         let remaining = deadline.timeIntervalSinceNow
         matchRemaining = max(0, remaining)
         maybeSpawnConsumable()
+        if endIfSolo() { return }
         guard remaining <= 0 else { return }
         if isHost {
             let finals = players.values.map(PlayerState.init)
@@ -970,6 +972,37 @@ final class GameEngine: NSObject, ObservableObject {
         } else if remaining <= -5 {
             endMatch(with: Array(players.values))   // host never called it
         }
+    }
+
+    /// When a live match drops to one connected player, this much grace lets
+    /// a body-blocked peer or backgrounded app come back before the match
+    /// ends itself — short enough that a dead match doesn't sit in the lobby
+    /// browser as a joinable LIVE game.
+    private static let soloEndGrace: TimeInterval = 10
+    private var soloSince: Date?
+
+    /// A match with everyone else gone is over in fact; make it over in form.
+    /// Ends it through the normal summary path (tallies kept) so the lobby
+    /// stops advertising as LIVE. Returns true when the match was ended.
+    private func endIfSolo() -> Bool {
+        guard !isSpectator else { return false }
+        let connected = players.values.filter(\.isConnected).count
+        if connected >= 2 {
+            soloSince = nil
+            return false
+        }
+        guard let since = soloSince else {
+            soloSince = Date()
+            return false
+        }
+        guard Date().timeIntervalSince(since) >= Self.soloEndGrace else { return false }
+        soloSince = nil
+        if isHost {
+            let finals = players.values.map(PlayerState.init)
+            network?.send(.endMatch(finalStates: finals))
+        }
+        endMatch(with: Array(players.values))
+        return true
     }
 
     private func endMatch(with finalPlayers: [Player]) {
@@ -1001,6 +1034,8 @@ final class GameEngine: NSObject, ObservableObject {
         for capture in delayedCaptures { completeCapture(capture.id) }
         camera.clipBufferEnabled = false
         phase = .summary
+        soloSince = nil
+        refreshLobbyAdvertisement()   // summary is not LIVE — stop advertising it
         haptics.playMatchEnd()
         transferKillClips()   // ship the killcams to the review screen
     }
