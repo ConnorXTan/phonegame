@@ -4,6 +4,8 @@ struct LobbyView: View {
     @EnvironmentObject private var engine: GameEngine
 
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 32
+    /// The spectate eye, sized to sit where a role label would.
+    @ScaledMetric(relativeTo: .caption) private var spectateGlyph: CGFloat = 14
 
     private var roster: [Player] {
         engine.players.values.sorted { $0.name < $1.name }
@@ -58,14 +60,16 @@ struct LobbyView: View {
                         }
                     }
                     if !unassigned.isEmpty {
-                        Section("Picking a team…") {
+                        Section {
                             ForEach(unassigned) { player in
                                 playerRow(player)
                             }
+                        } header: {
+                            sectionLabel("PICKING A TEAM")
                         }
                     }
                 } else {
-                    Section("Players · \(roster.count)/\(engine.settings.maxPlayers)") {
+                    Section {
                         ForEach(roster) { player in
                             playerRow(player)
                         }
@@ -77,20 +81,17 @@ struct LobbyView: View {
                                     .padding(.leading, Space.sm)
                             }
                         }
+                    } header: {
+                        rosterCount
                     }
                 }
                 if !engine.spectators.isEmpty {
-                    Section("Spectators · \(engine.spectators.count)") {
+                    Section {
                         ForEach(engine.spectators.sorted(), id: \.self) { name in
-                            HStack {
-                                Image(systemName: "tv")
-                                    .foregroundStyle(Color.echoTextSecondary)
-                                    .accessibilityHidden(true)
-                                Text(name.displayCallSign)
-                                    .foregroundStyle(Color.echoTextSecondary)
-                                Spacer()
-                            }
+                            spectatorRow(name)
                         }
+                    } header: {
+                        sectionLabel("SPECTATORS · \(engine.spectators.count)")
                     }
                 }
             }
@@ -105,16 +106,11 @@ struct LobbyView: View {
             }
 
             if engine.isHost {
-                VStack(spacing: Space.md) {
+                // One step wider than the gap inside a block, so each label
+                // groups with the control under it rather than floating between.
+                VStack(spacing: Space.lg) {
                     VStack(spacing: Space.sm) {
-                        HStack {
-                            Label("Mode", systemImage: "flag.2.crossed")
-                                .font(.caption)
-                                .foregroundStyle(Color.echoTextSecondary)
-                            Spacer()
-                            Text(engine.settings.teamPlay ? "Two teams" : "Free-for-all")
-                                .font(.caption.bold())
-                        }
+                        sectionLabel("MODE")
                         Picker("Mode", selection: Binding(
                             get: { engine.settings.teamPlay },
                             set: { engine.setTeamPlay($0) }
@@ -126,14 +122,7 @@ struct LobbyView: View {
                     }
 
                     VStack(spacing: Space.sm) {
-                        HStack {
-                            Label("Match length", systemImage: "timer")
-                                .font(.caption)
-                                .foregroundStyle(Color.echoTextSecondary)
-                            Spacer()
-                            Text(engine.settings.matchDuration.durationLabel)
-                                .font(.caption.bold().monospacedDigit())
-                        }
+                        sectionLabel("LENGTH")
                         Picker("Match length", selection: Binding(
                             get: { engine.settings.matchDuration },
                             set: {
@@ -149,14 +138,7 @@ struct LobbyView: View {
                     }
 
                     VStack(spacing: Space.sm) {
-                        HStack {
-                            Label("Player limit", systemImage: "person.3")
-                                .font(.caption)
-                                .foregroundStyle(Color.echoTextSecondary)
-                            Spacer()
-                            Text("\(engine.settings.maxPlayers)")
-                                .font(.caption.bold().monospacedDigit())
-                        }
+                        sectionLabel("PLAYER LIMIT")
                         Slider(
                             value: Binding(
                                 get: { Double(engine.settings.maxPlayers) },
@@ -169,14 +151,11 @@ struct LobbyView: View {
                             step: 1
                         )
                         .tint(Color.echoPrimary)
+                        // The limit itself is the denominator up in the roster
+                        // count, so the slider doesn't print it a second time —
+                        // but VoiceOver has no roster to glance at.
+                        .accessibilityValue("\(engine.settings.maxPlayers) players")
                     }
-
-                    HStack(spacing: Space.xl) {
-                        statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
-                        statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(Color.echoTextSecondary)
 
                     Button {
                         engine.startGame()
@@ -216,15 +195,7 @@ struct LobbyView: View {
     /// so the whole roster shows it.
     private var rolePicker: some View {
         VStack(spacing: Space.sm) {
-            HStack {
-                Label("Your role", systemImage: engine.myRole.symbol)
-                    .font(.caption)
-                    .foregroundStyle(Color.echoTextSecondary)
-                Spacer()
-                Text(engine.myRole.blurb)
-                    .font(.caption2)
-                    .foregroundStyle(Color.echoTextTertiary)
-            }
+            sectionLabel("ROLE")
             Picker("Role", selection: Binding(
                 get: { engine.myRole },
                 set: { engine.selectRole($0) }
@@ -249,14 +220,38 @@ struct LobbyView: View {
         Label(text, systemImage: icon)
     }
 
+    /// The roster count, and the loudest thing on the screen after the title —
+    /// it's the number everyone in the lobby is actually waiting on. No "PLAYERS"
+    /// in front of it: it sits directly on top of the players.
+    private var rosterCount: some View {
+        Text("\(roster.count)/\(engine.settings.maxPlayers)")
+            .font(.title2.bold().monospacedDigit())
+            .foregroundStyle(Color.echoText)
+            .textCase(nil)
+            .accessibilityLabel("\(roster.count) of \(engine.settings.maxPlayers) players")
+    }
+
+    /// One step down from the roster count. A word is enough to name a block of
+    /// controls — the icon, the label, and the trailing value that used to sit
+    /// here all said the same thing the selected segment already says.
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.headline)
+            .foregroundStyle(Color.echoText)
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Name and role, nothing else. Everyone in a lobby is connected and on a
+    /// phone by definition, so the checkmark and the handset were confirming
+    /// facts the row's own existence already carried. A player who *has* dropped
+    /// dims instead — absence of color, not another glyph.
     private func playerRow(_ player: Player) -> some View {
         HStack {
-            Image(systemName: "iphone.gen3")
-                .foregroundStyle(engine.settings.teamPlay && player.team != nil
-                                 ? Color.echoTeam(player.team, relativeTo: engine.myTeam)
-                                 : Color.echoSecondary)
-                .accessibilityHidden(true)
             Text(player.name.displayCallSign)
+                .foregroundStyle(player.isConnected
+                                 ? Color.echoText
+                                 : Color.echoTextTertiary)
             if player.name == engine.myName {
                 Text("you")
                     .font(.caption2)
@@ -265,17 +260,42 @@ struct LobbyView: View {
                     .background(Color.echoSurface, in: Capsule())
             }
             Spacer()
-            Label(player.role.label.uppercased(), systemImage: player.role.symbol)
+            Text(player.role.label.uppercased())
                 .font(.caption2)
                 .foregroundStyle(Color.echoTextSecondary)
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(Color.echoSecondary)
-                .accessibilityLabel("Connected")
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(player.name.displayCallSign)"
+            + (player.name == engine.myName ? ", you" : "")
+            + ", \(player.role.label)"
+            + (player.isConnected ? "" : ", disconnected")
+        )
     }
 
-    /// Team name plus headcount, tinted by relationship — and "your team" in
-    /// words, so the color is never the only signal.
+    /// Spectators have no loadout, so the eye takes the role slot — same column,
+    /// different fact.
+    private func spectatorRow(_ name: String) -> some View {
+        HStack {
+            Text(name.displayCallSign)
+                .foregroundStyle(Color.echoTextSecondary)
+            Spacer()
+            Image(art: .spectate)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(height: spectateGlyph)
+                .foregroundStyle(Color.echoTextSecondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name.displayCallSign), spectating")
+    }
+
+    /// Team name plus headcount, tinted by relationship — and "YOUR TEAM" in
+    /// words, so the color is never the only signal. This is the roster's
+    /// header in team play, the same job the count does in solo, so it carries
+    /// the same weight one step down: two of these are tinted and on screen at
+    /// once, which is loud enough without the full size.
     private func teamHeader(_ team: Team) -> some View {
         let mine = team == engine.myTeam
         return HStack(spacing: Space.sm) {
@@ -283,27 +303,23 @@ struct LobbyView: View {
                 .fill(Color.echoTeam(team, relativeTo: engine.myTeam))
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
-            Text("\(team.displayName) · \(members(of: team).count)")
+            Text("\(team.displayName.uppercased()) · \(members(of: team).count)")
+                .font(.title3.bold().monospacedDigit())
+                .foregroundStyle(Color.echoTeam(team, relativeTo: engine.myTeam))
             if mine {
-                Text("your team")
+                Text("YOUR TEAM")
+                    .font(.caption.bold())
                     .foregroundStyle(Color.echoTeamAlly)
             }
         }
+        .textCase(nil)
     }
 
     /// Join or switch sides. Everyone gets this, host included — team choice
     /// is per-player, not a host setting.
     private var teamPicker: some View {
         VStack(spacing: Space.sm) {
-            HStack {
-                Label("Your team", systemImage: "shield.lefthalf.filled")
-                    .font(.caption)
-                    .foregroundStyle(Color.echoTextSecondary)
-                Spacer()
-                Text(engine.myTeam?.displayName ?? "—")
-                    .font(.caption.bold())
-                    .foregroundStyle(Color.echoTeamAlly)
-            }
+            sectionLabel("YOUR TEAM")
             Picker("Your team", selection: Binding(
                 get: { engine.myTeam ?? .alpha },
                 set: { engine.selectTeam($0) }
