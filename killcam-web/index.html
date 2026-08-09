@@ -232,7 +232,9 @@
       grid.innerHTML = visible.map((c) => `
         <figure class="card">
           <div class="thumb" onclick="openClip('${esc(c.key)}')">
-            <video src="${esc(c.url)}" muted playsinline preload="metadata"></video>
+            <!-- #t=0.1 makes browsers decode and paint that frame as the
+                 poster; bare preload="metadata" often leaves black. -->
+            <video src="${esc(c.url)}#t=0.1" muted playsinline preload="metadata"></video>
             <div class="play">&#9655;</div>
           </div>
           <figcaption>
