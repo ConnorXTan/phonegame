@@ -209,7 +209,7 @@ struct GameHUDView: View {
         .accessibilityLabel("Team \(mine.displayName) \(myKills), team \(theirs.displayName) \(theirKills)")
     }
 
-    /// Shield while damage immunity is running. Ticks on its own clock because
+    /// Shield while spawn protection is running. Ticks on its own clock because
     /// the window lapses on a wall-clock deadline, not on a state change — and
     /// without a visible cue, absorbed shots just read as broken hit detection.
     private var shieldBadge: some View {

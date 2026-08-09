@@ -2,14 +2,15 @@ import Foundation
 import simd
 
 /// A player's loadout, picked per-player in the lobby. Health is measured in
-/// hearts and every hit takes exactly one, so a role's max hearts *is* its shots
-/// to kill — Heavy (5) outlasts Regular (4) outlasts Light (3). Light pays for
-/// its thinner health with full-auto spray (much easier to land hits inside the
-/// tight 5° cone), the deepest magazine, and a fast reload.
+/// hearts, and roles now differ on both sides of the trade: hearts scale
+/// 6/8/10 (Light/Regular/Heavy) while damage scales 1/2/3, so shots-to-kill
+/// depends on the matchup — a Heavy three-taps a Regular, a Light needs ten
+/// hits to drop a Heavy. Light pays for its thin health and pea-shooter with
+/// full-auto spray (much easier to land hits inside the tight 5° cone), the
+/// deepest magazine, and a fast reload.
 ///
-/// Note the 0.5 s hit-invulnerability window means a single victim can absorb
-/// at most 2 hits/s no matter the fire rate — Light's 0.25 s cadence is for
-/// tracking and spray coverage, not double DPS on one target.
+/// There are no i-frames between hits — fire rate, magazine, and reload are
+/// the only throttles on damage throughput, so every landed shot counts.
 enum PlayerRole: String, Codable, CaseIterable, Identifiable {
     case light, regular, heavy
 
@@ -41,21 +42,28 @@ enum PlayerRole: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// Max hearts. Health is discrete now — one heart per hit.
+    /// Max hearts. Health is discrete — whole hearts per hit.
     var maxHP: Int {
         switch self {
-        case .light: return 3
-        case .regular: return 4
-        case .heavy: return 5
+        case .light: return 6
+        case .regular: return 8
+        case .heavy: return 10
         }
     }
 
-    /// Every shot takes exactly one heart, whoever fires it.
-    var damage: Int { 1 }
+    /// Hearts removed per hit. Scales opposite to fire rate: the slower the
+    /// trigger, the harder the round.
+    var damage: Int {
+        switch self {
+        case .light: return 1
+        case .regular: return 2
+        case .heavy: return 3
+        }
+    }
 
     var fireCooldown: TimeInterval {
         switch self {
-        case .light: return 0.15
+        case .light: return 0.1
         case .regular: return 0.5
         case .heavy: return 1.0
         }
@@ -97,7 +105,6 @@ struct GameSettings: Codable, Equatable {
     var weaponRange: Float        // meters
     var aimConeDegrees: Float     // half-angle off boresight
     var respawnDelay: TimeInterval
-    var hitInvulnerability: TimeInterval   // i-frames after taking a hit
     var spawnProtection: TimeInterval      // i-frames after respawning
     var matchDuration: TimeInterval   // seconds; host picks, ends the match
     var maxPlayers: Int               // lobby capacity; spectators don't count
@@ -107,7 +114,7 @@ struct GameSettings: Codable, Equatable {
 
     static let standard = GameSettings(
         weaponRange: 15, aimConeDegrees: 5,
-        respawnDelay: 5, hitInvulnerability: 0.5, spawnProtection: 1,
+        respawnDelay: 5, spawnProtection: 1,
         matchDuration: 300, maxPlayers: 6)
 
     /// Match lengths the host can pick in the lobby.
@@ -196,7 +203,7 @@ enum ConsumableKind: String, Codable, CaseIterable {
     }
 
     /// Hearts a medpack restores (capped at the loadout's max).
-    static let medpackHearts = 2
+    static let medpackHearts = 4
     /// Fire-cooldown and reload-duration multiplier while a drink runs.
     static let drinkFactor = 0.5
 }
