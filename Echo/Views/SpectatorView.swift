@@ -97,6 +97,17 @@ struct SpectatorView: View {
 
             Spacer()
 
+            if engine.phase == .playing, engine.isHost {
+                Button {
+                    engine.endMatchEarly()
+                } label: {
+                    Label("End Match", systemImage: "flag.checkered")
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.echoDanger)
+                .accessibilityHint("Ends the match now; final standings use current tallies")
+            }
+
             Label("\(roster.count)", systemImage: "iphone.gen3")
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(Color.echoTextSecondary)

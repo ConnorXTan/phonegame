@@ -806,6 +806,16 @@ final class GameEngine: NSObject, ObservableObject {
         matchTimer = timer
     }
 
+    /// Host only: call the match right now instead of waiting for the clock.
+    /// Same authoritative path as the clock hitting zero — everyone gets the
+    /// host's tallies and lands on the summary together.
+    func endMatchEarly() {
+        guard phase == .playing, isHost else { return }
+        let finals = players.values.map(PlayerState.init)
+        network?.send(.endMatch(finalStates: finals))
+        endMatch(with: Array(players.values))
+    }
+
     private func tickMatchClock() {
         guard phase == .playing, let deadline = matchDeadline else { return }
         let remaining = deadline.timeIntervalSinceNow
