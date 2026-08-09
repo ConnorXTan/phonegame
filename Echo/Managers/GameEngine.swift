@@ -62,6 +62,7 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var watchingPlayer: String?     // wire name of the streamed player
     @Published private(set) var spectatorFrame: UIImage?
     @Published private(set) var spectatorOverlay: SpectatorOverlayState?   // their crosshair + enemy tags
+    @Published private(set) var killClips: [KillClip] = []   // spectator: post-match kill review, newest last
     @Published private(set) var spectators: Set<String> = []   // peers that are spectators, not targets
     @Published private(set) var joiningLobby: String?          // wire name of the host we're connecting to
     @Published private(set) var lobbyNotice: String?           // join failures ("lobby full") for the menu/browser
@@ -323,6 +324,9 @@ final class GameEngine: NSObject, ObservableObject {
         despawnDummy()
         ranging.stopAll()
         camera.frameTap = nil
+        camera.clipBufferEnabled = false
+        pendingKillClips = []
+        killClips = []
         camera.stop()   // after the NI sessions that were using it
         stopTimers()
         players = [:]
@@ -495,6 +499,8 @@ final class GameEngine: NSObject, ObservableObject {
         }
         pendingSnapshots = [:]
         matchResult = nil
+        pendingKillClips = []
+        killClips = []          // spectator: last match's review makes way
         cancelReload()
         ammo = myRole.magazineSize
         phase = .playing
@@ -507,6 +513,7 @@ final class GameEngine: NSObject, ObservableObject {
         // that's already delivering frames. Also covers solo practice, where
         // there are no peers and so no NI session to start it.
         camera.start()
+        camera.clipBufferEnabled = true   // killcam: keep the last ~5 s rolling
         startAimTimer()
         haptics.prepare()
         SoundManager.shared.prepare()
@@ -580,6 +587,78 @@ final class GameEngine: NSObject, ObservableObject {
     func triggerUp() {
         autoFireTimer?.invalidate()
         autoFireTimer = nil
+    }
+
+    // MARK: - Kill clips
+
+    /// Everything the shooter's viewfinder held for the last ~5 s, frozen the
+    /// moment the kill confirms. Held locally; shipped to spectators after
+    /// the match so replays never contend with live traffic.
+    private var pendingKillClips: [KillClip] = []
+
+    private func captureKillClip(victim: String) {
+        let frames = camera.snapshotClip()
+        guard !frames.isEmpty else { return }
+        pendingKillClips.append(KillClip(
+            id: UUID(), killer: myName, victim: victim, capturedAt: Date(), frames: frames))
+        if pendingKillClips.count > 10 { pendingKillClips.removeFirst() }
+    }
+
+    /// Spectator: encode a reviewed clip to MP4 and push it to the public
+    /// gallery. State transitions drive the Publish button.
+    func publishKillClip(_ id: UUID) {
+        guard isSpectator,
+              let index = killClips.firstIndex(where: { $0.id == id }),
+              killClips[index].publishState == .idle || killClips[index].publishState == .failed
+        else { return }
+        let clip = killClips[index]
+        killClips[index].publishState = .uploading
+        ClipEncoder.encodeMP4(frames: clip.frames) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure:
+                self.setPublishState(.failed, for: id)
+            case .success(let mp4):
+                ReplayPublisher.publish(
+                    mp4: mp4,
+                    killer: clip.killer.displayCallSign,
+                    victim: clip.victim.displayCallSign,
+                    matchId: String(self.myName.suffix(4)),
+                    capturedAt: clip.capturedAt
+                ) { uploadResult in
+                    try? FileManager.default.removeItem(at: mp4)
+                    switch uploadResult {
+                    case .success(let url): self.setPublishState(.published(url), for: id)
+                    case .failure: self.setPublishState(.failed, for: id)
+                    }
+                }
+            }
+        }
+    }
+
+    private func setPublishState(_ state: KillClip.PublishState, for id: UUID) {
+        guard let index = killClips.firstIndex(where: { $0.id == id }) else { return }
+        killClips[index].publishState = state
+    }
+
+    /// Post-match: stagger the clips out to every spectator, ~0.5 s apart, so
+    /// the summary screen isn't fighting a megabyte burst per clip.
+    private func transferKillClips() {
+        guard !isSpectator, let net = network, !pendingKillClips.isEmpty, !spectators.isEmpty else {
+            pendingKillClips = []
+            return
+        }
+        let clips = pendingKillClips
+        pendingKillClips = []
+        let targets = spectators
+        for (index, clip) in clips.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.5) { [weak self] in
+                guard let self, self.network === net else { return }
+                for spectator in targets {
+                    net.sendKillClip(clip, to: spectator)
+                }
+            }
+        }
     }
 
     /// Shooter-side hit confirmation — marker, tick, buzz. The kill variant
@@ -763,8 +842,10 @@ final class GameEngine: NSObject, ObservableObject {
         cancelReload()
         aimedTarget = nil
         despawnDummy()
+        camera.clipBufferEnabled = false
         phase = .summary
         haptics.playMatchEnd()
+        transferKillClips()   // ship the killcams to the review screen
     }
 
     /// Summary → lobby, mesh intact, so the host can run another match.
@@ -850,6 +931,7 @@ final class GameEngine: NSObject, ObservableObject {
             killFeed.insert(KillEvent(killer: myName, victim: TargetDummy.name), at: 0)
             trimFeed()
             confirmHit(kill: true)
+            captureKillClip(victim: TargetDummy.name)
             dummy.relocate()
             DispatchQueue.main.asyncAfter(deadline: .now() + settings.respawnDelay) { [weak self] in
                 guard let self, self.phase == .playing,
@@ -1097,7 +1179,10 @@ extension GameEngine: NetworkManagerDelegate {
             players[killedBy]?.kills += 1
             killFeed.insert(KillEvent(killer: killedBy, victim: player), at: 0)
             trimFeed()
-            if killedBy == myName { confirmHit(kill: true) }
+            if killedBy == myName {
+                confirmHit(kill: true)
+                captureKillClip(victim: player)
+            }
 
         case .respawn(let player):
             guard player != myName else { return }
@@ -1200,6 +1285,13 @@ extension GameEngine: NetworkManagerDelegate {
             leave()
             lobbyNotice = reason
         }
+    }
+
+    func network(_ manager: NetworkManager, didReceiveKillClip clip: KillClip, from peerName: String) {
+        guard manager === network, isSpectator else { return }
+        guard !killClips.contains(where: { $0.id == clip.id }) else { return }
+        killClips.append(clip)
+        killClips.sort { $0.capturedAt < $1.capturedAt }
     }
 
     func network(_ manager: NetworkManager, didReceiveCameraFrame jpeg: Data, from peerName: String) {

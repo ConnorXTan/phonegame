@@ -45,6 +45,20 @@ final class AimCameraManager: NSObject, ObservableObject {
     /// main queue at ~12 fps. Nil (the normal state) costs nothing per frame.
     var frameTap: ((Data) -> Void)?
 
+    /// Killcam capture: while enabled, a rolling ~5 s of viewfinder JPEGs is
+    /// kept (8 fps × 40 frames ≈ 1 MB). Snapshotted the moment a kill is
+    /// confirmed; the encode pipeline is shared with the spectator tap.
+    var clipBufferEnabled = false {
+        didSet { if !clipBufferEnabled { clipBuffer.removeAll() } }
+    }
+    private var clipBuffer: [Data] = []
+    private var lastClipAt = Date.distantPast
+    private static let clipFrameInterval: TimeInterval = 1.0 / 8.0
+    private static let clipFrameCount = 40
+
+    /// The last ~5 s of viewfinder, oldest first.
+    func snapshotClip() -> [Data] { clipBuffer }
+
     let session = ARSession()
 
     /// Vertical plane anchors by identifier, from the session delegate. ARKit
@@ -324,9 +338,15 @@ extension AimCameraManager: ARSessionDelegate {
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         sampleWallChips(frame)
-        guard frameTap != nil, !encodingInFlight,
-              Date().timeIntervalSince(lastTapAt) >= 1.0 / 20.0 else { return }   // ack pacing is the real governor
-        lastTapAt = Date()
+        // One encode pipeline, two consumers with their own cadences: the
+        // spectator tap (≤20 fps; ack pacing is the real governor) and the
+        // killcam ring buffer (8 fps).
+        let now = Date()
+        let tapDue = frameTap != nil && now.timeIntervalSince(lastTapAt) >= 1.0 / 20.0
+        let clipDue = clipBufferEnabled && now.timeIntervalSince(lastClipAt) >= Self.clipFrameInterval
+        guard tapDue || clipDue, !encodingInFlight else { return }
+        if tapDue { lastTapAt = now }
+        if clipDue { lastClipAt = now }
         encodingInFlight = true
         let buffer = frame.capturedImage
         encodeQueue.async { [weak self] in
@@ -334,7 +354,14 @@ extension AimCameraManager: ARSessionDelegate {
             let jpeg = self.encodeJPEG(buffer)
             DispatchQueue.main.async {
                 self.encodingInFlight = false
-                if let jpeg { self.frameTap?(jpeg) }
+                guard let jpeg else { return }
+                if tapDue { self.frameTap?(jpeg) }
+                if clipDue, self.clipBufferEnabled {
+                    self.clipBuffer.append(jpeg)
+                    if self.clipBuffer.count > Self.clipFrameCount {
+                        self.clipBuffer.removeFirst(self.clipBuffer.count - Self.clipFrameCount)
+                    }
+                }
             }
         }
     }

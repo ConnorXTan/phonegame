@@ -165,6 +165,26 @@ enum GameMessage: Codable {
     case overlayState(SpectatorOverlayState)    // streamer → spectator: HUD elements to redraw over the feed
 }
 
+/// A shooter's last ~5 s of viewfinder leading up to a confirmed kill —
+/// ordered JPEG frames at ~8 fps. Held locally during the match and
+/// transferred to spectators only after the end, so replays never compete
+/// with live gameplay for the radio.
+struct KillClip: Identifiable {
+    enum PublishState: Equatable {
+        case idle
+        case uploading
+        case published(URL)
+        case failed
+    }
+
+    let id: UUID
+    let killer: String       // wire names; render with .displayCallSign
+    let victim: String
+    let capturedAt: Date
+    let frames: [Data]
+    var publishState: PublishState = .idle
+}
+
 /// What the spectated player sees, reduced to the two things worth mirroring:
 /// their crosshair state and the enemy tags floating in their viewfinder.
 /// Tag positions are normalized (0–1) in the full portrait camera frame, so
