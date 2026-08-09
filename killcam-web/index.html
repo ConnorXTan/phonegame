@@ -190,6 +190,16 @@
     }
     fetch(`/api/react?action=visit&device=${device}`, { method: 'POST' });
 
+    // My liked/saved flags live here, not in the API response — that keeps
+    // /api/clips identical for every viewer, so the CDN can cache it and the
+    // polling stops burning serverless + Blob quota.
+    const likedSet = new Set(JSON.parse(localStorage.getItem('ltn-liked') || '[]'));
+    const savedSet = new Set(JSON.parse(localStorage.getItem('ltn-saved') || '[]'));
+    const persistFlags = () => {
+      localStorage.setItem('ltn-liked', JSON.stringify([...likedSet]));
+      localStorage.setItem('ltn-saved', JSON.stringify([...savedSet]));
+    };
+
     let clips = [];
     let savedOnly = false;
     let lastKey = '';
@@ -242,11 +252,14 @@
       if (action === 'toggle-like') {
         clip.liked = !clip.liked;
         clip.likes += clip.liked ? 1 : -1;
+        clip.liked ? likedSet.add(key) : likedSet.delete(key);
         fetch(`/api/react?action=${clip.liked ? 'like' : 'unlike'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
       } else {
         clip.saved = !clip.saved;
+        clip.saved ? savedSet.add(key) : savedSet.delete(key);
         fetch(`/api/react?action=${clip.saved ? 'save' : 'unsave'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
       }
+      persistFlags();
       render();
     }
     window.react = react;
@@ -295,13 +308,19 @@
 
     async function load() {
       try {
-        const reply = await (await fetch(`/api/clips?device=${device}`)).json();
-        clips = reply.clips;
+        const reply = await (await fetch('/api/clips')).json();
+        clips = reply.clips.map((c) => ({
+          ...c,
+          liked: likedSet.has(c.key),
+          saved: savedSet.has(c.key),
+        }));
         render();
       } catch (e) { /* transient; next poll retries */ }
     }
     load();
-    setInterval(load, 10000);
+    // 60 s, visible tabs only — a hidden tab used to poll all day.
+    setInterval(() => { if (!document.hidden) load(); }, 60000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
   </script>
 </body>
 </html>
