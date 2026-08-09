@@ -1035,7 +1035,10 @@ final class GameEngine: NSObject, ObservableObject {
 
     /// Grace radius around the phone for grabbing a drop — nobody should have
     /// to physically graze a floating point in space to score it.
-    private static let pickupRadius: Float = 1.3
+    private static let pickupRadius: Float = 1.0
+    /// Markers render this far below the players' blended phone height —
+    /// just under chest level, so the disc hangs clear of faces.
+    private static let dropRenderDip: Float = 0.2
     /// Most drops on the field at once, so a quiet stretch can't pile up a
     /// supermarket.
     private static let maxLiveDrops = 4
@@ -1134,10 +1137,16 @@ final class GameEngine: NSObject, ObservableObject {
         // Without a single peer anchor the renormalized point collapses onto
         // us — a free pickup, worse than no drop at all on this phone.
         guard peerAnchors > 0, total > 0.3 else { return }
+        var point = accumulated / Float(total)
+        // Render height: the blend's Y is already the weighted average of the
+        // phones' holding heights — dip it a fixed 0.2 m so the marker floats
+        // just under chest level instead of in faces. Pickup ignores Y
+        // either way (see tickConsumables).
+        point.y -= Self.dropRenderDip
         let now = Date()
         consumables.append(ActiveConsumable(
             id: spawn.id, kind: spawn.kind,
-            position: accumulated / Float(total),
+            position: point,
             spawnedAt: now, expiresAt: now.addingTimeInterval(spawn.lifetime)))
     }
 
