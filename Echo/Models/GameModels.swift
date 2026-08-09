@@ -189,6 +189,8 @@ struct KillClip: Identifiable {
     /// Game sounds that fired inside the clip window, replayed in the review
     /// and mixed into the published MP4's audio track.
     let sounds: [ClipSoundEvent]
+    /// Hit/kill markers that popped inside the window.
+    let markers: [ClipMarkerEvent]
     var publishState: PublishState = .idle
 }
 
@@ -199,6 +201,16 @@ struct ClipSoundEvent: Codable, Equatable {
     let volume: Float
     let rate: Float
     let offset: TimeInterval   // seconds from the clip's first frame
+}
+
+/// A hit/kill marker that popped at the crosshair inside the clip window,
+/// replayed with the same art and bloom-fade the live HUD uses.
+struct ClipMarkerEvent: Codable, Equatable {
+    let offset: TimeInterval   // seconds from the clip's first frame
+    let isKill: Bool
+
+    /// How long the marker stays visible — the HUD's 0.26 s bloom plus a hair.
+    static let duration: TimeInterval = 0.3
 }
 
 /// What the spectated player sees, reduced to the two things worth mirroring:

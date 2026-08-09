@@ -708,6 +708,26 @@ struct SpectatorView: View {
                                 }
                                 spectatedCrosshair(overlay, center: CGPoint(x: fit.midX, y: fit.midY))
                             }
+                            // Hit/kill markers replayed with the HUD's art and
+                            // bloom-fade, timed off the clip clock.
+                            let clipTime = Double(index) / 8.0
+                            ForEach(Array(clip.markers.enumerated()), id: \.offset) { item in
+                                let marker = item.element
+                                let age = clipTime - marker.offset
+                                if age >= 0, age < ClipMarkerEvent.duration {
+                                    let fade = age / ClipMarkerEvent.duration
+                                    Image(art: marker.isKill ? .hitMarkerKill : .hitMarker)
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .foregroundStyle(marker.isKill ? Color.echoDanger : Color.echoText)
+                                        .frame(width: marker.isKill ? 22 : 16,
+                                               height: marker.isKill ? 22 : 16)
+                                        .opacity(1 - fade)
+                                        .scaleEffect(0.8 + 0.4 * fade)
+                                        .position(x: fit.midX, y: fit.midY)
+                                }
+                            }
                         }
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                     }

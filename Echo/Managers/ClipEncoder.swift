@@ -17,11 +17,11 @@ enum ClipEncoder {
     /// events into an audio track, and muxes both. Completion hops to main
     /// with the temp-file URL of the finished MP4.
     static func encodeMP4(frames: [Data], overlays: [SpectatorOverlayState],
-                          sounds: [ClipSoundEvent],
+                          sounds: [ClipSoundEvent], markers: [ClipMarkerEvent],
                           completion: @escaping (Result<URL, Error>) -> Void) {
         DispatchQueue.global(qos: .utility).async {
             do {
-                let video = try encodeVideoSync(frames: frames, overlays: overlays)
+                let video = try encodeVideoSync(frames: frames, overlays: overlays, markers: markers)
                 let duration = Double(frames.count) / Double(framesPerSecond)
                 if let audio = try mixAudioWAV(sounds: sounds, duration: duration) {
                     mux(video: video, audio: audio) { result in
@@ -38,7 +38,8 @@ enum ClipEncoder {
 
     // MARK: - Video
 
-    private static func encodeVideoSync(frames: [Data], overlays: [SpectatorOverlayState]) throws -> URL {
+    private static func encodeVideoSync(frames: [Data], overlays: [SpectatorOverlayState],
+                                        markers: [ClipMarkerEvent]) throws -> URL {
         guard let first = frames.first, let firstImage = UIImage(data: first)?.cgImage else {
             throw EncodeError.noFrames
         }
@@ -68,7 +69,11 @@ enum ClipEncoder {
 
         for (index, jpeg) in frames.enumerated() {
             let overlay = overlays.indices.contains(index) ? overlays[index] : nil
-            guard let cgImage = composited(jpeg, overlay: overlay),
+            let clipTime = Double(index) / Double(framesPerSecond)
+            let liveMarkers = markers.filter {
+                clipTime - $0.offset >= 0 && clipTime - $0.offset < ClipMarkerEvent.duration
+            }
+            guard let cgImage = composited(jpeg, overlay: overlay, markers: liveMarkers, at: clipTime),
                   let buffer = pixelBuffer(from: cgImage, width: width, height: height,
                                            pool: adaptor.pixelBufferPool) else {
                 continue   // one bad frame shouldn't sink the clip
@@ -88,22 +93,46 @@ enum ClipEncoder {
 
     // MARK: - Overlay compositing (mirrors the live HUD's look)
 
-    private static func composited(_ jpeg: Data, overlay: SpectatorOverlayState?) -> CGImage? {
+    private static func composited(_ jpeg: Data, overlay: SpectatorOverlayState?,
+                                   markers: [ClipMarkerEvent], at clipTime: TimeInterval) -> CGImage? {
         guard let base = UIImage(data: jpeg) else { return nil }
         let size = base.size
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         let image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
             base.draw(in: CGRect(origin: .zero, size: size))
-            guard let overlay else { return }
-            for tag in overlay.tags {
-                drawTag(name: tag.name, hp: CGFloat(tag.hp),
-                        at: CGPoint(x: CGFloat(tag.x) * size.width,
-                                    y: CGFloat(tag.y) * size.height - 40))
+            if let overlay {
+                for tag in overlay.tags {
+                    drawTag(name: tag.name, hp: CGFloat(tag.hp),
+                            at: CGPoint(x: CGFloat(tag.x) * size.width,
+                                        y: CGFloat(tag.y) * size.height - 40))
+                }
+                drawCrosshair(locked: overlay.lockedTarget, in: size, context: ctx.cgContext)
             }
-            drawCrosshair(locked: overlay.lockedTarget, in: size, context: ctx.cgContext)
+            for marker in markers {
+                drawMarker(marker, at: clipTime, in: size)
+            }
         }
         return image.cgImage
+    }
+
+    /// The HUD's hit-marker art with its bloom-fade, sampled at this frame's
+    /// point in the animation.
+    private static func drawMarker(_ marker: ClipMarkerEvent, at clipTime: TimeInterval,
+                                   in size: CGSize) {
+        let artName = marker.isKill ? Art.hitMarkerKill.rawValue : Art.hitMarker.rawValue
+        guard let art = UIImage(named: artName) else { return }
+        let fade = min(1, max(0, (clipTime - marker.offset) / ClipMarkerEvent.duration))
+        let baseSize: CGFloat = marker.isKill ? 22 : 16
+        let drawSize = baseSize * (0.8 + 0.4 * fade)
+        let tint: UIColor = marker.isKill
+            ? UIColor(red: 0.94, green: 0.25, blue: 0.25, alpha: 1)
+            : .white
+        let rect = CGRect(x: size.width / 2 - drawSize / 2,
+                          y: size.height / 2 - drawSize / 2,
+                          width: drawSize, height: drawSize)
+        art.withTintColor(tint, renderingMode: .alwaysOriginal)
+            .draw(in: rect, blendMode: .normal, alpha: 1 - fade)
     }
 
     /// Approximations of the Theme tokens for offline drawing.

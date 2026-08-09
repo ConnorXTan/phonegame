@@ -610,6 +610,7 @@ final class GameEngine: NSObject, ObservableObject {
     /// the match so replays never contend with live traffic.
     private var pendingKillClips: [KillClip] = []
     private var soundLog: [(name: String, volume: Float, rate: Float, at: Date)] = []
+    private var markerLog: [(isKill: Bool, at: Date)] = []
     /// Kills waiting out the post-kill roll before their buffer is frozen.
     private var delayedCaptures: [(id: UUID, victim: String)] = []
     /// The clip keeps rolling this long past the kill, so the replay shows
@@ -644,9 +645,15 @@ final class GameEngine: NSObject, ObservableObject {
             return ClipSoundEvent(name: event.name, volume: event.volume,
                                   rate: event.rate, offset: offset)
         }
+        let markers = markerLog.compactMap { event -> ClipMarkerEvent? in
+            let offset = event.at.timeIntervalSince(clipStart)
+            guard offset >= 0, offset <= duration else { return nil }
+            return ClipMarkerEvent(offset: offset, isKill: event.isKill)
+        }
         pendingKillClips.append(KillClip(
             id: UUID(), killer: myName, victim: victim, capturedAt: now,
-            frames: snapshot.frames, overlays: snapshot.overlays, sounds: sounds))
+            frames: snapshot.frames, overlays: snapshot.overlays,
+            sounds: sounds, markers: markers))
         if pendingKillClips.count > 10 { pendingKillClips.removeFirst() }
     }
 
@@ -660,7 +667,7 @@ final class GameEngine: NSObject, ObservableObject {
         let clip = killClips[index]
         killClips[index].publishState = .uploading
         ClipEncoder.encodeMP4(frames: clip.frames, overlays: clip.overlays,
-                              sounds: clip.sounds) { [weak self] result in
+                              sounds: clip.sounds, markers: clip.markers) { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure:
@@ -712,6 +719,13 @@ final class GameEngine: NSObject, ObservableObject {
     /// fires separately when the victim's `.death` comes back over the wire.
     private func confirmHit(kill: Bool = false) {
         hitMarker = HitMarker(count: hitMarker.count + 1, isKill: kill)
+        if camera.clipBufferEnabled {
+            markerLog.append((kill, Date()))
+            let cutoff = Date().addingTimeInterval(-8)
+            if markerLog.first?.at ?? Date() < cutoff {
+                markerLog.removeAll { $0.at < cutoff }
+            }
+        }
         if kill {
             haptics.playKillConfirm()
         } else {

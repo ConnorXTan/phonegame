@@ -451,10 +451,11 @@ final class NetworkManager: ObservableObject {
         let victim: String
         let ts: TimeInterval
         let count: Int
-        // HUD overlay per frame + the sounds inside the window; a few KB of
-        // JSON riding ahead of ~1 MB of JPEG.
+        // HUD overlay per frame + the sounds and hit markers inside the
+        // window; a few KB of JSON riding ahead of ~1 MB of JPEG.
         let overlays: [SpectatorOverlayState]
         let sounds: [ClipSoundEvent]
+        let markers: [ClipMarkerEvent]
     }
 
     /// One kill replay for a spectator. Sent only after the match ends, so a
@@ -465,7 +466,7 @@ final class NetworkManager: ObservableObject {
               let header = try? JSONEncoder().encode(KillClipHeader(
                   id: clip.id, killer: clip.killer, victim: clip.victim,
                   ts: clip.capturedAt.timeIntervalSince1970, count: clip.frames.count,
-                  overlays: clip.overlays, sounds: clip.sounds))
+                  overlays: clip.overlays, sounds: clip.sounds, markers: clip.markers))
         else { return }
         var body = Data([Self.kindKillClip])
         var headerLength = UInt16(header.count).bigEndian
@@ -503,7 +504,7 @@ final class NetworkManager: ObservableObject {
         }
         return KillClip(id: header.id, killer: header.killer, victim: header.victim,
                         capturedAt: Date(timeIntervalSince1970: header.ts), frames: frames,
-                        overlays: header.overlays, sounds: header.sounds)
+                        overlays: header.overlays, sounds: header.sounds, markers: header.markers)
     }
 
     // MARK: - Receiving
