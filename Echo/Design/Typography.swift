@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// LTN's brand typeface. The whole interface is set in `Myfont` (shipped as
 /// `fontregular.ttf`, PostScript name `Myfont-Regular`) so the app speaks in one
@@ -10,11 +11,15 @@ import SwiftUI
 /// Semantic styles keep Dynamic Type via `relativeTo:`; the `fixedSize` variant
 /// is for geometry whose point size is already resolved (e.g. `@ScaledMetric`),
 /// so it isn't scaled twice.
+private let appFontName = "Myfont-Regular"
+private let appBoldFontName = "Myfont-Bold"
+
+/// The brand face runs optically small, and on the Mac's big screen at
+/// desk distance it read smaller still — so the laptop gets a global
+/// bump. Phones keep the 1:1 ramp.
+private let appScale: CGFloat = ProcessInfo.processInfo.isiOSAppOnMac ? 1.25 : 1.0
+
 extension Font {
-    /// The brand face runs optically small, and on the Mac's big screen at
-    /// desk distance it read smaller still — so the laptop gets a global
-    /// bump. Phones keep the 1:1 ramp.
-    private static let appScale: CGFloat = ProcessInfo.processInfo.isiOSAppOnMac ? 1.25 : 1.0
 
     /// The brand face at a semantic text style, scaling with Dynamic Type.
     static func app(_ style: Font.TextStyle) -> Font {
@@ -37,9 +42,29 @@ extension Font {
     static func appBold(fixedSize: CGFloat) -> Font {
         .custom(appBoldFontName, fixedSize: fixedSize * appScale)
     }
+}
 
-    private static let appFontName = "Myfont-Regular"
-    private static let appBoldFontName = "Myfont-Bold"
+/// UIKit-backed controls never consult SwiftUI's font environment, so the
+/// segmented pickers would render their titles in San Francisco while every
+/// label around them speaks the brand face. Pushed through the appearance
+/// proxy once at launch instead.
+enum LTNAppearance {
+    static func apply() {
+        // 13pt is UISegmentedControl's stock title size; run through
+        // UIFontMetrics so segment titles track Dynamic Type like the rest
+        // of the interface.
+        let metrics = UIFontMetrics(forTextStyle: .footnote)
+        func brandFont(_ name: String) -> UIFont {
+            let size = 13 * appScale
+            let font = UIFont(name: name, size: size) ?? .systemFont(ofSize: size)
+            return metrics.scaledFont(for: font)
+        }
+        let segmented = UISegmentedControl.appearance()
+        segmented.setTitleTextAttributes([.font: brandFont(appFontName)], for: .normal)
+        // The stock control marks selection with a medium weight; the brand
+        // face answers with its designed bold cut.
+        segmented.setTitleTextAttributes([.font: brandFont(appBoldFontName)], for: .selected)
+    }
 }
 
 private extension Font.TextStyle {
