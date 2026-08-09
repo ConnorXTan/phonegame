@@ -21,7 +21,20 @@ extension Font {
         .custom(appFontName, fixedSize: fixedSize)
     }
 
+    /// The bold cut of the brand face. A genuine heavier weight (thickened
+    /// outlines shipped as `fontbold.ttf`), not the synthetic bold SwiftUI
+    /// applies when `.bold()` is chained on a single-weight face.
+    static func appBold(_ style: Font.TextStyle) -> Font {
+        .custom(appBoldFontName, size: style.defaultSize, relativeTo: style)
+    }
+
+    /// Bold cut at an already-resolved point size.
+    static func appBold(fixedSize: CGFloat) -> Font {
+        .custom(appBoldFontName, fixedSize: fixedSize)
+    }
+
     private static let appFontName = "Myfont-Regular"
+    private static let appBoldFontName = "Myfont-Bold"
 }
 
 private extension Font.TextStyle {

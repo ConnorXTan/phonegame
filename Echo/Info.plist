@@ -16,6 +16,7 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>fontregular.ttf</string>
+		<string>fontbold.ttf</string>
 	</array>
 </dict>
 </plist>
