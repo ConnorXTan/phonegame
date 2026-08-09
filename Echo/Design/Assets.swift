@@ -20,6 +20,14 @@ enum Art: String {
     case heartFull = "heart-full"
     case heartEmpty = "heart-empty"
     case spectate = "spectate"
+
+    // Lobby: the two entry actions and the match-setting glyphs.
+    case hostLobby = "host-lobby"
+    case joinLobby = "join-lobby"
+    case lobbyHearts = "lobby-hearts"
+    case lobbyDamage = "lobby-damage"
+    case lobbyAmmo = "lobby-ammo"
+    case lobbyLength = "lobby-length"
 }
 
 extension Image {

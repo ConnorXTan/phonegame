@@ -1,15 +1,10 @@
 import Foundation
 
-/// A player's loadout, picked per-player in the lobby. Balanced as a triangle:
-/// head-on, Heavy beats Reg beats Light — Light pays for it with full-auto
-/// spray (much easier to land hits inside the tight 5° cone), the deepest
-/// magazine, and a fast reload.
-///
-/// Shots to kill (victim HP ÷ shooter damage):
-///              vs Light   vs Regular   vs Heavy
-///   Light         4           6           9
-///   Regular       3           4           6
-///   Heavy         2           3           4
+/// A player's loadout, picked per-player in the lobby. Health is measured in
+/// hearts and every hit takes exactly one, so a role's max hearts *is* its shots
+/// to kill — Heavy (5) outlasts Regular (4) outlasts Light (3). Light pays for
+/// its thinner health with full-auto spray (much easier to land hits inside the
+/// tight 5° cone), the deepest magazine, and a fast reload.
 ///
 /// Note the 0.5 s hit-invulnerability window means a single victim can absorb
 /// at most 2 hits/s no matter the fire rate — Light's 0.25 s cadence is for
@@ -39,27 +34,23 @@ enum PlayerRole: String, Codable, CaseIterable, Identifiable {
     /// One-line pitch for the lobby picker.
     var blurb: String {
         switch self {
-        case .light: return "Hold FIRE for full auto"
+        case .light: return "Full auto, fewer hearts"
         case .regular: return "Balanced loadout"
-        case .heavy: return "Slow, crushing shots"
+        case .heavy: return "Tanky, slow fire"
         }
     }
 
+    /// Max hearts. Health is discrete now — one heart per hit.
     var maxHP: Int {
         switch self {
-        case .light: return 70
-        case .regular: return 100
-        case .heavy: return 150
+        case .light: return 3
+        case .regular: return 4
+        case .heavy: return 5
         }
     }
 
-    var damage: Int {
-        switch self {
-        case .light: return 18
-        case .regular: return 25
-        case .heavy: return 40
-        }
-    }
+    /// Every shot takes exactly one heart, whoever fires it.
+    var damage: Int { 1 }
 
     var fireCooldown: TimeInterval {
         switch self {

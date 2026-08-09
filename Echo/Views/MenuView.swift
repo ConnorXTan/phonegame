@@ -5,6 +5,8 @@ struct MenuView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var logoWidth: CGFloat = 220
     @ScaledMetric(relativeTo: .body) private var spectateGlyph: CGFloat = 18
+    /// Brand glyph on the primary menu buttons (Host / Find).
+    @ScaledMetric(relativeTo: .body) private var buttonGlyph: CGFloat = 20
 
     private var nameEmpty: Bool {
         engine.playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -67,9 +69,17 @@ struct MenuView: View {
                     Button {
                         engine.enterLobby(hosting: true)
                     } label: {
-                        Label("Host a Lobby", systemImage: "antenna.radiowaves.left.and.right")
-                            .frame(maxWidth: 260)
-                            .foregroundStyle(Color.echoOnPrimary)
+                        Label {
+                            Text("Host a Lobby")
+                        } icon: {
+                            Image(art: .hostLobby)
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: buttonGlyph, height: buttonGlyph)
+                        }
+                        .frame(maxWidth: 260)
+                        .foregroundStyle(Color.echoOnPrimary)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
@@ -78,8 +88,16 @@ struct MenuView: View {
                     Button {
                         engine.enterBrowser(asSpectator: false)
                     } label: {
-                        Label("Find Lobbies", systemImage: "person.3.fill")
-                            .frame(maxWidth: 260)
+                        Label {
+                            Text("Find Lobbies")
+                        } icon: {
+                            Image(art: .joinLobby)
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: buttonGlyph, height: buttonGlyph)
+                        }
+                        .frame(maxWidth: 260)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
