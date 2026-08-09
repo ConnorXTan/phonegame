@@ -27,10 +27,9 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var lastFireTime: Date?
     @Published private(set) var respawnRemaining: TimeInterval = 0
     @Published private(set) var lastKilledBy: String?
-    /// Wall-clock end of our damage immunity. Enforced victim-side because each
-    /// phone is authoritative for its own HP — shooters resolve independently
-    /// and can't see each other, so this is the only place a crossfire can be
-    /// collapsed into one hit.
+    /// Wall-clock end of our spawn protection — the only immunity window left;
+    /// ordinary hits carry no i-frames. Enforced victim-side because each
+    /// phone is authoritative for its own HP.
     @Published private(set) var invulnerableUntil: Date?
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
@@ -859,21 +858,23 @@ final class GameEngine: NSObject, ObservableObject {
         // but its team table can lag right after a switch — the victim is the
         // authority on its own team, so this is where the rule is final.
         if settings.teamPlay, let mine = myTeam, players[shooter]?.team == mine { return }
-        // Absorbed: no damage, no flash, no healthUpdate — as far as the rest
-        // of the mesh is concerned this shot never landed.
+        // Absorbed during spawn protection: no damage, no flash, no
+        // healthUpdate — as far as the rest of the mesh is concerned this
+        // shot never landed. Between ordinary hits there are no i-frames;
+        // fire cooldowns, magazines, and reloads are the only throttle.
         let now = Date()
         guard !isInvulnerable(at: now) else { return }
-        invulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         let newHP = max(0, (me?.hp ?? 0) - damage)
         players[myName]?.hp = newHP
         haptics.playDamage()
         flashDamage()
         net.send(.healthUpdate(player: myName, hp: newHP))
         // Armor: every other hit that lands while the window runs goes back
-        // at the shooter for one heart — 50% of the incoming stream, kept
-        // discrete because hits deal whole hearts. It rides the normal .hit
-        // path, so the shooter's own i-frames and team rules still apply on
-        // their side, and a reflected kill credits us like any other.
+        // at the shooter for one heart — a fixed sting, deliberately not
+        // scaled to the incoming round now that roles deal 1–3. It rides the
+        // normal .hit path, so the shooter's own i-frames and team rules
+        // still apply on their side, and a reflected kill credits us like
+        // any other.
         if hasEffect(.armor, at: now) {
             armorHitCount += 1
             if armorHitCount % 2 == 1 {
@@ -1034,7 +1035,10 @@ final class GameEngine: NSObject, ObservableObject {
 
     /// Grace radius around the phone for grabbing a drop — nobody should have
     /// to physically graze a floating point in space to score it.
-    private static let pickupRadius: Float = 1.3
+    private static let pickupRadius: Float = 1.0
+    /// Markers render this far below the players' blended phone height —
+    /// just under chest level, so the disc hangs clear of faces.
+    private static let dropRenderDip: Float = 0.2
     /// Most drops on the field at once, so a quiet stretch can't pile up a
     /// supermarket.
     private static let maxLiveDrops = 4
@@ -1133,10 +1137,16 @@ final class GameEngine: NSObject, ObservableObject {
         // Without a single peer anchor the renormalized point collapses onto
         // us — a free pickup, worse than no drop at all on this phone.
         guard peerAnchors > 0, total > 0.3 else { return }
+        var point = accumulated / Float(total)
+        // Render height: the blend's Y is already the weighted average of the
+        // phones' holding heights — dip it a fixed 0.2 m so the marker floats
+        // just under chest level instead of in faces. Pickup ignores Y
+        // either way (see tickConsumables).
+        point.y -= Self.dropRenderDip
         let now = Date()
         consumables.append(ActiveConsumable(
             id: spawn.id, kind: spawn.kind,
-            position: accumulated / Float(total),
+            position: point,
             spawnedAt: now, expiresAt: now.addingTimeInterval(spawn.lifetime)))
     }
 
