@@ -3,7 +3,8 @@ import SwiftUI
 struct DeathView: View {
     @EnvironmentObject private var engine: GameEngine
 
-    @ScaledMetric(relativeTo: .largeTitle) private var bannerWidth: CGFloat = 240
+    @ScaledMetric(relativeTo: .largeTitle) private var skullSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 40
     @ScaledMetric(relativeTo: .largeTitle) private var countdownSize: CGFloat = 72
 
     var body: some View {
@@ -13,11 +14,20 @@ struct DeathView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: Space.lg) {
-                Image(art: .eliminated)
+                // Kill-feed skull, template-tinted to danger, over the word set
+                // in real type — the baked "ELIMINATED" banner clipped its glyphs.
+                Image(art: .killSkull)
+                    .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: bannerWidth)
-                    .accessibilityLabel("Eliminated")
+                    .frame(width: skullSize, height: skullSize)
+                    .foregroundStyle(Color.echoDanger)
+                    .accessibilityHidden(true)
+
+                Text("ELIMINATED")
+                    .font(.appBold(fixedSize: titleSize))
+                    .tracking(2)
+                    .foregroundStyle(Color.echoDanger)
 
                 if let killer = engine.lastKilledBy {
                     Text("tagged by \(killer.displayCallSign)")
