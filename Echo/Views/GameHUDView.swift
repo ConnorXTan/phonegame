@@ -20,7 +20,8 @@ struct GameHUDView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var reloadDiameter: CGFloat = 74
     /// Deliberately wider than the fire button — it's the situational-awareness
     /// display, so it should out-rank the control in the visual hierarchy.
-    @ScaledMetric(relativeTo: .largeTitle) private var miniMapDiameter: CGFloat = 150
+    /// Width only: the map is a forward fan, so height follows its aspect.
+    @ScaledMetric(relativeTo: .largeTitle) private var miniMapWidth: CGFloat = 150
 
     /// How long a kill toast lingers, and how many can stack before the oldest
     /// is dropped — a multi-kill flurry must not curtain off the viewfinder.
@@ -57,8 +58,8 @@ struct GameHUDView: View {
                 // viewfinder.
                 HStack(alignment: .top, spacing: Space.sm) {
                     MiniMapView()
-                        .frame(width: miniMapDiameter, height: miniMapDiameter)
-                        .padding(.leading, Space.xs)   // hugs the edge to offset the smaller disc
+                        .frame(width: miniMapWidth, height: miniMapWidth * MiniMapView.aspect)
+                        .padding(.leading, Space.xs)   // hugs the edge to offset the smaller fan
                     VStack(alignment: .trailing, spacing: Space.sm) {
                         heartGauge
                         killToasts
