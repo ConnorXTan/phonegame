@@ -26,7 +26,7 @@ struct DeathView: View {
                 }
 
                 Text(String(format: "%.1f", max(0, engine.respawnRemaining)))
-                    .font(.app(fixedSize: countdownSize).weight(.bold))
+                    .font(.appBold(fixedSize: countdownSize))
                     .foregroundStyle(Color.echoText)
                     .contentTransition(.numericText())
 

@@ -95,7 +95,7 @@ struct RadarView: View {
         ctx.fill(Path(ellipseIn: CGRect(x: point.x - 6, y: point.y - 6, width: 12, height: 12)),
                  with: .color(color))
         let label = Text("\(name) \(String(format: "%.1f", distance))m")
-            .font(.app(.caption2).bold())
+            .font(.appBold(.caption2))
             .foregroundStyle(color)
         ctx.draw(label, at: CGPoint(x: point.x, y: point.y - 14))
     }

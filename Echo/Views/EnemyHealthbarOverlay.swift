@@ -169,7 +169,7 @@ struct EnemyTag: View {
                         .font(.app(.caption2))
                 }
                 Text(name.uppercased())
-                    .font(.app(.caption2).bold())
+                    .font(.appBold(.caption2))
                     .lineLimit(1)
             }
             .foregroundStyle(nameColor)

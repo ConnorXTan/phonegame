@@ -24,7 +24,7 @@ struct LobbyBrowserView: View {
                 .padding(.horizontal)
 
                 Text("LOBBIES")
-                    .font(.app(fixedSize: titleSize).weight(.black))
+                    .font(.appBold(fixedSize: titleSize))
                     .tracking(3)
 
                 if let notice = engine.lobbyNotice {

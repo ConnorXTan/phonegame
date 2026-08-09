@@ -173,7 +173,7 @@ struct MiniMapView: View {
     /// bare text on a bright frame is unreadable. Also nudged to stay inside
     /// the canvas, since a blip near the rim would otherwise push it off.
     private func drawLabel(ctx: GraphicsContext, _ text: String, _ color: Color, at point: CGPoint) {
-        let resolved = ctx.resolve(Text(text).font(.app(.caption2).bold()).foregroundStyle(color))
+        let resolved = ctx.resolve(Text(text).font(.appBold(.caption2)).foregroundStyle(color))
         let size = resolved.measure(in: CGSize(width: 200, height: 40))
         let half = size.width / 2 + 3
         let x = min(max(point.x, half), ctx.clipBoundingRect.width - half)

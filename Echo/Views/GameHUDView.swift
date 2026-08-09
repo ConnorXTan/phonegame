@@ -200,7 +200,7 @@ struct GameHUDView: View {
             + Text("\(theirs.initial) \(theirKills)")
                 .foregroundStyle(Color.echoDanger)
         )
-        .font(.app(.subheadline).bold().monospacedDigit())
+        .font(.appBold(.subheadline).monospacedDigit())
         .fixedSize()
         .accessibilityLabel("Team \(mine.displayName) \(myKills), team \(theirs.displayName) \(theirKills)")
     }
@@ -230,7 +230,7 @@ struct GameHUDView: View {
         let remaining = engine.matchRemaining
         let urgent = remaining <= 30
         return Text(remaining.clockString)
-            .font(.app(.headline).bold().monospacedDigit())
+            .font(.appBold(.headline).monospacedDigit())
             .foregroundStyle(urgent ? Color.echoDanger : Color.echoText)
             .accessibilityLabel("Match time \(remaining.clockString)")
             .opacity(urgent && clockPulse ? Alpha.muted : 1)
@@ -291,7 +291,7 @@ struct GameHUDView: View {
             Text(event.victim.displayCallSign)
                 .foregroundStyle(toastNameColor(event.victim, isLatest: isLatest))
         }
-        .font(isLatest ? .app(.caption2).bold() : .app(.caption2))
+        .font(isLatest ? .appBold(.caption2) : .app(.caption2))
         .lineLimit(1)
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xs)
@@ -371,7 +371,7 @@ struct GameHUDView: View {
             // One word, centered. The count lives in the ring around the button
             // — printing it again inside was the same fact twice.
             Text(engine.isReloading ? "RELOAD" : "FIRE")
-                .font(.app(fixedSize: engine.isReloading ? reloadLabelSize : fireLabelSize).weight(.black))
+                .font(.appBold(fixedSize: engine.isReloading ? reloadLabelSize : fireLabelSize))
                 .foregroundStyle(fireLabelColor)
         }
         .frame(width: fireDiameter, height: fireDiameter)

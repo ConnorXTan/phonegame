@@ -63,7 +63,7 @@ struct SpectatorView: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("LTN")
-                        .font(.app(.headline).weight(.black))
+                        .font(.appBold(.headline))
                         .tracking(2)
                     Text("GAME MASTER")
                         .font(.app(.caption2))
@@ -104,7 +104,7 @@ struct SpectatorView: View {
 
     private func chip(_ text: String) -> some View {
         Text(text)
-            .font(.app(.caption2).bold())
+            .font(.appBold(.caption2))
             .tracking(1)
             .foregroundStyle(Color.echoTextSecondary)
             .padding(.horizontal, Space.sm)
@@ -123,7 +123,7 @@ struct SpectatorView: View {
             Text("BRAVO \(engine.teamKills(.bravo))")
                 .foregroundStyle(Color.echoTeamAbsolute(.bravo))
         }
-        .font(.app(.caption2).bold().monospacedDigit())
+        .font(.appBold(.caption2).monospacedDigit())
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xxs)
         .background(Color.echoSurface, in: Capsule())
@@ -137,7 +137,7 @@ struct SpectatorView: View {
             VStack(spacing: Space.xl) {
                 VStack(spacing: Space.xs) {
                     Text("MATCH SETUP")
-                        .font(.app(.caption).bold())
+                        .font(.appBold(.caption))
                         .tracking(3)
                         .foregroundStyle(Color.echoTextSecondary)
                     Text("Players join from their phones — the roster fills itself.")
@@ -251,7 +251,7 @@ struct SpectatorView: View {
                 .foregroundStyle(Color.echoTextTertiary)
                 .accessibilityHidden(true)
             Text("MATCH IN PROGRESS")
-                .font(.app(.caption).bold())
+                .font(.appBold(.caption))
                 .tracking(3)
                 .foregroundStyle(Color.echoTextSecondary)
             Text("A game with \(engine.externalMatchPlayers) players is already running on the phones. The laptop can't join or take over a live match — this screen unlocks the moment it ends.")
@@ -266,7 +266,7 @@ struct SpectatorView: View {
     private func settingRow(label: String, icon: String, @ViewBuilder control: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             Label(label, systemImage: icon)
-                .font(.app(.caption).bold())
+                .font(.appBold(.caption))
                 .foregroundStyle(Color.echoTextSecondary)
             control()
         }
@@ -282,7 +282,7 @@ struct SpectatorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.md) {
                 Text(engine.phase == .lobby ? "ROSTER" : "STANDINGS")
-                    .font(.app(.caption2).bold())
+                    .font(.appBold(.caption2))
                     .tracking(2)
                     .foregroundStyle(Color.echoTextTertiary)
                     .padding(.horizontal, Space.xs)
@@ -330,14 +330,14 @@ struct SpectatorView: View {
                         .foregroundStyle(Color.echoTextTertiary)
                     if engine.settings.teamPlay, let team = player.team {
                         Text(team.displayName.uppercased())
-                            .font(.app(.caption2).bold())
+                            .font(.appBold(.caption2))
                             .tracking(1)
                             .foregroundStyle(Color.echoTeamAbsolute(team))
                     }
                     Spacer()
                     if watching {
                         Label("LIVE", systemImage: "record.circle.fill")
-                            .font(.app(.caption2).bold())
+                            .font(.appBold(.caption2))
                             .foregroundStyle(Color.echoPrimary)
                     }
                 }
@@ -452,7 +452,7 @@ struct SpectatorView: View {
                 .foregroundStyle(locked ? Color.echoPrimary : Color.echoText.opacity(Alpha.muted))
             if let target = overlay.lockedTarget {
                 Text("LOCKED · \(target.uppercased())")
-                    .font(.app(.caption2).bold())
+                    .font(.appBold(.caption2))
                     .foregroundStyle(Color.echoPrimary)
             }
         }
@@ -467,7 +467,7 @@ struct SpectatorView: View {
             HStack(spacing: Space.md) {
                 Label("LIVE · \(watching.displayCallSign.uppercased())",
                       systemImage: "dot.radiowaves.left.and.right")
-                    .font(.app(.caption).bold())
+                    .font(.appBold(.caption))
                     .foregroundStyle(Color.echoOnPrimary)
                     .padding(.horizontal, Space.md)
                     .padding(.vertical, Space.xs)
@@ -510,7 +510,7 @@ struct SpectatorView: View {
         VStack(spacing: Space.lg) {
             Spacer()
             winnerHeadline(result)
-                .font(.app(fixedSize: winnerTitleSize).weight(.black))
+                .font(.appBold(fixedSize: winnerTitleSize))
                 .foregroundStyle(result.isDraw ? Color.echoText : Color.echoAccent)
 
             chip((engine.settings.teamPlay ? "TEAMS · " : "") + result.duration.durationLabel)

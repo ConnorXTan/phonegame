@@ -39,7 +39,7 @@ struct CameraFeedView: View {
                     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     UIApplication.shared.open(url)
                 }
-                .font(.app(.footnote).bold())
+                .font(.appBold(.footnote))
                 .buttonStyle(.bordered)
                 .tint(Color.echoPrimary)
             }

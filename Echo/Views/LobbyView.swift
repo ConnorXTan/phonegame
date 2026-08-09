@@ -44,7 +44,7 @@ struct LobbyView: View {
             // a full xl gap left the roster floating mid-screen.
             VStack(spacing: Space.md) {
                 Text("LOBBY")
-                    .font(.app(fixedSize: titleSize).weight(.black))
+                    .font(.appBold(fixedSize: titleSize))
                     .tracking(3)
 
                 rosterBoard
@@ -319,7 +319,7 @@ struct LobbyView: View {
     /// in front of it: it sits directly on top of the players.
     private var rosterCount: some View {
         Text("\(roster.count)/\(engine.settings.maxPlayers)")
-            .font(.app(.title2).bold().monospacedDigit())
+            .font(.appBold(.title2).monospacedDigit())
             .foregroundStyle(Color.echoText)
             .textCase(nil)
             .accessibilityLabel("\(roster.count) of \(engine.settings.maxPlayers) players")
@@ -401,11 +401,11 @@ struct LobbyView: View {
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             Text("\(team.displayName.uppercased()) · \(members(of: team).count)")
-                .font(.app(.title3).bold().monospacedDigit())
+                .font(.appBold(.title3).monospacedDigit())
                 .foregroundStyle(Color.echoTeam(team, relativeTo: engine.myTeam))
             if mine {
                 Text("YOUR TEAM")
-                    .font(.app(.caption).bold())
+                    .font(.appBold(.caption))
                     .foregroundStyle(Color.echoTeamAlly)
             }
         }

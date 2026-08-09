@@ -47,12 +47,12 @@ struct MatchSummaryView: View {
     private func header(_ result: MatchResult) -> some View {
         VStack(spacing: Space.sm) {
             Text("TIME")
-                .font(.app(fixedSize: titleSize).weight(.black))
+                .font(.appBold(fixedSize: titleSize))
                 .tracking(6)
                 .foregroundStyle(Color.echoText)
 
             headline(result)
-                .font(.app(.title3).bold())
+                .font(.appBold(.title3))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(tint(result))
 
@@ -117,13 +117,13 @@ struct MatchSummaryView: View {
         VStack(spacing: Space.md) {
             HStack {
                 Text("YOUR MATCH")
-                    .font(.app(.caption).bold())
+                    .font(.appBold(.caption))
                     .tracking(1.5)
                     .foregroundStyle(Color.echoTextSecondary)
                 Spacer()
                 if let placement {
                     Text(placementLabel(placement))
-                        .font(.app(.caption).bold())
+                        .font(.appBold(.caption))
                         .foregroundStyle(placement == 1 ? Color.echoAccent : Color.echoTextSecondary)
                 }
             }
@@ -149,10 +149,10 @@ struct MatchSummaryView: View {
     private func stat(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: Space.xs) {
             Text(value)
-                .font(.app(fixedSize: statSize).weight(.black).monospacedDigit())
+                .font(.appBold(fixedSize: statSize).monospacedDigit())
                 .foregroundStyle(color)
             Text(label)
-                .font(.app(.caption2).bold())
+                .font(.appBold(.caption2))
                 .tracking(1)
                 .foregroundStyle(Color.echoTextSecondary)
         }
@@ -175,7 +175,7 @@ struct MatchSummaryView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("FINAL STANDINGS")
-                    .font(.app(.caption).bold())
+                    .font(.appBold(.caption))
                     .tracking(1.5)
                     .foregroundStyle(Color.echoTextSecondary)
                 Spacer()
@@ -189,7 +189,7 @@ struct MatchSummaryView: View {
                 let isMe = player.name == result.myName
                 HStack(spacing: Space.md) {
                     Text("\(index + 1)")
-                        .font(.app(.subheadline).bold().monospacedDigit())
+                        .font(.appBold(.subheadline).monospacedDigit())
                         .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
                         .frame(width: 20, alignment: .leading)
 
@@ -201,7 +201,7 @@ struct MatchSummaryView: View {
                     }
 
                     Text(player.name.displayCallSign)
-                        .font(isMe ? .app(.body).bold() : .app(.body))
+                        .font(isMe ? .appBold(.body) : .app(.body))
                         .foregroundStyle(isMe ? Color.echoText : Color.echoTextSecondary)
                         .lineLimit(1)
 
@@ -218,7 +218,7 @@ struct MatchSummaryView: View {
                     Spacer(minLength: Space.sm)
 
                     Text("\(player.kills)")
-                        .font(.app(.subheadline).bold().monospacedDigit())
+                        .font(.appBold(.subheadline).monospacedDigit())
                         .foregroundStyle(Color.echoSecondary)
                         .frame(width: 28, alignment: .trailing)
                     Text("\(player.deaths)")

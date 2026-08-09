@@ -75,7 +75,7 @@ struct ScoreboardView: View {
             Text("HP")
                 .frame(width: hpWidth, alignment: .trailing)
         }
-        .font(.app(.caption2).bold())
+        .font(.appBold(.caption2))
         .tracking(1)
         .lineLimit(1)   // a wrapped column label stops naming its column
         .foregroundStyle(Color.echoTextTertiary)
@@ -103,7 +103,7 @@ struct ScoreboardView: View {
             }
             Spacer()
         }
-        .font(.app(.caption).bold())
+        .font(.appBold(.caption))
         .foregroundStyle(Color.echoTextSecondary)
         .padding(.horizontal, Space.sm)
         .padding(.top, Space.lg)
@@ -127,7 +127,7 @@ struct ScoreboardView: View {
                 .frame(width: rankWidth, alignment: .leading)
 
             Text(player.name.displayCallSign)
-                .font(isMe ? .app(.headline).bold() : .app(.headline))
+                .font(isMe ? .appBold(.headline) : .app(.headline))
                 .foregroundStyle(player.isConnected
                                  ? Color.echoText
                                  : Color.echoTextSecondary)
