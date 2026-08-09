@@ -82,6 +82,27 @@ extension Color {
     /// slate vanished into it.
     static let echoInert = Color(h: 231, s: 0.15, l: 0.50)
 
+    /// Team play: YOUR side. Everything already on the wheel is spoken for —
+    /// the three greens mean interactive/alive/accent and red means harm — so
+    /// allies take the one hue the HUD hasn't spent. Blue also survives every
+    /// common color deficiency against `echoDanger` red, and clears 7:1 on the
+    /// background. Enemies need no token of their own: "enemy" is already
+    /// `echoDanger`'s documented job.
+    static let echoTeamAlly = Color(h: 210, s: 1.0, l: 0.64)
+
+    /// Relationship tint as seen from `mine`: your own team reads ally-blue,
+    /// the other side reads enemy-red. A player whose team hasn't arrived yet
+    /// renders as an enemy — over-marking a threat is the safe failure.
+    static func echoTeam(_ team: Team?, relativeTo mine: Team?) -> Color {
+        team != nil && team == mine ? .echoTeamAlly : .echoDanger
+    }
+
+    /// Broadcast screens (the Mac) have no side, so the mapping is fixed:
+    /// alpha is always blue, bravo always red.
+    static func echoTeamAbsolute(_ team: Team) -> Color {
+        team == .alpha ? .echoTeamAlly : .echoDanger
+    }
+
     /// The health ramp, shared by the player's own HUD, the spectator rail,
     /// and the floating enemy tags, so the same HP reads the same way wherever
     /// it appears.

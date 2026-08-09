@@ -26,7 +26,7 @@ struct EnemyHealthbarOverlay: View {
         GeometryReader { geo in
             TimelineView(.animation) { context in
                 ForEach(visibleTags(viewport: geo.size, at: context.date)) { tag in
-                    EnemyTag(name: tag.name, hpFraction: tag.hpFraction)
+                    EnemyTag(name: tag.name, hpFraction: tag.hpFraction, side: tag.side)
                         .position(x: tag.point.x, y: tag.point.y - 48)
                 }
             }
@@ -43,6 +43,7 @@ struct EnemyHealthbarOverlay: View {
         let name: String     // display call sign
         let point: CGPoint
         let hpFraction: CGFloat
+        let side: EnemyTag.Side
     }
 
     private func visibleTags(viewport: CGSize, at date: Date) -> [Tag] {
@@ -62,11 +63,14 @@ struct EnemyHealthbarOverlay: View {
                 smoothed, orientation: .portrait, viewportSize: viewport)
             guard point.x > -32, point.x < viewport.width + 32,
                   point.y > 0, point.y < viewport.height else { continue }
+            let side: EnemyTag.Side = !engine.settings.teamPlay ? .neutral
+                : engine.isEnemy(player) ? .enemy : .ally
             tags.append(Tag(
                 id: player.name,
                 name: player.name.displayCallSign,
                 point: point,
-                hpFraction: CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))))
+                hpFraction: CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP)),
+                side: side))
         }
         return tags
     }
@@ -134,21 +138,41 @@ private final class WorldSmoother {
 /// The floating tag itself: call sign over a thin HP capsule. Sized as chrome,
 /// not prose — it sits over a live camera feed. Internal because the
 /// spectator's feed redraws the exact same tag from streamed overlay state.
+/// In team play the call sign carries the side's tint, and allies also get a
+/// shield glyph so hue is never the only difference.
 struct EnemyTag: View {
+    enum Side { case neutral, ally, enemy }
+
+
     let name: String
     let hpFraction: CGFloat
+    var side: Side = .neutral
 
     /// Fixed geometry, not spacing: the gauge is read at a distance over a
     /// moving camera feed, so it keeps its size independent of type scaling.
     /// Five hearts at this size span roughly the old 64pt bar.
     private static let heartSize: CGFloat = 11
 
+    private var nameColor: Color {
+        switch side {
+        case .neutral: return .echoTextSecondary
+        case .ally: return .echoTeamAlly
+        case .enemy: return .echoDanger
+        }
+    }
+
     var body: some View {
         VStack(spacing: Space.xs) {
-            Text(name.uppercased())
-                .font(.caption2.bold())
-                .foregroundStyle(Color.echoTextSecondary)
-                .lineLimit(1)
+            HStack(spacing: Space.xs) {
+                if side == .ally {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.caption2)
+                }
+                Text(name.uppercased())
+                    .font(.caption2.bold())
+                    .lineLimit(1)
+            }
+            .foregroundStyle(nameColor)
             HeartBar(fraction: hpFraction, size: Self.heartSize)
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2, y: 1)

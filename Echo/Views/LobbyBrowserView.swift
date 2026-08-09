@@ -76,7 +76,8 @@ struct LobbyBrowserView: View {
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     Text("\(lobby.hostName.displayCallSign)'s lobby")
                         .font(.headline)
-                    Text(lobby.isLive ? "Match in progress" : "In lobby")
+                    Text((lobby.isLive ? "Match in progress" : "In lobby")
+                         + (lobby.isTeams ? " · Teams" : ""))
                         .font(.caption2)
                         .foregroundStyle(lobby.isLive ? Color.echoAccent : Color.echoTextSecondary)
                 }

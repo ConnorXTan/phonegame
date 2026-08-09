@@ -9,6 +9,22 @@ struct LobbyView: View {
         engine.players.values.sorted { $0.name < $1.name }
     }
 
+    private func members(of team: Team) -> [Player] {
+        roster.filter { $0.team == team }
+    }
+
+    /// Undecided joiners while their teamChange is still in flight.
+    private var unassigned: [Player] {
+        roster.filter { $0.team == nil }
+    }
+
+    /// A 2+ player match where one side is empty has nobody to shoot — hold
+    /// Start until someone switches.
+    private var teamsLopsided: Bool {
+        engine.settings.teamPlay && roster.count >= 2
+            && Team.allCases.contains { members(of: $0).isEmpty }
+    }
+
     var body: some View {
         VStack(spacing: Space.xl) {
             HStack {
@@ -26,35 +42,40 @@ struct LobbyView: View {
                 .tracking(3)
 
             List {
-                Section("Players · \(roster.count)/\(engine.settings.maxPlayers)") {
-                    ForEach(roster) { player in
-                        HStack {
-                            Image(systemName: "iphone.gen3")
-                                .foregroundStyle(Color.echoSecondary)
-                                .accessibilityHidden(true)
-                            Text(player.name.displayCallSign)
-                            if player.name == engine.myName {
-                                Text("you")
-                                    .font(.caption2)
-                                    .padding(.horizontal, Space.sm)
-                                    .padding(.vertical, Space.xxs)
-                                    .background(Color.echoSurface, in: Capsule())
+                if engine.settings.teamPlay {
+                    ForEach(Team.allCases) { team in
+                        Section {
+                            ForEach(members(of: team)) { player in
+                                playerRow(player)
                             }
-                            Spacer()
-                            Label(player.role.label.uppercased(), systemImage: player.role.symbol)
-                                .font(.caption2)
-                                .foregroundStyle(Color.echoTextSecondary)
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Color.echoSecondary)
-                                .accessibilityLabel("Connected")
+                            if members(of: team).isEmpty {
+                                Text("No one yet")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.echoTextTertiary)
+                            }
+                        } header: {
+                            teamHeader(team)
                         }
                     }
-                    if roster.count < 2 {
-                        HStack {
-                            ProgressView()
-                            Text("Waiting for players to join…")
-                                .foregroundStyle(Color.echoTextSecondary)
-                                .padding(.leading, Space.sm)
+                    if !unassigned.isEmpty {
+                        Section("Picking a team…") {
+                            ForEach(unassigned) { player in
+                                playerRow(player)
+                            }
+                        }
+                    }
+                } else {
+                    Section("Players · \(roster.count)/\(engine.settings.maxPlayers)") {
+                        ForEach(roster) { player in
+                            playerRow(player)
+                        }
+                        if roster.count < 2 {
+                            HStack {
+                                ProgressView()
+                                Text("Waiting for players to join…")
+                                    .foregroundStyle(Color.echoTextSecondary)
+                                    .padding(.leading, Space.sm)
+                            }
                         }
                     }
                 }
@@ -78,8 +99,32 @@ struct LobbyView: View {
             rolePicker
                 .padding(.horizontal)
 
+            if engine.settings.teamPlay {
+                teamPicker
+                    .padding(.horizontal)
+            }
+
             if engine.isHost {
                 VStack(spacing: Space.md) {
+                    VStack(spacing: Space.sm) {
+                        HStack {
+                            Label("Mode", systemImage: "flag.2.crossed")
+                                .font(.caption)
+                                .foregroundStyle(Color.echoTextSecondary)
+                            Spacer()
+                            Text(engine.settings.teamPlay ? "Two teams" : "Free-for-all")
+                                .font(.caption.bold())
+                        }
+                        Picker("Mode", selection: Binding(
+                            get: { engine.settings.teamPlay },
+                            set: { engine.setTeamPlay($0) }
+                        )) {
+                            Text("Solo").tag(false)
+                            Text("Teams").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
                     VStack(spacing: Space.sm) {
                         HStack {
                             Label("Match length", systemImage: "timer")
@@ -91,7 +136,10 @@ struct LobbyView: View {
                         }
                         Picker("Match length", selection: Binding(
                             get: { engine.settings.matchDuration },
-                            set: { engine.settings.matchDuration = $0 }
+                            set: {
+                                engine.settings.matchDuration = $0
+                                engine.hostSettingsChanged()
+                            }
                         )) {
                             ForEach(GameSettings.durationChoices, id: \.self) { seconds in
                                 Text(seconds.durationLabel).tag(seconds)
@@ -114,7 +162,7 @@ struct LobbyView: View {
                                 get: { Double(engine.settings.maxPlayers) },
                                 set: {
                                     engine.settings.maxPlayers = Int($0.rounded())
-                                    engine.refreshLobbyAdvertisement()
+                                    engine.hostSettingsChanged()
                                 }
                             ),
                             in: 2...8,
@@ -140,6 +188,13 @@ struct LobbyView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .tint(Color.echoPrimary)
+                    .disabled(teamsLopsided)
+
+                    if teamsLopsided {
+                        Text("Both teams need at least one player.")
+                            .font(.caption2)
+                            .foregroundStyle(Color.echoTextSecondary)
+                    }
                 }
                 .padding(.horizontal)
             } else {
@@ -192,5 +247,72 @@ struct LobbyView: View {
 
     private func statChip(_ icon: String, _ text: String) -> some View {
         Label(text, systemImage: icon)
+    }
+
+    private func playerRow(_ player: Player) -> some View {
+        HStack {
+            Image(systemName: "iphone.gen3")
+                .foregroundStyle(engine.settings.teamPlay && player.team != nil
+                                 ? Color.echoTeam(player.team, relativeTo: engine.myTeam)
+                                 : Color.echoSecondary)
+                .accessibilityHidden(true)
+            Text(player.name.displayCallSign)
+            if player.name == engine.myName {
+                Text("you")
+                    .font(.caption2)
+                    .padding(.horizontal, Space.sm)
+                    .padding(.vertical, Space.xxs)
+                    .background(Color.echoSurface, in: Capsule())
+            }
+            Spacer()
+            Label(player.role.label.uppercased(), systemImage: player.role.symbol)
+                .font(.caption2)
+                .foregroundStyle(Color.echoTextSecondary)
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.echoSecondary)
+                .accessibilityLabel("Connected")
+        }
+    }
+
+    /// Team name plus headcount, tinted by relationship — and "your team" in
+    /// words, so the color is never the only signal.
+    private func teamHeader(_ team: Team) -> some View {
+        let mine = team == engine.myTeam
+        return HStack(spacing: Space.sm) {
+            Circle()
+                .fill(Color.echoTeam(team, relativeTo: engine.myTeam))
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            Text("\(team.displayName) · \(members(of: team).count)")
+            if mine {
+                Text("your team")
+                    .foregroundStyle(Color.echoTeamAlly)
+            }
+        }
+    }
+
+    /// Join or switch sides. Everyone gets this, host included — team choice
+    /// is per-player, not a host setting.
+    private var teamPicker: some View {
+        VStack(spacing: Space.sm) {
+            HStack {
+                Label("Your team", systemImage: "shield.lefthalf.filled")
+                    .font(.caption)
+                    .foregroundStyle(Color.echoTextSecondary)
+                Spacer()
+                Text(engine.myTeam?.displayName ?? "—")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.echoTeamAlly)
+            }
+            Picker("Your team", selection: Binding(
+                get: { engine.myTeam ?? .alpha },
+                set: { engine.selectTeam($0) }
+            )) {
+                ForEach(Team.allCases) { team in
+                    Text(team.displayName).tag(team)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
     }
 }
