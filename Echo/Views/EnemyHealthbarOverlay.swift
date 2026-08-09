@@ -52,7 +52,11 @@ struct EnemyHealthbarOverlay: View {
               let frame = engine.camera.session.currentFrame else { return [] }
         var tags: [Tag] = []
         for player in engine.opponents where player.isAlive && player.isConnected {
-            guard let world = worldPosition(of: player.name, camera: frame.camera, at: date) else {
+            // Cloak: the tag vanishes but the player stays fully shootable —
+            // dropping the smoother state means the reappearance snaps into
+            // place instead of gliding in from a five-second-old position.
+            guard !engine.isCloaked(player.name, at: date),
+                  let world = worldPosition(of: player.name, camera: frame.camera, at: date) else {
                 smoother.drop(player.name)
                 continue
             }

@@ -166,6 +166,15 @@ final class HapticsManager {
     func playRespawn() { notify.notificationOccurred(.success) }
     func playGameStart() { notify.notificationOccurred(.success) }
 
+    /// Drop grabbed: a quick rising double-tap — lighter than a kill confirm,
+    /// brighter than the reload snap.
+    func playPickup() {
+        play([transient(0, intensity: 0.6, sharpness: 0.4),
+              transient(0.09, intensity: 1.0, sharpness: 0.9)]) {
+            self.notify.notificationOccurred(.success)
+        }
+    }
+
     /// Time's up: three slowing thumps, like a final buzzer.
     func playMatchEnd() {
         play([transient(0, intensity: 1.0, sharpness: 0.5),

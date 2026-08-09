@@ -1,3 +1,4 @@
+import ARKit
 import SwiftUI
 import simd
 
@@ -20,9 +21,12 @@ struct MiniMapView: View {
     private static let halfAngle: CGFloat = .pi / 3
 
     /// One entry per human, newest reading wins — a rejoin mints a new wire
-    /// name, and two blips for one person would be worse than none.
+    /// name, and two blips for one person would be worse than none. Cloaked
+    /// players drop out entirely: a blip with a name is exactly the reveal
+    /// the cloak exists to suppress.
     private var livePeers: [Player] {
-        Dictionary(grouping: engine.opponents.filter { $0.isAlive }, by: \.name.displayCallSign)
+        Dictionary(grouping: engine.opponents.filter { $0.isAlive && !engine.isCloaked($0.name) },
+                   by: \.name.displayCallSign)
             .values
             .compactMap { entries in
                 entries.first { engine.ranging.latestReading(for: $0.name) != nil } ?? entries.first
@@ -43,6 +47,9 @@ struct MiniMapView: View {
                 ctx.fill(wedge(apex: apex, radius: radius),
                          with: .color(.echoBackground.opacity(Alpha.strong)))
                 drawRangeArcs(ctx: ctx, apex: apex, radius: radius)
+                // Under the player blips: a drop and a person at the same
+                // spot should read as the person.
+                drawConsumables(ctx: ctx, apex: apex, radius: radius, maxRange: maxRange)
 
                 for player in livePeers {
                     // Stale blips lie about where someone is — drop them.
@@ -119,6 +126,48 @@ struct MiniMapView: View {
         }
         drawLabel(ctx: ctx, "\(name) \(String(format: "%.1f", distance))m", color,
                   at: CGPoint(x: point.x, y: point.y - 12))
+    }
+
+    /// Drop markers, placed by casting each world anchor through the current
+    /// camera pose. Unlike peers this bearing has no UWB field-of-view limit,
+    /// so a drop behind you is still a real reading — off-fan drops collapse
+    /// to the distance-arc treatment, dotted (not dashed) and in the pickup
+    /// color so they never masquerade as a person.
+    private func drawConsumables(ctx: GraphicsContext, apex: CGPoint,
+                                 radius: CGFloat, maxRange: CGFloat) {
+        guard !engine.consumables.isEmpty,
+              let camera = engine.camera.session.currentFrame?.camera else { return }
+        let transform = camera.transform
+        let origin = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+        for drop in engine.consumables {
+            let offset = drop.position - origin
+            let distance = simd_length(simd_float2(offset.x, offset.z))
+            let scaled = min(CGFloat(distance) / maxRange, 1.0) * radius
+            // World → camera → NI device frame (portrait: +X right, -Z out
+            // the back) — the same frame peer bearings arrive in.
+            let inCamera = transform.inverse * simd_float4(offset, 0)
+            let inDevice = simd_quatf(angle: -.pi / 2, axis: simd_float3(0, 0, 1))
+                .act(simd_float3(inCamera.x, inCamera.y, inCamera.z))
+            let angle = CGFloat(atan2(inDevice.x, -inDevice.z))
+            if abs(angle) <= Self.halfAngle {
+                let point = CGPoint(x: apex.x + sin(angle) * scaled,
+                                    y: apex.y - cos(angle) * scaled)
+                let chip = Path(ellipseIn: CGRect(x: point.x - 7, y: point.y - 7,
+                                                  width: 14, height: 14))
+                ctx.fill(chip, with: .color(.echoBackground.opacity(Alpha.heavy)))
+                let glyph = ctx.resolve(
+                    Text("\(Image(systemName: drop.kind.symbol))")
+                        .font(.app(fixedSize: 9))
+                        .foregroundStyle(Color.echoAccent))
+                ctx.draw(glyph, at: point)
+            } else {
+                var arc = Path()
+                arc.addArc(center: apex, radius: scaled,
+                           startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
+                ctx.stroke(arc, with: .color(.echoAccent.opacity(Alpha.strong)),
+                           style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
+            }
+        }
     }
 
     /// Someone at this range, somewhere off the fan. Pure geometry: the arc's
