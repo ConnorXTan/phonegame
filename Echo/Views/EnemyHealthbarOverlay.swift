@@ -166,10 +166,10 @@ struct EnemyTag: View {
             HStack(spacing: Space.xs) {
                 if side == .ally {
                     Image(systemName: "shield.lefthalf.filled")
-                        .font(.caption2)
+                        .font(.app(.caption2))
                 }
                 Text(name.uppercased())
-                    .font(.caption2.bold())
+                    .font(.app(.caption2).bold())
                     .lineLimit(1)
             }
             .foregroundStyle(nameColor)

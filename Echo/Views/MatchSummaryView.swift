@@ -47,17 +47,17 @@ struct MatchSummaryView: View {
     private func header(_ result: MatchResult) -> some View {
         VStack(spacing: Space.sm) {
             Text("TIME")
-                .font(.system(size: titleSize, weight: .black, design: .rounded))
+                .font(.app(fixedSize: titleSize).weight(.black))
                 .tracking(6)
                 .foregroundStyle(Color.echoText)
 
             headline(result)
-                .font(.title3.bold())
+                .font(.app(.title3).bold())
                 .multilineTextAlignment(.center)
                 .foregroundStyle(tint(result))
 
             Label(result.duration.durationLabel + " match", systemImage: "timer")
-                .font(.caption)
+                .font(.app(.caption))
                 .foregroundStyle(Color.echoTextSecondary)
         }
     }
@@ -117,13 +117,13 @@ struct MatchSummaryView: View {
         VStack(spacing: Space.md) {
             HStack {
                 Text("YOUR MATCH")
-                    .font(.caption.bold())
+                    .font(.app(.caption).bold())
                     .tracking(1.5)
                     .foregroundStyle(Color.echoTextSecondary)
                 Spacer()
                 if let placement {
                     Text(placementLabel(placement))
-                        .font(.caption.bold())
+                        .font(.app(.caption).bold())
                         .foregroundStyle(placement == 1 ? Color.echoAccent : Color.echoTextSecondary)
                 }
             }
@@ -149,10 +149,10 @@ struct MatchSummaryView: View {
     private func stat(_ label: String, _ value: String, _ color: Color) -> some View {
         VStack(spacing: Space.xs) {
             Text(value)
-                .font(.system(size: statSize, weight: .black, design: .rounded).monospacedDigit())
+                .font(.app(fixedSize: statSize).weight(.black).monospacedDigit())
                 .foregroundStyle(color)
             Text(label)
-                .font(.caption2.bold())
+                .font(.app(.caption2).bold())
                 .tracking(1)
                 .foregroundStyle(Color.echoTextSecondary)
         }
@@ -175,12 +175,12 @@ struct MatchSummaryView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("FINAL STANDINGS")
-                    .font(.caption.bold())
+                    .font(.app(.caption).bold())
                     .tracking(1.5)
                     .foregroundStyle(Color.echoTextSecondary)
                 Spacer()
                 Text("K / D / RATIO")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(Color.echoTextTertiary)
             }
             .padding(.bottom, Space.md)
@@ -189,7 +189,7 @@ struct MatchSummaryView: View {
                 let isMe = player.name == result.myName
                 HStack(spacing: Space.md) {
                     Text("\(index + 1)")
-                        .font(.subheadline.bold().monospacedDigit())
+                        .font(.app(.subheadline).bold().monospacedDigit())
                         .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
                         .frame(width: 20, alignment: .leading)
 
@@ -201,7 +201,7 @@ struct MatchSummaryView: View {
                     }
 
                     Text(player.name.displayCallSign)
-                        .font(isMe ? .body.bold() : .body)
+                        .font(isMe ? .app(.body).bold() : .app(.body))
                         .foregroundStyle(isMe ? Color.echoText : Color.echoTextSecondary)
                         .lineLimit(1)
 
@@ -209,7 +209,7 @@ struct MatchSummaryView: View {
                     // surface tint carry it rather than another hue.
                     if isMe {
                         Text("you")
-                            .font(.caption2)
+                            .font(.app(.caption2))
                             .padding(.horizontal, Space.sm)
                             .padding(.vertical, Space.xxs)
                             .background(Color.echoSurface, in: Capsule())
@@ -218,15 +218,15 @@ struct MatchSummaryView: View {
                     Spacer(minLength: Space.sm)
 
                     Text("\(player.kills)")
-                        .font(.subheadline.bold().monospacedDigit())
+                        .font(.app(.subheadline).bold().monospacedDigit())
                         .foregroundStyle(Color.echoSecondary)
                         .frame(width: 28, alignment: .trailing)
                     Text("\(player.deaths)")
-                        .font(.subheadline.monospacedDigit())
+                        .font(.app(.subheadline).monospacedDigit())
                         .foregroundStyle(Color.echoDanger.opacity(Alpha.heavy))
                         .frame(width: 28, alignment: .trailing)
                     Text(player.kdString)
-                        .font(.caption.monospacedDigit())
+                        .font(.app(.caption).monospacedDigit())
                         .foregroundStyle(Color.echoTextSecondary)
                         .frame(width: 44, alignment: .trailing)
                 }
@@ -261,7 +261,7 @@ struct MatchSummaryView: View {
             .tint(Color.echoPrimary)
 
             Button("Leave Game", role: .destructive) { engine.leave() }
-                .font(.footnote)
+                .font(.app(.footnote))
         }
         .padding(.horizontal)
         .padding(.bottom, Space.lg)

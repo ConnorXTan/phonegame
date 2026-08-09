@@ -18,18 +18,18 @@ struct LobbyBrowserView: View {
                     Spacer()
                     Label(engine.myName.displayCallSign,
                           systemImage: engine.isSpectator ? "tv" : "person.fill")
-                        .font(.callout)
+                        .font(.app(.callout))
                         .foregroundStyle(Color.echoTextSecondary)
                 }
                 .padding(.horizontal)
 
                 Text("LOBBIES")
-                    .font(.system(size: titleSize, weight: .black, design: .rounded))
+                    .font(.app(fixedSize: titleSize).weight(.black))
                     .tracking(3)
 
                 if let notice = engine.lobbyNotice {
                     Label(notice, systemImage: "exclamationmark.triangle.fill")
-                        .font(.footnote)
+                        .font(.app(.footnote))
                         .foregroundStyle(Color.echoWarning)
                         .padding(Space.md)
                         .background(Color.echoWarning.opacity(Alpha.surface),
@@ -55,7 +55,7 @@ struct LobbyBrowserView: View {
                 Text(engine.isSpectator
                      ? "You'll join as a spectator — watching, never playing."
                      : "Lobbies appear automatically when a host opens one nearby.")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(Color.echoTextTertiary)
             }
             .padding(.vertical)
@@ -75,10 +75,10 @@ struct LobbyBrowserView: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     Text("\(lobby.hostName.displayCallSign)'s lobby")
-                        .font(.headline)
+                        .font(.app(.headline))
                     Text((lobby.isLive ? "Match in progress" : "In lobby")
                          + (lobby.isTeams ? " · Teams" : ""))
-                        .font(.caption2)
+                        .font(.app(.caption2))
                         .foregroundStyle(lobby.isLive ? Color.echoAccent : Color.echoTextSecondary)
                 }
                 Spacer()
@@ -86,7 +86,7 @@ struct LobbyBrowserView: View {
                     ProgressView()
                 } else {
                     Text("\(lobby.playerCount)/\(lobby.capacity)")
-                        .font(.callout.monospacedDigit().bold())
+                        .font(.app(.callout).monospacedDigit().bold())
                         .foregroundStyle(blocked ? Color.echoDanger : Color.echoTextSecondary)
                         .accessibilityLabel("\(lobby.playerCount) of \(lobby.capacity) players")
                 }

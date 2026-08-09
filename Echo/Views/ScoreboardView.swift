@@ -75,7 +75,7 @@ struct ScoreboardView: View {
             Text("HP")
                 .frame(width: hpWidth, alignment: .trailing)
         }
-        .font(.caption2.bold())
+        .font(.app(.caption2).bold())
         .tracking(1)
         .lineLimit(1)   // a wrapped column label stops naming its column
         .foregroundStyle(Color.echoTextTertiary)
@@ -103,7 +103,7 @@ struct ScoreboardView: View {
             }
             Spacer()
         }
-        .font(.caption.bold())
+        .font(.app(.caption).bold())
         .foregroundStyle(Color.echoTextSecondary)
         .padding(.horizontal, Space.sm)
         .padding(.top, Space.lg)
@@ -122,12 +122,12 @@ struct ScoreboardView: View {
         let isMe = player.name == engine.myName
         return HStack(spacing: Space.md) {
             Text("\(rank)")
-                .font(.headline.monospacedDigit())
+                .font(.app(.headline).monospacedDigit())
                 .foregroundStyle(rank == 1 ? Color.echoAccent : Color.echoTextSecondary)
                 .frame(width: rankWidth, alignment: .leading)
 
             Text(player.name.displayCallSign)
-                .font(isMe ? .headline.bold() : .headline)
+                .font(isMe ? .app(.headline).bold() : .app(.headline))
                 .foregroundStyle(player.isConnected
                                  ? Color.echoText
                                  : Color.echoTextSecondary)
@@ -139,7 +139,7 @@ struct ScoreboardView: View {
                 .frame(width: kdWidth, alignment: .trailing)
 
             Text("\(player.hp)")
-                .font(.subheadline.monospacedDigit())
+                .font(.app(.subheadline).monospacedDigit())
                 .foregroundStyle(Color.echoText)
                 .frame(width: hpWidth, alignment: .trailing)
         }
@@ -168,7 +168,7 @@ struct ScoreboardView: View {
             + Text("\(player.deaths)")
                 .foregroundStyle(Color.echoTextSecondary)
         )
-        .font(.subheadline.monospacedDigit())
+        .font(.app(.subheadline).monospacedDigit())
     }
 
     /// Spoken only. There's no status glyph in the row — the HP column already

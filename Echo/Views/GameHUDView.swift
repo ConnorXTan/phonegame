@@ -46,7 +46,7 @@ struct GameHUDView: View {
                 topBar
                 if let alert = engine.rangingAlert {
                     Label(alert, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2)
+                        .font(.app(.caption2))
                         .foregroundStyle(Color.echoWarning)
                         .padding(Space.sm)
                         .background(Color.echoBackground.opacity(Alpha.strong),
@@ -129,13 +129,13 @@ struct GameHUDView: View {
                 teamScore
             } else {
                 Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
-                    .font(.subheadline.monospacedDigit())
+                    .font(.app(.subheadline).monospacedDigit())
                     .foregroundStyle(Color.echoTextSecondary)
                     .fixedSize()
                     .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
             }
         }
-        .font(.subheadline)
+        .font(.app(.subheadline))
         .foregroundStyle(Color.echoText)
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
         .padding(.horizontal, Space.lg)
@@ -161,7 +161,7 @@ struct GameHUDView: View {
                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.title3)
+                .font(.app(.title3))
                 .frame(width: 44, height: 44)   // HIG minimum touch target
                 .contentShape(Rectangle())
         }
@@ -200,7 +200,7 @@ struct GameHUDView: View {
             + Text("\(theirs.initial) \(theirKills)")
                 .foregroundStyle(Color.echoDanger)
         )
-        .font(.subheadline.bold().monospacedDigit())
+        .font(.app(.subheadline).bold().monospacedDigit())
         .fixedSize()
         .accessibilityLabel("Team \(mine.displayName) \(myKills), team \(theirs.displayName) \(theirKills)")
     }
@@ -212,7 +212,7 @@ struct GameHUDView: View {
         TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let shielded = engine.isInvulnerable(at: context.date)
             Image(systemName: "shield.lefthalf.filled")
-                .font(.headline)
+                .font(.app(.headline))
                 .foregroundStyle(Color.echoAccent)
                 .opacity(shielded ? 1 : 0)
                 .accessibilityLabel(shielded ? "Shielded" : "")
@@ -230,7 +230,7 @@ struct GameHUDView: View {
         let remaining = engine.matchRemaining
         let urgent = remaining <= 30
         return Text(remaining.clockString)
-            .font(.headline.bold().monospacedDigit())
+            .font(.app(.headline).bold().monospacedDigit())
             .foregroundStyle(urgent ? Color.echoDanger : Color.echoText)
             .accessibilityLabel("Match time \(remaining.clockString)")
             .opacity(urgent && clockPulse ? Alpha.muted : 1)
@@ -291,7 +291,7 @@ struct GameHUDView: View {
             Text(event.victim.displayCallSign)
                 .foregroundStyle(toastNameColor(event.victim, isLatest: isLatest))
         }
-        .font(isLatest ? .caption2.bold() : .caption2)
+        .font(isLatest ? .app(.caption2).bold() : .app(.caption2))
         .lineLimit(1)
         .padding(.horizontal, Space.sm)
         .padding(.vertical, Space.xs)
@@ -371,8 +371,7 @@ struct GameHUDView: View {
             // One word, centered. The count lives in the ring around the button
             // — printing it again inside was the same fact twice.
             Text(engine.isReloading ? "RELOAD" : "FIRE")
-                .font(.system(size: engine.isReloading ? reloadLabelSize : fireLabelSize,
-                              weight: .black, design: .rounded))
+                .font(.app(fixedSize: engine.isReloading ? reloadLabelSize : fireLabelSize).weight(.black))
                 .foregroundStyle(fireLabelColor)
         }
         .frame(width: fireDiameter, height: fireDiameter)

@@ -29,7 +29,7 @@ struct CameraFeedView: View {
                 .accessibilityHidden(true)
             if let reason = camera.unavailableReason {
                 Text(reason)
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Color.echoTextSecondary)
                     .frame(maxWidth: 280)
@@ -39,7 +39,7 @@ struct CameraFeedView: View {
                     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     UIApplication.shared.open(url)
                 }
-                .font(.footnote.bold())
+                .font(.app(.footnote).bold())
                 .buttonStyle(.bordered)
                 .tint(Color.echoPrimary)
             }

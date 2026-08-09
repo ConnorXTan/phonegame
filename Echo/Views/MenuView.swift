@@ -28,7 +28,7 @@ struct MenuView: View {
 
             if let notice = engine.hostEndedNotice {
                 Label(notice, systemImage: "flag.checkered")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(.cyan)
                     .padding(12)
                     .background(.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
@@ -37,7 +37,7 @@ struct MenuView: View {
 
             if !isMac, let warning = engine.uwbWarning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(Color.echoWarning)
                     .padding(Space.md)
                     .background(Color.echoWarning.opacity(Alpha.surface),
@@ -47,7 +47,7 @@ struct MenuView: View {
 
             if let notice = engine.lobbyNotice {
                 Label(notice, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
+                    .font(.app(.footnote))
                     .foregroundStyle(Color.echoWarning)
                     .padding(Space.md)
                     .background(Color.echoWarning.opacity(Alpha.surface),

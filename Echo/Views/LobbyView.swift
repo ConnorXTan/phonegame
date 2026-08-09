@@ -35,7 +35,7 @@ struct LobbyView: View {
                 // Connection state, in the token that means connected.
                 Label(engine.isHost ? "Hosting" : "Joined",
                       systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(Color.echoSecondary)
             }
             .padding(.horizontal)
@@ -44,7 +44,7 @@ struct LobbyView: View {
             // a full xl gap left the roster floating mid-screen.
             VStack(spacing: Space.md) {
                 Text("LOBBY")
-                    .font(.system(size: titleSize, weight: .black, design: .rounded))
+                    .font(.app(fixedSize: titleSize).weight(.black))
                     .tracking(3)
 
                 rosterBoard
@@ -97,7 +97,7 @@ struct LobbyView: View {
                             // trailing edge without a spacer between them.
                             sectionLabel("PLAYER LIMIT")
                             Text("\(engine.settings.maxPlayers)")
-                                .font(.headline.monospacedDigit())
+                                .font(.app(.headline).monospacedDigit())
                                 .foregroundStyle(Color.echoText)
                         }
                         Slider(
@@ -131,7 +131,7 @@ struct LobbyView: View {
 
                     if teamsLopsided {
                         Text("Both teams need at least one player.")
-                            .font(.caption2)
+                            .font(.app(.caption2))
                             .foregroundStyle(Color.echoTextSecondary)
                     }
                 }
@@ -142,7 +142,7 @@ struct LobbyView: View {
                     Text("Waiting for the host to start…")
                         .foregroundStyle(Color.echoTextSecondary)
                     Text("The host sets the match length.")
-                        .font(.caption2)
+                        .font(.app(.caption2))
                         .foregroundStyle(Color.echoTextTertiary)
                 }
                 .padding(.bottom, Space.md)
@@ -234,7 +234,7 @@ struct LobbyView: View {
 
     private func placeholderRow(_ text: String) -> some View {
         Text(text)
-            .font(.caption)
+            .font(.app(.caption))
             .foregroundStyle(Color.echoTextTertiary)
             .padding(.vertical, Space.md)
     }
@@ -247,7 +247,7 @@ struct LobbyView: View {
             ProgressView()
                 .controlSize(.small)
             Text("Waiting for players to join…")
-                .font(.body)
+                .font(.app(.body))
                 .foregroundStyle(Color.echoTextSecondary)
         }
         .padding(.vertical, Space.md)
@@ -293,7 +293,7 @@ struct LobbyView: View {
             statChip("arrow.counterclockwise", "\(engine.myRole.magazineSize) rds")
             statChip("timer", String(format: "%.2gs", engine.myRole.fireCooldown))
         }
-        .font(.caption)
+        .font(.app(.caption))
         .foregroundStyle(Color.echoTextSecondary)
         .lineLimit(1)
         // The strip wins the row over the label it shares: ROLE is one short
@@ -319,7 +319,7 @@ struct LobbyView: View {
     /// in front of it: it sits directly on top of the players.
     private var rosterCount: some View {
         Text("\(roster.count)/\(engine.settings.maxPlayers)")
-            .font(.title2.bold().monospacedDigit())
+            .font(.app(.title2).bold().monospacedDigit())
             .foregroundStyle(Color.echoText)
             .textCase(nil)
             .accessibilityLabel("\(roster.count) of \(engine.settings.maxPlayers) players")
@@ -330,7 +330,7 @@ struct LobbyView: View {
     /// here all said the same thing the selected segment already says.
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.headline)
+            .font(.app(.headline))
             .foregroundStyle(Color.echoText)
             .textCase(nil)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -343,20 +343,20 @@ struct LobbyView: View {
     private func playerRow(_ player: Player) -> some View {
         HStack {
             Text(player.name.displayCallSign)
-                .font(.body)
+                .font(.app(.body))
                 .foregroundStyle(player.isConnected
                                  ? Color.echoText
                                  : Color.echoTextTertiary)
             if player.name == engine.myName {
                 Text("you")
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .padding(.horizontal, Space.sm)
                     .padding(.vertical, Space.xxs)
                     .background(Color.echoSurface, in: Capsule())
             }
             Spacer()
             Text(player.role.label.uppercased())
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(Color.echoTextSecondary)
         }
         .padding(.vertical, Space.md)
@@ -401,11 +401,11 @@ struct LobbyView: View {
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             Text("\(team.displayName.uppercased()) · \(members(of: team).count)")
-                .font(.title3.bold().monospacedDigit())
+                .font(.app(.title3).bold().monospacedDigit())
                 .foregroundStyle(Color.echoTeam(team, relativeTo: engine.myTeam))
             if mine {
                 Text("YOUR TEAM")
-                    .font(.caption.bold())
+                    .font(.app(.caption).bold())
                     .foregroundStyle(Color.echoTeamAlly)
             }
         }
