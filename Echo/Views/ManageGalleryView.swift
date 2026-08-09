@@ -5,6 +5,7 @@ import SwiftUI
 /// app — visitors to the website can watch, like, and save, never delete.
 struct ManageGalleryView: View {
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric(relativeTo: .headline) private var skullSize: CGFloat = 18
     @State private var clips: [ReplayPublisher.GalleryClip] = []
     @State private var loading = true
     @State private var errorText: String?
@@ -47,25 +48,29 @@ struct ManageGalleryView: View {
                 }
             }
         }
+        .font(.app(.body))
         .onAppear(perform: load)
     }
 
     private func row(_ clip: ReplayPublisher.GalleryClip) -> some View {
         HStack(spacing: Space.md) {
             VStack(alignment: .leading, spacing: Space.xxs) {
-                (
+                HStack(spacing: Space.sm) {
                     Text(clip.killer)
-                    + Text("  \(Image(systemName: "bolt.fill"))  ")
-                    + Text(clip.victim)
-                )
-                .font(.headline)
+                    Image(art: .killSkull)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: skullSize)
+                    Text(clip.victim)
+                }
+                .font(.appBold(.headline))
                 Text(clip.date.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption2)
+                    .font(.app(.caption2))
                     .foregroundStyle(Color.echoTextSecondary)
             }
             Spacer()
             Label("\(clip.likes)", systemImage: "heart.fill")
-                .font(.caption.monospacedDigit())
+                .font(.app(.caption).monospacedDigit())
                 .foregroundStyle(Color.echoTextSecondary)
             if deleting.contains(clip.key) {
                 ProgressView().controlSize(.small)

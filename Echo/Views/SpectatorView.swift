@@ -8,6 +8,8 @@ struct SpectatorView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var winnerTitleSize: CGFloat = 40
     @ScaledMetric(relativeTo: .largeTitle) private var emptyGlyphSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .caption) private var killSkullSize: CGFloat = 14
+    @ScaledMetric(relativeTo: .headline) private var reviewSkullSize: CGFloat = 18
 
     // Kill review playback: which clip is open, its decoded frames, and when
     // playback started (drives the flipbook clock).
@@ -64,6 +66,7 @@ struct SpectatorView: View {
                 }
             }
         }
+        .font(.app(.body))
         .foregroundStyle(Color.echoText)
     }
 
@@ -513,11 +516,14 @@ struct SpectatorView: View {
     private var killFeedStrip: some View {
         VStack(alignment: .leading, spacing: Space.xxs) {
             ForEach(engine.killFeed.prefix(4)) { event in
-                (
+                HStack(spacing: Space.sm) {
                     Text(event.killer.displayCallSign)
-                    + Text("  \(Image(systemName: "bolt.fill"))  ")
-                    + Text(event.victim.displayCallSign)
-                )
+                    Image(art: .killSkull)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: killSkullSize)
+                    Text(event.victim.displayCallSign)
+                }
                 .font(.app(.caption).monospacedDigit())
                 .foregroundStyle(Color.echoTextSecondary)
                 .accessibilityLabel("\(event.killer.displayCallSign) tagged \(event.victim.displayCallSign)")
@@ -595,7 +601,7 @@ struct SpectatorView: View {
     private var killReviewRail: some View {
         VStack(alignment: .leading, spacing: Space.sm) {
             Text("KILL REVIEW")
-                .font(.caption2.bold())
+                .font(.appBold(.caption2))
                 .tracking(2)
                 .foregroundStyle(Color.echoTextTertiary)
             ScrollView(.horizontal, showsIndicators: false) {
@@ -628,12 +634,15 @@ struct SpectatorView: View {
                 }
                 .frame(width: 96, height: 128)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
-                (
+                HStack(spacing: Space.xs) {
                     Text(clip.killer.displayCallSign)
-                    + Text(" \(Image(systemName: "bolt.fill")) ")
-                    + Text(clip.victim.displayCallSign)
-                )
-                .font(.caption2.bold())
+                    Image(art: .killSkull)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: killSkullSize)
+                    Text(clip.victim.displayCallSign)
+                }
+                .font(.appBold(.caption2))
                 .lineLimit(1)
                 publishBadge(clip.publishState)
             }
@@ -647,17 +656,17 @@ struct SpectatorView: View {
         switch state {
         case .idle:
             Text("unpublished")
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(Color.echoTextTertiary)
         case .uploading:
             ProgressView().controlSize(.mini)
         case .published:
             Label("LIVE ON GALLERY", systemImage: "checkmark.circle.fill")
-                .font(.caption2.bold())
+                .font(.appBold(.caption2))
                 .foregroundStyle(Color.echoSecondary)
         case .failed:
             Label("failed — retry", systemImage: "exclamationmark.triangle.fill")
-                .font(.caption2)
+                .font(.app(.caption2))
                 .foregroundStyle(Color.echoWarning)
         }
     }
@@ -679,12 +688,15 @@ struct SpectatorView: View {
         ZStack {
             Color.echoBackground.opacity(Alpha.opaque).ignoresSafeArea()
             VStack(spacing: Space.lg) {
-                (
+                HStack(spacing: Space.sm) {
                     Text(clip.killer.displayCallSign)
-                    + Text("  \(Image(systemName: "bolt.fill"))  ")
-                    + Text(clip.victim.displayCallSign)
-                )
-                .font(.headline)
+                    Image(art: .killSkull)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: reviewSkullSize)
+                    Text(clip.victim.displayCallSign)
+                }
+                .font(.appBold(.headline))
 
                 TimelineView(.periodic(from: reviewStarted, by: 1.0 / 8.0)) { context in
                     let elapsed = context.date.timeIntervalSince(reviewStarted)
