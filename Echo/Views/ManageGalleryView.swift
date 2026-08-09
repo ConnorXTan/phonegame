@@ -1,4 +1,6 @@
+import AVFoundation
 import SwiftUI
+import UIKit
 
 /// Game-master curation of the public gallery: every published clip, with a
 /// two-tap delete. Deletion needs the upload secret, which lives only in the
@@ -54,6 +56,12 @@ struct ManageGalleryView: View {
 
     private func row(_ clip: ReplayPublisher.GalleryClip) -> some View {
         HStack(spacing: Space.md) {
+            if let url = URL(string: clip.url) {
+                ClipPreview(url: url)
+                    .frame(width: 76, height: 135)   // 9:16, the clips' own aspect
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+                    .accessibilityHidden(true)   // the title row carries the info
+            }
             VStack(alignment: .leading, spacing: Space.xxs) {
                 HStack(spacing: Space.sm) {
                     Text(clip.killer)
@@ -110,5 +118,43 @@ struct ManageGalleryView: View {
             case .failure: errorText = "Delete failed — try again."
             }
         }
+    }
+}
+
+/// A muted, looping, chrome-free live preview of a published clip — the row's
+/// thumbnail, but playing. Layer-backed rather than AVKit's `VideoPlayer` so
+/// no transport controls ever appear over a 76pt-wide cell. The list is lazy,
+/// so only visible rows hold a player.
+private struct ClipPreview: UIViewRepresentable {
+    let url: URL
+
+    final class PlayerView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+        private var player: AVQueuePlayer?
+        private var looper: AVPlayerLooper?
+        private(set) var url: URL?
+
+        func configure(url: URL) {
+            guard self.url != url else { return }
+            self.url = url
+            let player = AVQueuePlayer()
+            player.isMuted = true   // previews never talk over the room
+            looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+            self.player = player
+            playerLayer.player = player
+            playerLayer.videoGravity = .resizeAspectFill
+            player.play()
+        }
+    }
+
+    func makeUIView(context: Context) -> PlayerView {
+        let view = PlayerView()
+        view.configure(url: url)
+        return view
+    }
+
+    func updateUIView(_ view: PlayerView, context: Context) {
+        view.configure(url: url)
     }
 }

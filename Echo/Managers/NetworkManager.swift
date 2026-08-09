@@ -503,7 +503,7 @@ final class NetworkManager: ObservableObject {
     private static let kindHello: UInt8 = 0x02
     private static let kindFrameAck: UInt8 = 0x03   // spectator → streamer: last camera frame arrived
     private static let kindKillClip: UInt8 = 0x04   // post-match: a kill replay for the spectator
-    private static let maxFrameBytes: UInt32 = 4 << 20   // sanity cap; largest real frame is a camera JPEG
+    private static let maxFrameBytes: UInt32 = 32 << 20   // sanity cap; largest real frame is a post-match kill clip (~16 MB of 720p JPEGs)
 
     private static func frame(_ body: Data) -> Data {
         var frame = Data(capacity: 4 + body.count)
@@ -570,14 +570,14 @@ final class NetworkManager: ObservableObject {
         let ts: TimeInterval
         let count: Int
         // HUD overlay per frame + the sounds and hit markers inside the
-        // window; a few KB of JSON riding ahead of ~1 MB of JPEG.
+        // window; a few KB of JSON riding ahead of ~16 MB of JPEG.
         let overlays: [SpectatorOverlayState]
         let sounds: [ClipSoundEvent]
         let markers: [ClipMarkerEvent]
     }
 
     /// One kill replay for a spectator. Sent only after the match ends, so a
-    /// ~1 MB burst can't contend with live game traffic. Body layout:
+    /// ~10 MB burst can't contend with live game traffic. Body layout:
     /// [2-byte BE header length][header JSON][count × (4-byte BE length + JPEG)].
     ///
     /// A busy scene makes heavy JPEGs, and 56 heavy frames can pack past the
@@ -621,11 +621,11 @@ final class NetworkManager: ObservableObject {
         return body
     }
 
-    /// A copy of the clip with its first second gone: 8 frames and their
-    /// overlays dropped, sound/marker offsets slid back, and events that now
-    /// land before the new start discarded.
+    /// A copy of the clip with its first second gone: one second of frames
+    /// and their overlays dropped, sound/marker offsets slid back, and events
+    /// that now land before the new start discarded.
     private static func droppingLeadingSecond(of clip: KillClip) -> KillClip {
-        let n = 8
+        let n = AimCameraManager.clipFramesPerSecond
         let dt = Double(n) * AimCameraManager.clipFrameInterval
         return KillClip(
             id: clip.id, killer: clip.killer, victim: clip.victim,

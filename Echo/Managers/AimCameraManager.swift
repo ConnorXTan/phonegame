@@ -27,10 +27,12 @@ final class AimCameraManager: NSObject, ObservableObject {
     /// main queue at ~12 fps. Nil (the normal state) costs nothing per frame.
     var frameTap: ((Data) -> Void)?
 
-    /// Killcam capture: while enabled, a rolling ~5 s of viewfinder JPEGs is
-    /// kept (8 fps × 40 frames ≈ 1 MB), each paired with the HUD overlay
+    /// Killcam capture: while enabled, a rolling ~7 s of viewfinder JPEGs is
+    /// kept (15 fps × 105 frames ≈ 16 MB), each paired with the HUD overlay
     /// (crosshair + enemy tags) at that instant. Snapshotted the moment a
-    /// kill confirms; the encode pipeline is shared with the spectator tap.
+    /// kill confirms. Unlike the spectator tap these frames never ride the
+    /// live mesh, so they stay near-native — they are the replay and the
+    /// published MP4's source, and every consumer inherits their quality.
     var clipBufferEnabled = false {
         didSet { if !clipBufferEnabled { clipBuffer.removeAll() } }
     }
@@ -38,8 +40,15 @@ final class AimCameraManager: NSObject, ObservableObject {
     var clipOverlayProvider: (() -> SpectatorOverlayState?)?
     private var clipBuffer: [(jpeg: Data, overlay: SpectatorOverlayState)] = []
     private var lastClipAt = Date.distantPast
-    static let clipFrameInterval: TimeInterval = 1.0 / 8.0
-    private static let clipFrameCount = 56   // ~7 s: ~5 s of hunt + 2 s of aftermath
+    /// Capture cadence — the single source of truth; the encoder and the
+    /// replay views derive from it. 15 fps is the stills pipeline's
+    /// comfortable ceiling: every frame is a full JPEG encode on a phone
+    /// that's also running ARKit, UWB, and the HUD, and each step up scales
+    /// memory and the post-match transfer linearly. True 30 fps wants a
+    /// rolling hardware H.264 buffer instead of stills.
+    static let clipFramesPerSecond = 15
+    static let clipFrameInterval: TimeInterval = 1.0 / Double(clipFramesPerSecond)
+    private static let clipFrameCount = clipFramesPerSecond * 7   // ~7 s: ~5 s of hunt + 2 s of aftermath
 
     /// The last ~5 s of viewfinder, oldest first, with per-frame overlays.
     func snapshotClip() -> (frames: [Data], overlays: [SpectatorOverlayState]) {
@@ -166,7 +175,17 @@ final class AimCameraManager: NSObject, ObservableObject {
 
     // MARK: - Private
 
-    private func encodeJPEG(_ buffer: CVPixelBuffer) -> Data? {
+    /// Spectator stream: small and cheap — it rides the live mesh at up to
+    /// 20 fps, so bandwidth beats fidelity.
+    private static let tapWidth: CGFloat = 416
+    private static let tapQuality: CGFloat = 0.45
+    /// Killcam frames: the 9:16 sensor crop is 1080 wide; 720 keeps most of
+    /// it at ~150 KB per frame, and q0.72 leaves no JPEG blocking for the
+    /// H.264 encode to amplify.
+    private static let clipWidth: CGFloat = 720
+    private static let clipQuality: CGFloat = 0.72
+
+    private func encodeJPEG(_ buffer: CVPixelBuffer, maxWidth: CGFloat, quality: CGFloat) -> Data? {
         // Sensor frames are landscape; the game is portrait.
         var image = CIImage(cvPixelBuffer: buffer).oriented(.right)
         // Center-crop the 4:3 sensor frame to 9:16 — full height, sides
@@ -183,11 +202,11 @@ final class AimCameraManager: NSObject, ObservableObject {
             image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX,
                                                             y: -image.extent.minY))
         }
-        let scale = 416 / image.extent.width
+        let scale = min(1, maxWidth / image.extent.width)   // never upscale
         image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        let quality = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
-        return ciContext.jpegRepresentation(of: image, colorSpace: colorSpace, options: [quality: 0.45])
+        let qualityKey = CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String)
+        return ciContext.jpegRepresentation(of: image, colorSpace: colorSpace, options: [qualityKey: quality])
     }
 
     /// The configuration NearbyInteraction accepts for camera assistance. NI
@@ -220,15 +239,19 @@ extension AimCameraManager: ARSessionDelegate {
         let buffer = frame.capturedImage
         encodeQueue.async { [weak self] in
             guard let self else { return }
-            let jpeg = self.encodeJPEG(buffer)
+            // Two consumers, two fidelities: the same sensor frame renders
+            // small for the mesh and near-native for the killcam buffer.
+            let tapJPEG = tapDue
+                ? self.encodeJPEG(buffer, maxWidth: Self.tapWidth, quality: Self.tapQuality) : nil
+            let clipJPEG = clipDue
+                ? self.encodeJPEG(buffer, maxWidth: Self.clipWidth, quality: Self.clipQuality) : nil
             DispatchQueue.main.async {
                 self.encodingInFlight = false
-                guard let jpeg else { return }
-                if tapDue { self.frameTap?(jpeg) }
-                if clipDue, self.clipBufferEnabled {
+                if let tapJPEG { self.frameTap?(tapJPEG) }
+                if let clipJPEG, self.clipBufferEnabled {
                     let overlay = self.clipOverlayProvider?()
                         ?? SpectatorOverlayState(tags: [], lockedTarget: nil)
-                    self.clipBuffer.append((jpeg, overlay))
+                    self.clipBuffer.append((clipJPEG, overlay))
                     if self.clipBuffer.count > Self.clipFrameCount {
                         self.clipBuffer.removeFirst(self.clipBuffer.count - Self.clipFrameCount)
                     }

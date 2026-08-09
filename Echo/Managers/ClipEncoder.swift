@@ -7,7 +7,7 @@ import UIKit
 /// plays. Runs off-main; hardware-encoded, so a 40-frame clip takes about a
 /// second on Apple Silicon / A-series.
 enum ClipEncoder {
-    static let framesPerSecond: Int32 = 8   // matches the capture cadence
+    static let framesPerSecond = Int32(AimCameraManager.clipFramesPerSecond)   // matches the capture cadence by construction
 
     enum EncodeError: Error {
         case noFrames, badFrame, writerFailed
@@ -54,6 +54,14 @@ enum ClipEncoder {
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
+            // 3 Mbps is generous for 720×1280 at this cadence — the source
+            // JPEGs are the quality ceiling, and 7 s still lands ~2.7 MB,
+            // inside the upload proxy's 4.5 MB body limit.
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 3_000_000,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoMaxKeyFrameIntervalKey: Int(framesPerSecond) * 2,   // a keyframe every 2 s
+            ],
         ])
         input.expectsMediaDataInRealTime = false
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -223,8 +231,10 @@ enum ClipEncoder {
         }
         for i in 0..<totalSamples { mix[i] = max(-1, min(1, mix[i])) }
 
+        // AAC straight from the mixer: both tracks arrive at the mux already
+        // mp4-ready, so it can copy samples instead of re-encoding.
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("killcam-audio-\(UUID().uuidString).wav")
+            .appendingPathComponent("killcam-audio-\(UUID().uuidString).m4a")
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
                                          channels: 1, interleaved: false),
               let buffer = AVAudioPCMBuffer(pcmFormat: format,
@@ -234,16 +244,42 @@ enum ClipEncoder {
         mix.withUnsafeBufferPointer { source in
             buffer.floatChannelData!.pointee.update(from: source.baseAddress!, count: totalSamples)
         }
-        let file = try AVAudioFile(forWriting: url, settings: format.settings,
-                                   commonFormat: .pcmFormatFloat32, interleaved: false)
+        let file = try AVAudioFile(forWriting: url, settings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 96_000,
+        ], commonFormat: .pcmFormatFloat32, interleaved: false)
         try file.write(from: buffer)
         return url
     }
 
-    /// Video + audio → one browser-playable MP4 (AAC audio via the export
-    /// session). Cleans up both inputs.
+    /// Video + audio → one browser-playable MP4. Both tracks arrive mp4-ready
+    /// (H.264 from the writer, AAC from the mixer), so passthrough muxing
+    /// copies samples and the budgeted video bitrate survives untouched — no
+    /// second generation loss. Falls back to a re-encoding preset on the rare
+    /// combination passthrough can't copy. Cleans up both inputs.
     private static func mux(video: URL, audio: URL,
                             completion: @escaping (Result<URL, Error>) -> Void) {
+        exportMux(video: video, audio: audio, preset: AVAssetExportPresetPassthrough) { first in
+            switch first {
+            case .success:
+                try? FileManager.default.removeItem(at: video)
+                try? FileManager.default.removeItem(at: audio)
+                completion(first)
+            case .failure:
+                exportMux(video: video, audio: audio,
+                          preset: AVAssetExportPresetHighestQuality) { second in
+                    try? FileManager.default.removeItem(at: video)
+                    try? FileManager.default.removeItem(at: audio)
+                    completion(second)
+                }
+            }
+        }
+    }
+
+    private static func exportMux(video: URL, audio: URL, preset: String,
+                                  completion: @escaping (Result<URL, Error>) -> Void) {
         let composition = AVMutableComposition()
         let videoAsset = AVURLAsset(url: video)
         let audioAsset = AVURLAsset(url: audio)
@@ -266,8 +302,7 @@ enum ClipEncoder {
 
             let out = FileManager.default.temporaryDirectory
                 .appendingPathComponent("killcam-final-\(UUID().uuidString).mp4")
-            guard let export = AVAssetExportSession(asset: composition,
-                                                    presetName: AVAssetExportPresetHighestQuality)
+            guard let export = AVAssetExportSession(asset: composition, presetName: preset)
             else { return completion(.failure(EncodeError.writerFailed)) }
             export.outputURL = out
             export.outputFileType = .mp4
@@ -277,8 +312,6 @@ enum ClipEncoder {
             // race-free; the Sendable-clean replacement (export(to:as:)) is iOS 18+.
             nonisolated(unsafe) let session = export
             session.exportAsynchronously {
-                try? FileManager.default.removeItem(at: video)
-                try? FileManager.default.removeItem(at: audio)
                 if session.status == .completed {
                     completion(.success(out))
                 } else {

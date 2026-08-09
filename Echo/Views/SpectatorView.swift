@@ -11,11 +11,12 @@ struct SpectatorView: View {
     @ScaledMetric(relativeTo: .caption) private var killSkullSize: CGFloat = 14
     @ScaledMetric(relativeTo: .headline) private var reviewSkullSize: CGFloat = 18
 
-    // Kill review playback: which clip is open, its decoded frames, and when
-    // playback started (drives the flipbook clock).
+    // Kill review playback: which clip is open and when playback started
+    // (drives the flipbook clock). Frames decode per tick, not up front —
+    // ~7 s of 720p bitmaps would be hundreds of MB held decoded.
     @State private var reviewClipID: UUID?
-    @State private var reviewImages: [UIImage] = []
     @State private var reviewStarted = Date()
+    private static let clipFPS = Double(ClipEncoder.framesPerSecond)
     @State private var showManageGallery = false
 
     private var reviewClip: KillClip? {
@@ -684,7 +685,6 @@ struct SpectatorView: View {
     }
 
     private func openReview(_ clip: KillClip) {
-        reviewImages = clip.frames.compactMap(UIImage.init(data:))
         reviewStarted = Date()
         reviewClipID = clip.id
         // First pass plays the clip's sounds in place; loops replay silently.
@@ -710,14 +710,15 @@ struct SpectatorView: View {
                 }
                 .font(.appBold(.headline))
 
-                TimelineView(.periodic(from: reviewStarted, by: 1.0 / 8.0)) { context in
+                TimelineView(.periodic(from: reviewStarted, by: 1.0 / Self.clipFPS)) { context in
                     let elapsed = context.date.timeIntervalSince(reviewStarted)
-                    let index = reviewImages.isEmpty ? 0
-                        : Int(elapsed * 8) % reviewImages.count
-                    if reviewImages.indices.contains(index) {
+                    let index = clip.frames.isEmpty ? 0
+                        : Int(elapsed * Self.clipFPS) % clip.frames.count
+                    if clip.frames.indices.contains(index),
+                       let frame = UIImage(data: clip.frames[index]) {
                         GeometryReader { geo in
-                            let fit = Self.fittedRect(image: reviewImages[index].size, in: geo.size)
-                            Image(uiImage: reviewImages[index])
+                            let fit = Self.fittedRect(image: frame.size, in: geo.size)
+                            Image(uiImage: frame)
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -734,7 +735,7 @@ struct SpectatorView: View {
                             }
                             // Hit/kill markers replayed with the HUD's art and
                             // bloom-fade, timed off the clip clock.
-                            let clipTime = Double(index) / 8.0
+                            let clipTime = Double(index) / Self.clipFPS
                             ForEach(Array(clip.markers.enumerated()), id: \.offset) { item in
                                 let marker = item.element
                                 let age = clipTime - marker.offset
@@ -789,7 +790,6 @@ struct SpectatorView: View {
 
                     Button("Close") {
                         reviewClipID = nil
-                        reviewImages = []
                     }
                     .buttonStyle(.bordered)
                     .tint(Color.ltnText)

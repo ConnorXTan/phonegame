@@ -708,7 +708,9 @@ final class GameEngine: NSObject, ObservableObject {
             id: UUID(), killer: myName, victim: victim, capturedAt: now,
             frames: snapshot.frames, overlays: snapshot.overlays,
             sounds: sounds, markers: markers))
-        if pendingKillClips.count > 10 { pendingKillClips.removeFirst() }
+        // ~16 MB of stills per clip — six pending is ~100 MB, the most a
+        // phone mid-match should be asked to hold.
+        if pendingKillClips.count > 6 { pendingKillClips.removeFirst() }
     }
 
     /// Spectator: encode a reviewed clip to MP4 and push it to the public
@@ -750,7 +752,7 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     /// Post-match: stagger the clips out to every spectator, ~0.5 s apart, so
-    /// the summary screen isn't fighting a megabyte burst per clip.
+    /// the summary screen isn't fighting a ~16 MB burst per clip.
     private func transferKillClips() {
         guard !isSpectator, let net = network, !pendingKillClips.isEmpty, !spectators.isEmpty else {
             pendingKillClips = []
