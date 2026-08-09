@@ -82,9 +82,12 @@ struct EffectRingBadge: View {
                 .trim(from: 0, to: max(0, min(1, fraction)))
                 .stroke(Color.echoPowerup, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Image(systemName: kind.symbol)
-                .font(.app(fixedSize: diameter * 0.42))
-                .foregroundStyle(Color.echoText)
+            // Full colour so each power-up reads by its own hue as well as its
+            // shape; the scrim disc keeps it legible over the camera feed.
+            Image(art: kind.art)
+                .resizable()
+                .scaledToFit()
+                .frame(width: diameter * 0.56, height: diameter * 0.56)
         }
         .frame(width: diameter, height: diameter)
     }
