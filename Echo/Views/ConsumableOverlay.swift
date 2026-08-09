@@ -80,11 +80,14 @@ struct EffectRingBadge: View {
                 .stroke(Color.ltnText.opacity(Alpha.subtle), lineWidth: ringWidth)
             Circle()
                 .trim(from: 0, to: max(0, min(1, fraction)))
-                .stroke(Color.ltnPowerup, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
+                .stroke(kind.tint, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Image(systemName: kind.symbol)
-                .font(.app(fixedSize: diameter * 0.42))
-                .foregroundStyle(Color.ltnText)
+            // Full colour so each power-up reads by its own hue as well as its
+            // shape; the scrim disc keeps it legible over the camera feed.
+            Image(art: kind.art)
+                .resizable()
+                .scaledToFit()
+                .frame(width: diameter * 0.56, height: diameter * 0.56)
         }
         .frame(width: diameter, height: diameter)
     }

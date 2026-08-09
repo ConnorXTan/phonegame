@@ -155,16 +155,14 @@ struct MiniMapView: View {
                 let chip = Path(ellipseIn: CGRect(x: point.x - 7, y: point.y - 7,
                                                   width: 14, height: 14))
                 ctx.fill(chip, with: .color(.ltnBackground.opacity(Alpha.heavy)))
-                let glyph = ctx.resolve(
-                    Text("\(Image(systemName: drop.kind.symbol))")
-                        .font(.app(fixedSize: 9))
-                        .foregroundStyle(Color.ltnPowerup))
-                ctx.draw(glyph, at: point)
+                let blip = ctx.resolve(Image(art: drop.kind.art))
+                ctx.draw(blip, in: CGRect(x: point.x - 6, y: point.y - 6,
+                                          width: 12, height: 12))
             } else {
                 var arc = Path()
                 arc.addArc(center: apex, radius: scaled,
                            startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
-                ctx.stroke(arc, with: .color(.ltnPowerup.opacity(Alpha.strong)),
+                ctx.stroke(arc, with: .color(drop.kind.tint.opacity(Alpha.strong)),
                            style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
             }
         }

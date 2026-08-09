@@ -6,6 +6,7 @@ struct GameHUDView: View {
     @EnvironmentObject private var engine: GameEngine
     @Environment(\.scenePhase) private var scenePhase
     @State private var showScores = false
+    @State private var showExitOptions = false
     @State private var clockPulse = false
     @State private var fireTriggerHeld = false
 
@@ -87,6 +88,13 @@ struct GameHUDView: View {
             if phase == .active { engine.camera.resume() }
         }
         .sheet(isPresented: $showScores) { ScoreboardView() }
+        .confirmationDialog("Exit match?", isPresented: $showExitOptions,
+                            titleVisibility: .visible) {
+            Button("End Match") { engine.endMatchEarly() }
+            Button("Leave Game", role: .destructive) { engine.leave() }
+        } message: {
+            Text("Ending the match takes everyone to the results. Leaving shuts the game down for all players.")
+        }
     }
 
     /// Just enough darkening at the edges to keep white text legible — the
@@ -123,7 +131,15 @@ struct GameHUDView: View {
             // so extra gap would only push the row wider.
             HStack(spacing: 0) {
                 hudArtButton(.leaderboard, "Leaderboard") { showScores = true }
-                hudArtButton(.exitGame, "Leave match") { engine.leave() }
+                // The host's exit is a bigger decision than a player's — it can
+                // end the match for everyone — so it routes through a dialog.
+                hudArtButton(.exitGame, engine.isHost ? "Exit options" : "Leave match") {
+                    if engine.isHost {
+                        showExitOptions = true
+                    } else {
+                        engine.leave()
+                    }
+                }
             }
         }
         .overlay {

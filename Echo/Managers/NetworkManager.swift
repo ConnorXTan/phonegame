@@ -461,14 +461,37 @@ final class NetworkManager: ObservableObject {
     /// One kill replay for a spectator. Sent only after the match ends, so a
     /// ~1 MB burst can't contend with live game traffic. Body layout:
     /// [2-byte BE header length][header JSON][count × (4-byte BE length + JPEG)].
+    ///
+    /// A busy scene makes heavy JPEGs, and 56 heavy frames can pack past the
+    /// frame cap. Losing the clip is worse than shortening it: trim from the
+    /// front (the hunt), never the back (the kill), until it fits.
     func sendKillClip(_ clip: KillClip, to peerName: String) {
-        guard let link = links[peerName],
-              let header = try? JSONEncoder().encode(KillClipHeader(
-                  id: clip.id, killer: clip.killer, victim: clip.victim,
-                  ts: clip.capturedAt.timeIntervalSince1970, count: clip.frames.count,
-                  overlays: clip.overlays, sounds: clip.sounds, markers: clip.markers))
-        else { return }
-        var body = Data([Self.kindKillClip])
+        guard let link = links[peerName] else {
+            print("[Network] kill clip dropped: no link to \(peerName)")
+            return
+        }
+        var trimmed = clip
+        var body = Self.packKillClip(trimmed)
+        while let packed = body, packed.count >= Self.maxFrameBytes, trimmed.frames.count > 8 {
+            trimmed = Self.droppingLeadingSecond(of: trimmed)
+            body = Self.packKillClip(trimmed)
+        }
+        guard let packed = body, packed.count < Self.maxFrameBytes else { return }
+        if trimmed.frames.count != clip.frames.count {
+            print("[Network] kill clip trimmed to \(trimmed.frames.count)/\(clip.frames.count) frames to fit the frame cap")
+        }
+        link.connection.send(content: Self.frame(packed), completion: .contentProcessed { error in
+            if let error { print("[Network] kill clip send failed: \(error)") }
+        })
+    }
+
+    private static func packKillClip(_ clip: KillClip) -> Data? {
+        guard let header = try? JSONEncoder().encode(KillClipHeader(
+            id: clip.id, killer: clip.killer, victim: clip.victim,
+            ts: clip.capturedAt.timeIntervalSince1970, count: clip.frames.count,
+            overlays: clip.overlays, sounds: clip.sounds, markers: clip.markers))
+        else { return nil }
+        var body = Data([kindKillClip])
         var headerLength = UInt16(header.count).bigEndian
         withUnsafeBytes(of: &headerLength) { body.append(contentsOf: $0) }
         body.append(header)
@@ -477,10 +500,29 @@ final class NetworkManager: ObservableObject {
             withUnsafeBytes(of: &frameLength) { body.append(contentsOf: $0) }
             body.append(jpeg)
         }
-        guard body.count < Self.maxFrameBytes else { return }   // over-long clip: drop, don't kill the link
-        link.connection.send(content: Self.frame(body), completion: .contentProcessed { error in
-            if let error { print("[Network] kill clip send failed: \(error)") }
-        })
+        return body
+    }
+
+    /// A copy of the clip with its first second gone: 8 frames and their
+    /// overlays dropped, sound/marker offsets slid back, and events that now
+    /// land before the new start discarded.
+    private static func droppingLeadingSecond(of clip: KillClip) -> KillClip {
+        let n = 8
+        let dt = Double(n) * AimCameraManager.clipFrameInterval
+        return KillClip(
+            id: clip.id, killer: clip.killer, victim: clip.victim,
+            capturedAt: clip.capturedAt,
+            frames: Array(clip.frames.dropFirst(n)),
+            overlays: Array(clip.overlays.dropFirst(n)),
+            sounds: clip.sounds.compactMap {
+                let offset = $0.offset - dt
+                return offset >= 0 ? ClipSoundEvent(name: $0.name, volume: $0.volume,
+                                                    rate: $0.rate, offset: offset) : nil
+            },
+            markers: clip.markers.compactMap {
+                let offset = $0.offset - dt
+                return offset >= 0 ? ClipMarkerEvent(offset: offset, isKill: $0.isKill) : nil
+            })
     }
 
     private func parseKillClip(_ payload: Data) -> KillClip? {
