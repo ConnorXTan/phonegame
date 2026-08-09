@@ -27,10 +27,9 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var lastFireTime: Date?
     @Published private(set) var respawnRemaining: TimeInterval = 0
     @Published private(set) var lastKilledBy: String?
-    /// Wall-clock end of our damage immunity. Enforced victim-side because each
-    /// phone is authoritative for its own HP — shooters resolve independently
-    /// and can't see each other, so this is the only place a crossfire can be
-    /// collapsed into one hit.
+    /// Wall-clock end of our spawn protection — the only immunity window left;
+    /// ordinary hits carry no i-frames. Enforced victim-side because each
+    /// phone is authoritative for its own HP.
     @Published private(set) var invulnerableUntil: Date?
     @Published private(set) var damageFlash = false
     @Published private(set) var uwbWarning: String?
@@ -859,21 +858,23 @@ final class GameEngine: NSObject, ObservableObject {
         // but its team table can lag right after a switch — the victim is the
         // authority on its own team, so this is where the rule is final.
         if settings.teamPlay, let mine = myTeam, players[shooter]?.team == mine { return }
-        // Absorbed: no damage, no flash, no healthUpdate — as far as the rest
-        // of the mesh is concerned this shot never landed.
+        // Absorbed during spawn protection: no damage, no flash, no
+        // healthUpdate — as far as the rest of the mesh is concerned this
+        // shot never landed. Between ordinary hits there are no i-frames;
+        // fire cooldowns, magazines, and reloads are the only throttle.
         let now = Date()
         guard !isInvulnerable(at: now) else { return }
-        invulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
         let newHP = max(0, (me?.hp ?? 0) - damage)
         players[myName]?.hp = newHP
         haptics.playDamage()
         flashDamage()
         net.send(.healthUpdate(player: myName, hp: newHP))
         // Armor: every other hit that lands while the window runs goes back
-        // at the shooter for one heart — 50% of the incoming stream, kept
-        // discrete because hits deal whole hearts. It rides the normal .hit
-        // path, so the shooter's own i-frames and team rules still apply on
-        // their side, and a reflected kill credits us like any other.
+        // at the shooter for one heart — a fixed sting, deliberately not
+        // scaled to the incoming round now that roles deal 1–3. It rides the
+        // normal .hit path, so the shooter's own i-frames and team rules
+        // still apply on their side, and a reflected kill credits us like
+        // any other.
         if hasEffect(.armor, at: now) {
             armorHitCount += 1
             if armorHitCount % 2 == 1 {
