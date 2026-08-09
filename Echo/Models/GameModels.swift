@@ -1,4 +1,5 @@
 import Foundation
+import simd
 
 /// A player's loadout, picked per-player in the lobby. Health is measured in
 /// hearts and every hit takes exactly one, so a role's max hearts *is* its shots
@@ -155,6 +156,89 @@ enum GameMessage: Codable {
     case lobbyRoster(players: [String], spectators: [String])   // host-authoritative membership; drives mesh + UI
     case joinDenied(reason: String)             // host turned the sender's join down (e.g. lobby full)
     case overlayState(SpectatorOverlayState)    // streamer → spectator: HUD elements to redraw over the feed
+    case consumableSpawn(ConsumableSpawn)       // host → all: a drop, positioned by player-relative weights
+    case consumableConsumed(id: UUID, by: String, kind: ConsumableKind)   // grabber → all: despawn it; cloaks start here
+}
+
+/// Field drops. Effects are self-authoritative like damage: the grabber
+/// applies its own buff and broadcasts only what others must render (the
+/// despawn, and a cloak's hide-me window).
+enum ConsumableKind: String, Codable, CaseIterable {
+    case medpack, drink, cloak, armor
+
+    /// SF Symbol for the drop marker, minimap blip, and effect badge.
+    var symbol: String {
+        switch self {
+        case .medpack: return "cross.case.fill"
+        case .drink: return "bolt.fill"
+        case .cloak: return "eye.slash.fill"
+        case .armor: return "shield.checkered"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .medpack: return "Medpack"
+        case .drink: return "Overdrive"
+        case .cloak: return "Cloak"
+        case .armor: return "Reflector"
+        }
+    }
+
+    /// How long the effect runs once grabbed; nil = instant (medpack).
+    var effectDuration: TimeInterval? {
+        switch self {
+        case .medpack: return nil
+        case .drink: return 10
+        case .cloak: return 5
+        case .armor: return 5
+        }
+    }
+
+    /// Hearts a medpack restores (capped at the loadout's max).
+    static let medpackHearts = 2
+    /// Fire-cooldown and reload-duration multiplier while a drink runs.
+    static let drinkFactor = 0.5
+}
+
+/// A drop on the wire. There is no shared world frame between phones — each
+/// knows its peers only through its own pairwise UWB readings — so the
+/// position travels as an affine combination of player positions (weights sum
+/// to 1). Affine combinations survive rigid frame changes, so every phone
+/// resolves the same physical spot from its own local map, then freezes it in
+/// its own AR world frame. Phones missing a peer's position renormalize over
+/// the rest and land slightly apart; the pickup grace radius absorbs that.
+struct ConsumableSpawn: Codable {
+    let id: UUID
+    let kind: ConsumableKind
+    let weights: [String: Double]   // wire name → weight, Σ = 1
+    let lifetime: TimeInterval      // 5–10 s; every phone times it out locally
+}
+
+/// A spawn resolved into THIS phone's AR world frame — position frozen at
+/// placement so the drop stays put while players (its reference points) move.
+struct ActiveConsumable: Identifiable {
+    let id: UUID
+    let kind: ConsumableKind
+    let position: simd_float3
+    let spawnedAt: Date
+    let expiresAt: Date
+
+    /// 1 → 0 as the drop ages out — drives the despawn countdown rings.
+    func remainingFraction(at date: Date) -> Double {
+        let total = expiresAt.timeIntervalSince(spawnedAt)
+        guard total > 0 else { return 0 }
+        return max(0, min(1, expiresAt.timeIntervalSince(date) / total))
+    }
+}
+
+/// One running timed effect on OUR player. Medpacks are instant, so they
+/// never appear here; re-grabbing a kind replaces its entry (clock refresh).
+struct ActiveEffect: Identifiable {
+    let kind: ConsumableKind
+    let until: Date
+    let duration: TimeInterval
+    var id: String { kind.rawValue }
 }
 
 /// A shooter's last ~5 s of viewfinder leading up to a confirmed kill —

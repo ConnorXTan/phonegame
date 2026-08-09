@@ -39,6 +39,7 @@ struct GameHUDView: View {
 
             if engine.isAlive {
                 EnemyHealthbarOverlay()
+                ConsumableOverlay()
                 aimOverlay
             }
 
@@ -62,6 +63,9 @@ struct GameHUDView: View {
                         .padding(.leading, Space.xs)   // hugs the edge to offset the smaller fan
                     VStack(alignment: .trailing, spacing: Space.sm) {
                         heartGauge
+                        if !engine.activeEffects.isEmpty {
+                            effectBadges
+                        }
                         killToasts
                     }
                     // Flush with the 28pt glyphs inside their 48pt targets above.
@@ -223,6 +227,21 @@ struct GameHUDView: View {
 
     private var hpFraction: CGFloat {
         CGFloat(engine.me?.hp ?? 0) / CGFloat(max(1, engine.myRole.maxHP))
+    }
+
+    /// Running consumable effects, right under the health gauge: each is its
+    /// glyph ringed by the time it has left. The ring IS the countdown — at
+    /// this size a ticking numeral would be noise.
+    private var effectBadges: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            HStack(spacing: Space.sm) {
+                ForEach(engine.activeEffects) { effect in
+                    if effect.until > context.date {
+                        EffectBadge(effect: effect, at: context.date)
+                    }
+                }
+            }
+        }
     }
 
     /// Turns red and pulses over the last 30 seconds.
@@ -411,9 +430,11 @@ struct GameHUDView: View {
     }
 
     /// 0…1 while reloading, nil otherwise — drives the ring's refill sweep.
+    /// Denominator is the duration this reload actually started with, so a
+    /// drink lapsing mid-reload can't make the sweep jump.
     private var reloadProgress: Double? {
-        guard engine.isReloading, engine.myRole.reloadDuration > 0 else { return nil }
-        return 1 - (engine.reloadRemaining / engine.myRole.reloadDuration)
+        guard engine.isReloading, engine.reloadTotal > 0 else { return nil }
+        return 1 - (engine.reloadRemaining / engine.reloadTotal)
     }
 
     private var reloadButton: some View {
@@ -439,6 +460,28 @@ struct GameHUDView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .animation(.easeOut(duration: 0.25), value: engine.damageFlash)
+    }
+}
+
+/// One of OUR running effects: the shared ring badge at HUD size, which is
+/// the one place it scales with Dynamic Type — the same badge on enemy tags
+/// stays fixed-geometry like the tag it rides.
+private struct EffectBadge: View {
+    let effect: ActiveEffect
+    let at: Date
+
+    @ScaledMetric(relativeTo: .footnote) private var diameter: CGFloat = 30
+
+    private var fraction: Double {
+        guard effect.duration > 0 else { return 0 }
+        return effect.until.timeIntervalSince(at) / effect.duration
+    }
+
+    var body: some View {
+        EffectRingBadge(kind: effect.kind, fraction: fraction, diameter: diameter)
+            .accessibilityElement()
+            .accessibilityLabel(effect.kind.label)
+            .accessibilityValue("\(max(0, Int(effect.until.timeIntervalSince(at).rounded(.up)))) seconds left")
     }
 }
 

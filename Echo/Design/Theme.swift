@@ -82,6 +82,15 @@ extension Color {
     /// slate vanished into it.
     static let echoInert = Color(h: 231, s: 0.15, l: 0.50)
 
+    /// Powerups: consumable drops on the field and the countdown rings of
+    /// running effects — wherever they appear (own HUD, enemy tags, minimap).
+    /// A fourth exception hue on purpose: powerups are a genuinely new
+    /// category (neither harm, caution, nor absence), every other slot on
+    /// the wheel is spoken for, and violet clears the greens, the ally blue,
+    /// and the danger red at a glance. Glyph shape still carries WHICH
+    /// powerup — the hue only says "powerup".
+    static let echoPowerup = Color(h: 270, s: 1.0, l: 0.72)
+
     /// Team play: YOUR side. Everything already on the wheel is spoken for —
     /// the three greens mean interactive/alive/accent and red means harm — so
     /// allies take the one hue the HUD hasn't spent. Blue also survives every

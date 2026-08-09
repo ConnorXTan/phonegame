@@ -48,8 +48,60 @@ final class GameEngine: NSObject, ObservableObject {
     /// hit marker. A counter, not a Bool, so back-to-back hits each register.
     @Published private(set) var hitMarker = HitMarker(count: 0, isKill: false)
 
+    // Consumable drops. Each phone holds its own resolved copy of every live
+    // drop (see ConsumableSpawn for why), plus its own running effects.
+    @Published private(set) var consumables: [ActiveConsumable] = []
+    @Published private(set) var activeEffects: [ActiveEffect] = []
+    /// Other players' running effects, mirrored from their consumed
+    /// broadcasts — drives the badges under their floating health bars, and
+    /// cloak reads its hide-window from here. Not authoritative: their own
+    /// phone is; this is display state.
+    private var remoteEffects: [String: [ActiveEffect]] = [:]
+    /// Parity counter for armor — every other absorbed hit reflects.
+    private var armorHitCount = 0
+    /// Last place we saw each peer, in our AR world frame — refreshed on the
+    /// aim tick, consumed by drop placement. Deliberately never expired: a
+    /// somewhat stale anchor still beats dropping the spawn on this phone.
+    private var lastKnownPositions: [String: simd_float3] = [:]
+    // Host-side drop scheduling.
+    private var nextConsumableSpawnAt: Date?
+    private var hostLiveDrops: [UUID: Date] = [:]   // id → expiry, for the concurrency cap
+
     var isReloading: Bool { reloadRemaining > 0 }
     var magazineSize: Int { myRole.magazineSize }
+    /// Duration of the reload currently running — the denominator for the
+    /// HUD's refill sweep, frozen at reload start so a drink lapsing
+    /// mid-reload can't make the progress ring jump.
+    private(set) var reloadTotal: TimeInterval = 0
+
+    /// Role cadence, halved while a drink runs.
+    var currentFireCooldown: TimeInterval {
+        hasEffect(.drink) ? myRole.fireCooldown * ConsumableKind.drinkFactor : myRole.fireCooldown
+    }
+
+    var currentReloadDuration: TimeInterval {
+        hasEffect(.drink) ? myRole.reloadDuration * ConsumableKind.drinkFactor : myRole.reloadDuration
+    }
+
+    func hasEffect(_ kind: ConsumableKind, at date: Date = Date()) -> Bool {
+        activeEffects.contains { $0.kind == kind && $0.until > date }
+    }
+
+    /// Whether a player's tags and blips should be hidden right now. Self
+    /// answers from its own effect list; everyone else from the window their
+    /// consumed broadcast opened. Cloak hides UI only — ranging, aiming, and
+    /// hits all still work, which is the point.
+    func isCloaked(_ name: String, at date: Date = Date()) -> Bool {
+        effects(for: name, at: date).contains { $0.kind == .cloak }
+    }
+
+    /// A player's running effects as this phone knows them — own list for
+    /// self, the mirrored broadcasts for everyone else. Feeds the badge rows
+    /// (HUD for self, floating tags for opponents).
+    func effects(for name: String, at date: Date = Date()) -> [ActiveEffect] {
+        let list = name == myName ? activeEffects : (remoteEffects[name] ?? [])
+        return list.filter { $0.until > date }
+    }
 
     // Spectator mode (the laptop): watches the mesh, never plays.
     // A match already running when the game master arrives locks its setup
@@ -351,6 +403,12 @@ final class GameEngine: NSObject, ObservableObject {
         rangingAlertPeer = nil
         pendingSnapshots = [:]
         matchResult = nil
+        consumables = []
+        activeEffects = []
+        remoteEffects = [:]
+        lastKnownPositions = [:]
+        nextConsumableSpawnAt = nil
+        hostLiveDrops = [:]
         isHost = false
         isSpectator = false
         watchingPlayer = nil
@@ -423,7 +481,8 @@ final class GameEngine: NSObject, ObservableObject {
         var tags: [SpectatorOverlayState.Tag] = []
         if let frame = camera.session.currentFrame {
             let now = Date()
-            for player in opponents where player.isAlive && player.isConnected {
+            for player in opponents where player.isAlive && player.isConnected
+                && !isCloaked(player.name, at: now) {
                 guard let reading = ranging.latestReading(for: player.name),
                       now.timeIntervalSince(reading.timestamp) < 1.0 else { continue }
                 var world = ranging.worldPosition(for: player.name)
@@ -516,6 +575,14 @@ final class GameEngine: NSObject, ObservableObject {
         matchResult = nil
         pendingKillClips = []
         killClips = []          // spectator: last match's review makes way
+        consumables = []
+        activeEffects = []
+        remoteEffects = [:]
+        lastKnownPositions = [:]
+        armorHitCount = 0
+        hostLiveDrops = [:]
+        // First drop waits long enough for players to spread out a little.
+        nextConsumableSpawnAt = isHost ? Date().addingTimeInterval(.random(in: 8...12)) : nil
         cancelReload()
         ammo = myRole.magazineSize
         phase = .playing
@@ -553,7 +620,7 @@ final class GameEngine: NSObject, ObservableObject {
         // Dry trigger on an empty mag racks the reload instead of firing.
         guard ammo > 0 else { startReload(); return }
         let now = Date()
-        if let last = lastFireTime, now.timeIntervalSince(last) < myRole.fireCooldown { return }
+        if let last = lastFireTime, now.timeIntervalSince(last) < currentFireCooldown { return }
         lastFireTime = now
         ammo -= 1
         // Resolve BEFORE any feedback. Ranging readings are only good for
@@ -586,7 +653,10 @@ final class GameEngine: NSObject, ObservableObject {
         fire()
         guard myRole.isAutomatic else { return }
         autoFireTimer?.invalidate()
-        let timer = Timer(timeInterval: myRole.fireCooldown, repeats: true) { [weak self] _ in
+        // Cadence is frozen at press time; if a drink starts or lapses
+        // mid-burst, fire()'s own cooldown guard still rules — the timer just
+        // over- or under-ticks harmlessly until the next press.
+        let timer = Timer(timeInterval: currentFireCooldown, repeats: true) { [weak self] _ in
             self?.fire()
         }
         RunLoop.main.add(timer, forMode: .common)   // keeps firing during scroll tracking
@@ -731,7 +801,8 @@ final class GameEngine: NSObject, ObservableObject {
     /// Manual reload (the button beside FIRE) and the auto-reload on empty.
     func startReload() {
         guard phase == .playing, isAlive, !isReloading, ammo < myRole.magazineSize else { return }
-        reloadRemaining = myRole.reloadDuration
+        reloadTotal = currentReloadDuration
+        reloadRemaining = reloadTotal
         haptics.playReloadStart()
         reloadTimer?.invalidate()
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
@@ -798,6 +869,17 @@ final class GameEngine: NSObject, ObservableObject {
         haptics.playDamage()
         flashDamage()
         net.send(.healthUpdate(player: myName, hp: newHP))
+        // Armor: every other hit that lands while the window runs goes back
+        // at the shooter for one heart — 50% of the incoming stream, kept
+        // discrete because hits deal whole hearts. It rides the normal .hit
+        // path, so the shooter's own i-frames and team rules still apply on
+        // their side, and a reflected kill credits us like any other.
+        if hasEffect(.armor, at: now) {
+            armorHitCount += 1
+            if armorHitCount % 2 == 1 {
+                net.send(.hit(target: shooter, by: myName, damage: 1), to: [shooter])
+            }
+        }
         if newHP <= 0 {
             die(killedBy: shooter)
         }
@@ -807,6 +889,8 @@ final class GameEngine: NSObject, ObservableObject {
         players[myName]?.isAlive = false
         players[myName]?.deaths += 1
         players[killer]?.kills += 1
+        activeEffects = []   // buffs don't follow you through a respawn
+        armorHitCount = 0
         lastKilledBy = killer
         killFeed.insert(KillEvent(killer: killer, victim: myName), at: 0)
         trimFeed()
@@ -876,6 +960,7 @@ final class GameEngine: NSObject, ObservableObject {
         guard phase == .playing, let deadline = matchDeadline else { return }
         let remaining = deadline.timeIntervalSinceNow
         matchRemaining = max(0, remaining)
+        maybeSpawnConsumable()
         guard remaining <= 0 else { return }
         if isHost {
             let finals = players.values.map(PlayerState.init)
@@ -905,6 +990,11 @@ final class GameEngine: NSObject, ObservableObject {
         respawnRemaining = 0
         cancelReload()
         aimedTarget = nil
+        consumables = []
+        activeEffects = []
+        remoteEffects = [:]
+        nextConsumableSpawnAt = nil
+        hostLiveDrops = [:]
         // A kill still waiting out its post-kill roll freezes with whatever
         // the buffer holds — better a short clip than a lost one.
         for capture in delayedCaptures { completeCapture(capture.id) }
@@ -940,6 +1030,159 @@ final class GameEngine: NSObject, ObservableObject {
         killClips = []
     }
 
+    // MARK: - Consumables
+
+    /// Grace radius around the phone for grabbing a drop — nobody should have
+    /// to physically graze a floating point in space to score it.
+    private static let pickupRadius: Float = 1.3
+    /// Most drops on the field at once, so a quiet stretch can't pile up a
+    /// supermarket.
+    private static let maxLiveDrops = 4
+
+    /// The phone's own position in its AR world frame — the "player position"
+    /// for pickup checks and spawn weights alike.
+    private var myWorldPosition: simd_float3? {
+        guard let transform = camera.session.currentFrame?.camera.transform else { return nil }
+        return simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+    }
+
+    /// Runs on the aim tick: expire what's timed out, keep the peer map
+    /// fresh, and grab anything we're standing on.
+    private func tickConsumables() {
+        guard phase == .playing, !isSpectator else { return }
+        let now = Date()
+        if activeEffects.contains(where: { $0.until <= now }) {
+            activeEffects.removeAll { $0.until <= now }
+        }
+        for (name, effects) in remoteEffects where effects.contains(where: { $0.until <= now }) {
+            let live = effects.filter { $0.until > now }
+            remoteEffects[name] = live.isEmpty ? nil : live
+        }
+        if consumables.contains(where: { $0.expiresAt <= now }) {
+            consumables.removeAll { $0.expiresAt <= now }
+        }
+        cachePeerPositions()
+        guard isAlive, let mine = myWorldPosition else { return }
+        for drop in consumables {
+            let offset = drop.position - mine
+            // Horizontal distance only: anchors ride at phone height, and
+            // nobody should have to match a stranger's chest height to score.
+            guard simd_length(simd_float2(offset.x, offset.z)) < Self.pickupRadius else { continue }
+            consume(drop)
+        }
+    }
+
+    /// Same two position sources as EnemyHealthbarOverlay, cached so a spawn
+    /// can be placed even for peers currently outside the UWB field of view.
+    private func cachePeerPositions() {
+        guard let frame = camera.session.currentFrame else { return }
+        for player in opponents where player.isConnected {
+            if let world = ranging.worldPosition(for: player.name) {
+                lastKnownPositions[player.name] = world
+            } else if let directional = ranging.latestDirectional(for: player.name, within: 1.0),
+                      let world = Self.synthesizedWorld(from: directional, camera: frame.camera) {
+                lastKnownPositions[player.name] = world
+            }
+        }
+    }
+
+    private func consume(_ drop: ActiveConsumable) {
+        consumables.removeAll { $0.id == drop.id }
+        hostLiveDrops[drop.id] = nil
+        network?.send(.consumableConsumed(id: drop.id, by: myName, kind: drop.kind))
+        haptics.playPickup()
+        applyConsumable(drop.kind)
+    }
+
+    private func applyConsumable(_ kind: ConsumableKind) {
+        guard let duration = kind.effectDuration else {
+            // Medpack: instant hearts, capped at the loadout's max, with the
+            // usual self-authoritative health broadcast.
+            let healed = min(myRole.maxHP, (me?.hp ?? 0) + ConsumableKind.medpackHearts)
+            players[myName]?.hp = healed
+            network?.send(.healthUpdate(player: myName, hp: healed))
+            return
+        }
+        activeEffects.removeAll { $0.kind == kind }   // re-grab refreshes the clock
+        activeEffects.append(ActiveEffect(
+            kind: kind, until: Date().addingTimeInterval(duration), duration: duration))
+        if kind == .armor { armorHitCount = 0 }
+    }
+
+    /// Resolve a spawn's player-relative weights against OUR map of where
+    /// everyone is, then freeze the point in our AR world frame. Peers we've
+    /// never placed drop out and the rest renormalize — phones with different
+    /// gaps land the drop a little apart, which the pickup grace absorbs.
+    private func placeConsumable(_ spawn: ConsumableSpawn) {
+        guard !isSpectator, phase == .playing else { return }
+        var accumulated = simd_float3()
+        var total = 0.0
+        var peerAnchors = 0
+        for (name, weight) in spawn.weights {
+            let position: simd_float3?
+            if name == myName {
+                position = myWorldPosition
+            } else {
+                position = lastKnownPositions[name]
+                if position != nil { peerAnchors += 1 }
+            }
+            guard let position else { continue }
+            accumulated += position * Float(weight)
+            total += weight
+        }
+        // Without a single peer anchor the renormalized point collapses onto
+        // us — a free pickup, worse than no drop at all on this phone.
+        guard peerAnchors > 0, total > 0.3 else { return }
+        let now = Date()
+        consumables.append(ActiveConsumable(
+            id: spawn.id, kind: spawn.kind,
+            position: accumulated / Float(total),
+            spawnedAt: now, expiresAt: now.addingTimeInterval(spawn.lifetime)))
+    }
+
+    /// Host only, on the match tick. Positions never enter into spawning —
+    /// the weights make every phone do its own geometry — so a Mac game
+    /// master can run drops without ranging or a camera.
+    private func maybeSpawnConsumable() {
+        guard isHost, phase == .playing,
+              let due = nextConsumableSpawnAt, Date() >= due,
+              let net = network else { return }
+        scheduleNextConsumableSpawn()
+        hostLiveDrops = hostLiveDrops.filter { $0.value > Date() }
+        let roster = players.values.filter(\.isConnected).map(\.name)
+        guard roster.count >= 2, hostLiveDrops.count < Self.maxLiveDrops else { return }
+        // Uniform over the weight simplex (exponential draws, normalized):
+        // anywhere in the players' convex hull is equally likely — the region
+        // bounded by the outermost players.
+        var weights: [String: Double] = [:]
+        var total = 0.0
+        for name in roster {
+            let draw = -log(Double.random(in: 1e-9..<1))
+            weights[name] = draw
+            total += draw
+        }
+        for (name, draw) in weights { weights[name] = draw / total }
+        let spawn = ConsumableSpawn(
+            id: UUID(),
+            kind: ConsumableKind.allCases.randomElement() ?? .medpack,
+            weights: weights,
+            lifetime: .random(in: 5...10))
+        hostLiveDrops[spawn.id] = Date().addingTimeInterval(spawn.lifetime)
+        net.send(.consumableSpawn(spawn))
+        placeConsumable(spawn)   // the host is a player too (no-op for a Mac host)
+    }
+
+    /// More time = more drops (the cadence halves every 3 minutes) and more
+    /// players = more drops (2 players ≈ 18 s between spawns at the start,
+    /// 6 ≈ 6 s). Jittered so the rhythm never turns into a countable metronome.
+    private func scheduleNextConsumableSpawn() {
+        let elapsed = settings.matchDuration - matchRemaining
+        let base = 18.0 * pow(0.5, elapsed / 180)
+        let playerScale = 2.0 / Double(max(2, players.values.filter(\.isConnected).count))
+        nextConsumableSpawnAt = Date().addingTimeInterval(
+            max(4, base * playerScale) * .random(in: 0.7...1.3))
+    }
+
     // MARK: - Aim indicator
 
     private func startAimTimer() {
@@ -952,6 +1195,7 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     private func updateAimedTarget() {
+        tickConsumables()
         guard phase == .playing, isAlive else {
             if aimedTarget != nil { aimedTarget = nil }
             return
@@ -1196,6 +1440,7 @@ extension GameEngine: NetworkManagerDelegate {
             players[player]?.isAlive = false
             players[player]?.deaths += 1
             players[killedBy]?.kills += 1
+            remoteEffects[player] = nil   // their phone drops buffs on death; mirror it
             killFeed.insert(KillEvent(killer: killedBy, victim: player), at: 0)
             trimFeed()
             if killedBy == myName {
@@ -1322,6 +1567,22 @@ extension GameEngine: NetworkManagerDelegate {
             guard !isHost, phase == .lobby || phase == .browsing else { return }
             leave()
             lobbyNotice = reason
+
+        case .consumableSpawn(let spawn):
+            placeConsumable(spawn)
+
+        case .consumableConsumed(let id, let by, let kind):
+            consumables.removeAll { $0.id == id }
+            hostLiveDrops[id] = nil
+            // Mirror the grabber's timed effect so everyone can render it —
+            // the badge under their tag, and for cloak the hide-window itself.
+            if by != myName, let duration = kind.effectDuration {
+                var effects = remoteEffects[by, default: []]
+                effects.removeAll { $0.kind == kind }   // re-grab refreshes the clock
+                effects.append(ActiveEffect(
+                    kind: kind, until: Date().addingTimeInterval(duration), duration: duration))
+                remoteEffects[by] = effects
+            }
         }
     }
 
