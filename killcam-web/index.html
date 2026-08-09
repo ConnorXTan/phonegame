@@ -12,6 +12,7 @@
     --text: #ffffff;
     --text-dim: rgba(255, 255, 255, 0.6);
     --primary: #4ce637;
+    --danger: #ef4040;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -32,6 +33,18 @@
   h1 { font-size: 22px; font-weight: 800; letter-spacing: 3px; }
   h1 span { color: var(--primary); }
   #count { color: var(--text-dim); font-size: 13px; }
+  #savedToggle {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--hairline);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  #savedToggle.on { color: var(--primary); border-color: var(--primary); }
   #grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -47,6 +60,19 @@
   .card figcaption { padding: 10px 12px; font-size: 12px; line-height: 1.5; }
   .card b { color: var(--primary); font-weight: 700; }
   .card time { display: block; color: var(--text-dim); font-size: 11px; }
+  .actions { display: flex; gap: 8px; margin-top: 8px; }
+  .actions button {
+    background: none;
+    border: 1px solid var(--hairline);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .actions button.on-like { color: var(--danger); border-color: var(--danger); }
+  .actions button.on-save { color: var(--primary); border-color: var(--primary); }
   #empty { color: var(--text-dim); padding: 48px 0; text-align: center; font-size: 14px; }
 </style>
 </head>
@@ -54,6 +80,7 @@
   <header>
     <h1>LTN <span>//</span> KILLCAMS</h1>
     <div id="count"></div>
+    <button id="savedToggle">Saved</button>
   </header>
   <main id="grid"></main>
   <div id="empty" hidden>No killcams published yet.</div>
@@ -61,25 +88,74 @@
     const grid = document.getElementById('grid');
     const count = document.getElementById('count');
     const empty = document.getElementById('empty');
+    const savedToggle = document.getElementById('savedToggle');
     const esc = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+    // Anonymous per-browser identity: one like per device per clip. Minted
+    // once, kept in localStorage.
+    let device = localStorage.getItem('ltn-device');
+    if (!device) {
+      device = crypto.randomUUID().replace(/-/g, '');
+      localStorage.setItem('ltn-device', device);
+    }
+    fetch(`/api/react?action=visit&device=${device}`, { method: 'POST' });
+
+    let clips = [];
+    let savedOnly = false;
     let lastKey = '';
+
+    savedToggle.onclick = () => {
+      savedOnly = !savedOnly;
+      savedToggle.classList.toggle('on', savedOnly);
+      lastKey = '';
+      render();
+    };
+
+    async function react(key, action) {
+      const clip = clips.find((c) => c.key === key);
+      if (!clip) return;
+      // Optimistic flip; the next poll reconciles with the server's truth.
+      if (action === 'toggle-like') {
+        clip.liked = !clip.liked;
+        clip.likes += clip.liked ? 1 : -1;
+        fetch(`/api/react?action=${clip.liked ? 'like' : 'unlike'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
+      } else {
+        clip.saved = !clip.saved;
+        fetch(`/api/react?action=${clip.saved ? 'save' : 'unsave'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
+      }
+      lastKey = '';
+      render();
+    }
+    window.react = react;
+
+    function render() {
+      const visible = savedOnly ? clips.filter((c) => c.saved) : clips;
+      const key = visible.map((c) => `${c.url}|${c.likes}|${c.liked}|${c.saved}`).join('~');
+      if (key === lastKey) return;   // don't interrupt playing videos
+      lastKey = key;
+      count.textContent = `${visible.length} clip${visible.length === 1 ? '' : 's'}`;
+      empty.hidden = visible.length > 0;
+      grid.innerHTML = visible.map((c) => `
+        <figure class="card">
+          <video src="${esc(c.url)}" controls muted playsinline preload="metadata" loop></video>
+          <figcaption>
+            <b>${esc(c.killer)}</b> eliminated <b>${esc(c.victim)}</b>
+            <time>${new Date(c.timestamp).toLocaleString()}</time>
+            <div class="actions">
+              <button class="${c.liked ? 'on-like' : ''}"
+                onclick="react('${esc(c.key)}', 'toggle-like')">&hearts; ${c.likes}</button>
+              <button class="${c.saved ? 'on-save' : ''}"
+                onclick="react('${esc(c.key)}', 'toggle-save')">${c.saved ? 'Saved' : 'Save'}</button>
+            </div>
+          </figcaption>
+        </figure>`).join('');
+    }
 
     async function load() {
       try {
-        const { clips } = await (await fetch('/api/clips')).json();
-        const key = clips.map((c) => c.url).join('|');
-        if (key === lastKey) return;   // don't interrupt playing videos
-        lastKey = key;
-        count.textContent = `${clips.length} clip${clips.length === 1 ? '' : 's'}`;
-        empty.hidden = clips.length > 0;
-        grid.innerHTML = clips.map((c) => `
-          <figure class="card">
-            <video src="${esc(c.url)}" controls muted playsinline preload="metadata" loop></video>
-            <figcaption>
-              <b>${esc(c.killer)}</b> eliminated <b>${esc(c.victim)}</b>
-              <time>${new Date(c.timestamp).toLocaleString()}</time>
-            </figcaption>
-          </figure>`).join('');
+        const reply = await (await fetch(`/api/clips?device=${device}`)).json();
+        clips = reply.clips;
+        render();
       } catch (e) { /* transient; next poll retries */ }
     }
     load();
