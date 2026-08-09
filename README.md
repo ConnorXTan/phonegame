@@ -1,13 +1,13 @@
 # LTN — Laser Tag Now
 
-iPhone laser tag over Ultra Wideband. Aim your phone like a camera, fire, and the other player's phone buzzes, flashes red, and loses HP. No server, no venue Wi-Fi — the phones talk directly to each other.
+iPhone laser tag over Ultra-Wideband. Aim your phone like a camera, fire, and the other player's phone buzzes, flashes red, and loses HP. No server, no venue Wi-Fi — the phones talk directly to each other.
 
 Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 
 - **Aiming** — Nearby Interaction (the UWB chip behind AirTag precision finding) streams distance + 3D direction between iPhones at ~55 Hz. A shot hits when the target is inside the aim cone and weapon range; the most-centered target wins.
 - **Networking** — MultipeerConnectivity peer-to-peer mesh (Wi-Fi/Bluetooth, zero backend).
 - **Feedback** — Core Haptics: fire tick, shooter hit-marker, heavy ×3 damage burst, death rumble, target-lock tick.
-- **Hit markers** — land a shot and a four-tick X pops at the crosshair with the hitmarker sound; a kill turns it red and pitches the tick up.
+- **Hit markers** — land a shot and a four-tick X pops at the crosshair with the hit marker sound; a kill turns it red and pitches the tick up.
 - **Match flow** — the host picks a match length; a live K/D readout and countdown sit in the HUD, and time expiring drops everyone into a match summary.
 - **Ammo** — 10 rounds to a magazine, shown as segments in the ring around FIRE. Emptying it auto-reloads (3 s), or reload early with the button beside FIRE.
 
@@ -59,7 +59,7 @@ Hit resolution runs on the **shooter's** phone (it has the ranging data); the vi
 
 Every phone counts the match clock down locally off a wall-clock deadline, but only the **host calls time** — it broadcasts `.endMatch` with its own tallies, so two phones can never crown different winners. If the host goes dark, each phone ends on its own tallies after a 5 s grace period. Late joiners get a `.matchClock` message so their clock doesn't start a full match length from scratch.
 
-The **UWB Ranging debug sheet** (magnifying-glass button in the HUD) shows live distance / direction / angle-off-boresight per peer plus the **radar** (top-down blips) — use it to verify ranging before playing, and on a projector for the demo.
+The **UWB Ranging debug sheet** (magnifying-glass button in the HUD) shows live distance/direction / angle-off-boresight per peer plus the **radar** (top-down blips) — use it to verify ranging before playing, and on a projector for the demo.
 
 ## Troubleshooting
 
