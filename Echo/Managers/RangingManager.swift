@@ -188,41 +188,45 @@ final class RangingManager: NSObject, ObservableObject {
     }
 
     /// Where shots on this peer actually land, as a world position — the one
-    /// estimate every overlay should draw from. Prefers the fused
-    /// `worldTransform` (world-anchored, frame-rate), but the shoot path
-    /// resolves on raw bearings, and a camera-assisted anchor can coast after
-    /// the peer moves while the radio keeps reporting the truth. So when the
-    /// fused point sits outside the aim cone around the current bearing, the
-    /// bearing wins — a tag drawn on the coasted anchor marks a spot where
-    /// shots cleanly miss. Nil once readings go stale (~1 s), same rule as
-    /// the shoot path: old data must not pin a tag to empty space.
+    /// estimate every overlay should draw from. The shoot path resolves on
+    /// raw bearings (`resolveShot`), so whenever a fresh bearing exists the
+    /// tag draws on it — by construction it can't drift from the aim truth.
+    /// The fused `worldTransform` only fills bearing dropouts (peer outside
+    /// the UWB field of view): it's world-anchored but can coast away from
+    /// where shots resolve, so it never overrides a live bearing. Nil once
+    /// readings go stale (~1 s), same rule as the shoot path: old data must
+    /// not pin a tag to empty space.
     func displayWorldPosition(for peerName: String, at date: Date) -> simd_float3? {
         guard let reading = latestReading(for: peerName),
               date.timeIntervalSince(reading.timestamp) < 1.0 else { return nil }
-        var ray: (origin: simd_float3, direction: simd_float3)?
-        var alongBearing: simd_float3?
         if let bearing = latestDirectional(for: peerName, within: 1.0),
-           let r = worldRay(from: bearing) {
-            ray = r
-            alongBearing = r.origin + r.direction * (bearing.distance ?? 5)
+           let ray = worldRay(from: bearing) {
+            let distance = bearing.distance ?? latestDistance(for: peerName) ?? 5
+            return clampedToHandHeight(ray.origin + ray.direction * distance)
         }
-        guard let fused = worldPosition(for: peerName) else { return alongBearing }
-        if let ray, let alongBearing {
-            let toFused = fused - ray.origin
-            // Point-blank the angle is all noise — trust the anchor there.
-            if simd_length(toFused) > 0.3 {
-                let cosAngle = simd_dot(simd_normalize(toFused), ray.direction)
-                if acos(max(-1, min(1, cosAngle))) > Self.bearingDivergenceLimit {
-                    return alongBearing
-                }
-            }
-        }
-        return fused
+        return worldPosition(for: peerName).map(clampedToHandHeight)
     }
 
-    /// The default aim-cone half-angle (`GameSettings.aimConeDegrees`): past
-    /// this, fused and radio disagree about whether a centered shot hits.
-    private static let bearingDivergenceLimit: Float = 5 * .pi / 180
+    /// Freshest UWB distance in the buffer — time-of-flight, the one
+    /// measurement with no camera-fusion dependency.
+    private func latestDistance(for peerName: String) -> Float? {
+        readings(for: peerName).last { $0.distance != nil }?.distance
+    }
+
+    /// Phones are hand-held, so an opponent's phone sits within about half a
+    /// meter of the shooter's own camera height. Estimator height errors are the
+    /// exception: a coasted fused anchor can drift skyward, and
+    /// horizontalAngle-only bearings carry no elevation at all — and because
+    /// those phones' aim test (`angleOffBoresight` = abs(h)) is horizontal-
+    /// only, a sky-high tag would still "lock". Clamp display height to the
+    /// hand-held band; the shoot path never sees this.
+    private func clampedToHandHeight(_ point: simd_float3) -> simd_float3 {
+        guard let t = camera?.session.currentFrame?.camera.transform else { return point }
+        let cameraY = t.columns.3.y
+        var clamped = point
+        clamped.y = min(max(clamped.y, cameraY - 0.5), cameraY + 0.5)
+        return clamped
+    }
 
     /// A bearing as a world-space ray, cast from the camera pose captured
     /// when it was measured — world-anchored, so it holds still while the

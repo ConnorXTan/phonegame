@@ -7,11 +7,11 @@ import UIKit
 /// the shared ARSession. Reads only state that already flows — UWB ranging and
 /// the synced `players` table — so it adds nothing to the shoot path.
 ///
-/// Position comes from `RangingManager.displayWorldPosition` — the fused
-/// world transform, cross-checked against the raw bearing the shoot path
-/// fires on, so the bar sits where shots actually land. It goes nil once
-/// readings stale out (~1 s), which is what hides the bar: old data must
-/// not pin it to empty space.
+/// Position comes from `RangingManager.displayWorldPosition` — drawn on the
+/// raw bearing the shoot path fires on whenever one is fresh, so the bar
+/// sits where shots actually land; the fused world transform only fills
+/// bearing dropouts. It goes nil once readings stale out (~1 s), which is
+/// what hides the bar: old data must not pin it to empty space.
 struct EnemyHealthbarOverlay: View {
     @EnvironmentObject private var engine: GameEngine
 
