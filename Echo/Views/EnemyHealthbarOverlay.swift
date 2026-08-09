@@ -7,14 +7,11 @@ import UIKit
 /// the shared ARSession. Reads only state that already flows — UWB ranging and
 /// the synced `players` table — so it adds nothing to the shoot path.
 ///
-/// Position source, best first:
-///   1. `NISession.worldTransform` — camera-assistance fusion, world-anchored,
-///      so the bar stays glued at frame rate while the local camera pans.
-///   2. The latest device-frame reading (raw U1 direction, or horizontalAngle
-///      for pre-convergence U2 phones) cast out from the
-///      current camera pose.
-/// Either way the bar hides once readings go stale (~1 s) — same rule as the
-/// shoot path: old data must not pin a bar to empty space.
+/// Position comes from `RangingManager.displayWorldPosition` — the fused
+/// world transform, cross-checked against the raw bearing the shoot path
+/// fires on, so the bar sits where shots actually land. It goes nil once
+/// readings stale out (~1 s), which is what hides the bar: old data must
+/// not pin it to empty space.
 struct EnemyHealthbarOverlay: View {
     @EnvironmentObject private var engine: GameEngine
 
@@ -59,7 +56,7 @@ struct EnemyHealthbarOverlay: View {
             // dropping the smoother state means the reappearance snaps into
             // place instead of gliding in from a five-second-old position.
             guard !engine.isCloaked(player.name, at: date),
-                  let world = worldPosition(of: player.name, camera: frame.camera, at: date) else {
+                  let world = engine.ranging.displayWorldPosition(for: player.name, at: date) else {
                 smoother.drop(player.name)
                 continue
             }
@@ -86,38 +83,6 @@ struct EnemyHealthbarOverlay: View {
         return tags
     }
 
-    private func worldPosition(of name: String, camera: ARCamera, at date: Date) -> simd_float3? {
-        guard let reading = engine.ranging.latestReading(for: name),
-              date.timeIntervalSince(reading.timestamp) < 1.0 else { return nil }
-        if let world = engine.ranging.worldPosition(for: name) { return world }
-        guard let directional = engine.ranging.latestDirectional(for: name, within: 1.0)
-        else { return nil }
-        return synthesized(from: directional, camera: camera)
-    }
-
-    /// Fallback when there's no world transform: cast the device-frame reading
-    /// out from the current camera pose. Device-anchored, so it moves at
-    /// ranging rate rather than frame rate — good enough for a hover bar.
-    private func synthesized(from reading: RangingReading, camera: ARCamera) -> simd_float3? {
-        let deviceDirection: simd_float3
-        if let d = reading.direction {
-            deviceDirection = d
-        } else if let h = reading.horizontalAngle {
-            deviceDirection = simd_float3(sin(h), 0, -cos(h))   // + = to the right, eye level
-        } else {
-            return nil
-        }
-        // NI's device frame (portrait: +X right, +Y top, -Z out the back) is
-        // ARKit's camera frame rotated 90° about Z — camera +X runs down the
-        // long axis toward the home-button end.
-        let deviceToCamera = simd_quatf(angle: .pi / 2, axis: simd_float3(0, 0, 1))
-        let inCamera = deviceToCamera.act(deviceDirection)
-        let t = camera.transform
-        let world4 = t * simd_float4(inCamera, 0)
-        let origin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
-        let direction = simd_normalize(simd_float3(world4.x, world4.y, world4.z))
-        return origin + direction * (reading.distance ?? 5)
-    }
 }
 
 /// Per-peer low-pass over world positions. UWB updates land at ~5 Hz; without
