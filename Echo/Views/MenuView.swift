@@ -20,13 +20,20 @@ struct MenuView: View {
     /// hand-drawn and tightly kerned, so only 2D components separate them), and
     /// the N 213–319. Stored as fractions so they hold at any logo width.
     ///
-    /// LASER and TAG hang from their letters' centers. NOW starts at the N's
-    /// left edge instead: centering it left 49pt of daylight after TAG against
-    /// only 13pt before it, which read as NOW drifting off on its own. Anchoring
-    /// to the stem closes that to 23pt and the row scans as one line.
+    /// TAG and NOW start at their letters' vertical stems; only LASER hangs
+    /// from a center, since the L's stem *is* its left edge.
+    ///
+    /// The T's stem is not where the letter's bounding box suggests. Profiled
+    /// by row band, the crossbar spans the full x 102–202 but the stem below it
+    /// only x 138–172 — and its center (155) is 3pt right of the crossbar's
+    /// (152), because the mark is hand-drawn. Anchoring TAG to the box center
+    /// therefore started it 10px left of the stem it was supposed to sit under.
+    ///
+    /// Anchoring to stems also evens the row out: gaps go from 13/30pt to
+    /// 17/26pt, so no word reads as drifting away from the other two.
     private static let letterStops: [(word: String, stop: CGFloat, anchor: WordAnchor)] = [
         ("LASER", 77.0 / 326.0, .centered),
-        ("TAG", 152.0 / 326.0, .centered),
+        ("TAG", 138.0 / 326.0, .leading),
         ("NOW", 213.0 / 326.0, .leading),
     ]
 
