@@ -5,8 +5,6 @@ import simd
 /// the back of the phone (where you're aiming). The spread matches the UWB
 /// field of view, so the fan shows exactly the region a bearing can come
 /// from; a ranged peer without one draws as a dashed arc at its distance.
-/// Walls ARKit has spotted draw as floor-plan lines — a picture of the room,
-/// not game logic: they never block a shot.
 ///
 /// Genuine data visualisation rather than icon art, so `Canvas` is the right
 /// tool — the geometry *is* the content. Sibling of `RadarView`, which is the
@@ -45,7 +43,6 @@ struct MiniMapView: View {
                 ctx.fill(wedge(apex: apex, radius: radius),
                          with: .color(.echoBackground.opacity(Alpha.strong)))
                 drawRangeArcs(ctx: ctx, apex: apex, radius: radius)
-                drawWalls(ctx: ctx, apex: apex, radius: radius, maxRange: maxRange)
 
                 for player in livePeers {
                     // Stale blips lie about where someone is — drop them.
@@ -104,40 +101,6 @@ struct MiniMapView: View {
                        startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
             ctx.stroke(arc, with: .color(.echoSecondary.opacity(Alpha.subtle)), lineWidth: 1)
         }
-    }
-
-    /// Detected walls as seen from above, in the fan's frame: apex is you,
-    /// aim points up. Metres map linearly to points (rim = weapon range) and
-    /// the layer clips to the wedge, so only the room ahead draws.
-    ///
-    /// Drawn in `echoWarning` rather than the green family: everything else on
-    /// this widget — range rings, blips, the lock — is a green, and room
-    /// geometry read as one more of them. Yellow is the only hue on the map, so
-    /// nothing here can be confused for a caution state.
-    private func drawWalls(ctx: GraphicsContext, apex: CGPoint, radius: CGFloat, maxRange: CGFloat) {
-        guard let pose = engine.camera.groundPose else { return }
-        let segments = engine.camera.wallSegments
-        guard !segments.isEmpty else { return }
-        let scale = radius / maxRange
-        var path = Path()
-        for segment in segments {
-            path.move(to: mapPoint(segment.start, pose: pose, apex: apex, scale: scale))
-            path.addLine(to: mapPoint(segment.end, pose: pose, apex: apex, scale: scale))
-        }
-        var layer = ctx   // copy: clip the walls, not the whole canvas
-        layer.clip(to: wedge(apex: apex, radius: radius))
-        layer.stroke(path, with: .color(.echoWarning.opacity(Alpha.heavy)),
-                     style: StrokeStyle(lineWidth: 3, lineCap: .round))
-    }
-
-    /// World-XZ metres → canvas points: project the offset from the player
-    /// onto the aim frame (forward = up on the map, right = right).
-    private func mapPoint(_ world: SIMD2<Float>, pose: GroundPose,
-                          apex: CGPoint, scale: CGFloat) -> CGPoint {
-        let offset = world - pose.position
-        return CGPoint(
-            x: apex.x + CGFloat(simd_dot(offset, pose.right)) * scale,
-            y: apex.y - CGFloat(simd_dot(offset, pose.forward)) * scale)
     }
 
     private func drawBlip(ctx: GraphicsContext, apex: CGPoint, at r: CGFloat, angle: CGFloat,
