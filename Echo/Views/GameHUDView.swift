@@ -496,12 +496,14 @@ private struct HitMarkerView: View {
     @State private var opacity: Double = 0
     @State private var scale: CGFloat = 1
 
-    // Reticle-scale: sized off the *locked* ring (74pt — the tighter of the two
-    // reticle states) so the marker reads at a glance without ever spilling past
-    // the crosshair. These are the post-bloom budgets: the flash ends at 1.2x, so
-    // 46 -> 55.2 and 54 -> 64.8 both still clear the 74pt ring. A kill stays
-    // visibly larger as well as danger-red, so the two never rely on hue alone.
-    private var markerSize: CGFloat { marker.isKill ? 54 : 46 }
+    // Roughly a third of the locked reticle (74pt, the tighter of the two
+    // states). Small enough that the ring and the target inside it stay clear,
+    // and paired with the art's central gap — sized to clear the 8pt boresight
+    // dot at exactly this frame — so the dot always reads as the center. Shrink
+    // this and the ticks start colliding with the dot; the gap has to grow with
+    // it. A kill runs one step larger so it stays separable by size and not by
+    // its danger-red alone.
+    private var markerSize: CGFloat { marker.isKill ? 32 : 28 }
 
     var body: some View {
         // Template-rendered so the black/red marker art picks up the HUD's own
