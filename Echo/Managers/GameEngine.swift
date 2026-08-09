@@ -122,6 +122,17 @@ final class GameEngine: NSObject, ObservableObject {
         super.init()
         ranging.delegate = self
         ranging.camera = camera   // one ARSession: viewfinder + camera assistance
+        // Killcam: pair every buffered frame with the live HUD overlay, and
+        // log app sounds so clips can rebuild their audio.
+        camera.clipOverlayProvider = { [weak self] in self?.currentOverlayState() }
+        SoundManager.shared.eventTap = { [weak self] name, volume, rate in
+            guard let self, self.camera.clipBufferEnabled else { return }
+            self.soundLog.append((name, volume, rate, Date()))
+            let cutoff = Date().addingTimeInterval(-8)
+            if self.soundLog.first?.at ?? Date() < cutoff {
+                self.soundLog.removeAll { $0.at < cutoff }
+            }
+        }
         if !RangingManager.isSupported {
             uwbWarning = "This device has no UWB chip (needs iPhone 11+, non-SE). Ranging won't work here."
         } else if !RangingManager.supportsAiming {
@@ -595,12 +606,25 @@ final class GameEngine: NSObject, ObservableObject {
     /// moment the kill confirms. Held locally; shipped to spectators after
     /// the match so replays never contend with live traffic.
     private var pendingKillClips: [KillClip] = []
+    private var soundLog: [(name: String, volume: Float, rate: Float, at: Date)] = []
 
     private func captureKillClip(victim: String) {
-        let frames = camera.snapshotClip()
-        guard !frames.isEmpty else { return }
+        let snapshot = camera.snapshotClip()
+        guard !snapshot.frames.isEmpty else { return }
+        // The buffer's first frame is (count × interval) ago; sounds map to
+        // offsets from there so the review and the MP4 replay them in place.
+        let now = Date()
+        let duration = Double(snapshot.frames.count) * AimCameraManager.clipFrameInterval
+        let clipStart = now.addingTimeInterval(-duration)
+        let sounds = soundLog.compactMap { event -> ClipSoundEvent? in
+            let offset = event.at.timeIntervalSince(clipStart)
+            guard offset >= 0, offset <= duration else { return nil }
+            return ClipSoundEvent(name: event.name, volume: event.volume,
+                                  rate: event.rate, offset: offset)
+        }
         pendingKillClips.append(KillClip(
-            id: UUID(), killer: myName, victim: victim, capturedAt: Date(), frames: frames))
+            id: UUID(), killer: myName, victim: victim, capturedAt: now,
+            frames: snapshot.frames, overlays: snapshot.overlays, sounds: sounds))
         if pendingKillClips.count > 10 { pendingKillClips.removeFirst() }
     }
 
@@ -613,7 +637,8 @@ final class GameEngine: NSObject, ObservableObject {
         else { return }
         let clip = killClips[index]
         killClips[index].publishState = .uploading
-        ClipEncoder.encodeMP4(frames: clip.frames) { [weak self] result in
+        ClipEncoder.encodeMP4(frames: clip.frames, overlays: clip.overlays,
+                              sounds: clip.sounds) { [weak self] result in
             guard let self else { return }
             switch result {
             case .failure:

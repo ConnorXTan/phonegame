@@ -182,7 +182,22 @@ struct KillClip: Identifiable {
     let victim: String
     let capturedAt: Date
     let frames: [Data]
+    /// One per frame: the shooter's crosshair + enemy tags at that instant,
+    /// drawn over the replay and baked into the published MP4.
+    let overlays: [SpectatorOverlayState]
+    /// Game sounds that fired inside the clip window, replayed in the review
+    /// and mixed into the published MP4's audio track.
+    let sounds: [ClipSoundEvent]
     var publishState: PublishState = .idle
+}
+
+/// One app sound inside a kill clip's window — enough to re-trigger the same
+/// bundled asset at the same moment with the same volume/pitch.
+struct ClipSoundEvent: Codable, Equatable {
+    let name: String
+    let volume: Float
+    let rate: Float
+    let offset: TimeInterval   // seconds from the clip's first frame
 }
 
 /// What the spectated player sees, reduced to the two things worth mirroring:

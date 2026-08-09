@@ -666,6 +666,13 @@ struct SpectatorView: View {
         reviewImages = clip.frames.compactMap(UIImage.init(data:))
         reviewStarted = Date()
         reviewClipID = clip.id
+        // First pass plays the clip's sounds in place; loops replay silently.
+        for event in clip.sounds {
+            DispatchQueue.main.asyncAfter(deadline: .now() + event.offset) { [weak engine] in
+                guard engine != nil, reviewClipID == clip.id else { return }
+                SoundManager.shared.play(event.name, volume: event.volume, rate: event.rate)
+            }
+        }
     }
 
     private func replayOverlay(_ clip: KillClip) -> some View {
@@ -684,10 +691,25 @@ struct SpectatorView: View {
                     let index = reviewImages.isEmpty ? 0
                         : Int(elapsed * 8) % reviewImages.count
                     if reviewImages.indices.contains(index) {
-                        Image(uiImage: reviewImages[index])
-                            .resizable()
-                            .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                        GeometryReader { geo in
+                            let fit = Self.fittedRect(image: reviewImages[index].size, in: geo.size)
+                            Image(uiImage: reviewImages[index])
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            // The shooter's HUD at that instant: enemy tags
+                            // pinned into the frame plus their crosshair.
+                            if clip.overlays.indices.contains(index) {
+                                let overlay = clip.overlays[index]
+                                ForEach(overlay.tags, id: \.name) { tag in
+                                    EnemyTag(name: tag.name, hpFraction: CGFloat(tag.hp))
+                                        .position(x: fit.minX + CGFloat(tag.x) * fit.width,
+                                                  y: fit.minY + CGFloat(tag.y) * fit.height - 40)
+                                }
+                                spectatedCrosshair(overlay, center: CGPoint(x: fit.midX, y: fit.midY))
+                            }
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                     }
                 }
                 .frame(maxWidth: 420, maxHeight: 540)

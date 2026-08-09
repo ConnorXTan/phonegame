@@ -46,18 +46,23 @@ final class AimCameraManager: NSObject, ObservableObject {
     var frameTap: ((Data) -> Void)?
 
     /// Killcam capture: while enabled, a rolling ~5 s of viewfinder JPEGs is
-    /// kept (8 fps × 40 frames ≈ 1 MB). Snapshotted the moment a kill is
-    /// confirmed; the encode pipeline is shared with the spectator tap.
+    /// kept (8 fps × 40 frames ≈ 1 MB), each paired with the HUD overlay
+    /// (crosshair + enemy tags) at that instant. Snapshotted the moment a
+    /// kill confirms; the encode pipeline is shared with the spectator tap.
     var clipBufferEnabled = false {
         didSet { if !clipBufferEnabled { clipBuffer.removeAll() } }
     }
-    private var clipBuffer: [Data] = []
+    /// Asked (on main) for the current HUD overlay as each frame lands.
+    var clipOverlayProvider: (() -> SpectatorOverlayState?)?
+    private var clipBuffer: [(jpeg: Data, overlay: SpectatorOverlayState)] = []
     private var lastClipAt = Date.distantPast
-    private static let clipFrameInterval: TimeInterval = 1.0 / 8.0
+    static let clipFrameInterval: TimeInterval = 1.0 / 8.0
     private static let clipFrameCount = 40
 
-    /// The last ~5 s of viewfinder, oldest first.
-    func snapshotClip() -> [Data] { clipBuffer }
+    /// The last ~5 s of viewfinder, oldest first, with per-frame overlays.
+    func snapshotClip() -> (frames: [Data], overlays: [SpectatorOverlayState]) {
+        (clipBuffer.map(\.jpeg), clipBuffer.map(\.overlay))
+    }
 
     let session = ARSession()
 
@@ -357,7 +362,9 @@ extension AimCameraManager: ARSessionDelegate {
                 guard let jpeg else { return }
                 if tapDue { self.frameTap?(jpeg) }
                 if clipDue, self.clipBufferEnabled {
-                    self.clipBuffer.append(jpeg)
+                    let overlay = self.clipOverlayProvider?()
+                        ?? SpectatorOverlayState(tags: [], lockedTarget: nil)
+                    self.clipBuffer.append((jpeg, overlay))
                     if self.clipBuffer.count > Self.clipFrameCount {
                         self.clipBuffer.removeFirst(self.clipBuffer.count - Self.clipFrameCount)
                     }
