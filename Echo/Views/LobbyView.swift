@@ -138,7 +138,14 @@ struct LobbyView: View {
                     }
 
                     VStack(spacing: Space.sm) {
-                        sectionLabel("PLAYER LIMIT")
+                        HStack {
+                            // The label fills the row, so the value lands at the
+                            // trailing edge without a spacer between them.
+                            sectionLabel("PLAYER LIMIT")
+                            Text("\(engine.settings.maxPlayers)")
+                                .font(.headline.monospacedDigit())
+                                .foregroundStyle(Color.echoText)
+                        }
                         Slider(
                             value: Binding(
                                 get: { Double(engine.settings.maxPlayers) },
@@ -151,9 +158,8 @@ struct LobbyView: View {
                             step: 1
                         )
                         .tint(Color.echoPrimary)
-                        // The limit itself is the denominator up in the roster
-                        // count, so the slider doesn't print it a second time —
-                        // but VoiceOver has no roster to glance at.
+                        // A thumb position isn't a number, and VoiceOver can't
+                        // read the one beside the label.
                         .accessibilityValue("\(engine.settings.maxPlayers) players")
                     }
 
@@ -319,7 +325,10 @@ struct LobbyView: View {
     /// is per-player, not a host setting.
     private var teamPicker: some View {
         VStack(spacing: Space.sm) {
-            sectionLabel("YOUR TEAM")
+            // "TEAM", not "YOUR TEAM": the roster header is where you find out
+            // which side is yours, and saying it twice makes neither one the
+            // answer. This label just names the control, like ROLE and MODE.
+            sectionLabel("TEAM")
             Picker("Your team", selection: Binding(
                 get: { engine.myTeam ?? .alpha },
                 set: { engine.selectTeam($0) }
