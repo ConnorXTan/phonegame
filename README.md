@@ -72,6 +72,6 @@ Every phone counts the match clock down locally off a wall-clock deadline, but o
 - **Crosshair never locks** — aim like a photo (back of phone toward target), target within range and the FoV cone; `direction` is nil outside the cone by design.
 - **Sessions drop in crowds** — bodies block UWB. Invalidated sessions auto-restart with a fresh token exchange; if a peer stays dark, both players toggle out to the lobby and back.
 - **Nobody appears in the lobby** — all phones need Local Network permission granted and Wi-Fi/Bluetooth on (they don't need to join the same network).
-- **Battery** — UWB + screen-always-on is heavy drain. Chargers between rounds.
+- **Battery** — UWB + screen-always-on is heavy drain. Charge between rounds.
 
 Sounds in `Echo/Sounds/` are synthesized originals, not sampled from any game — swap them for licensed assets if you want a different feel. `SoundManager.play` takes a `rate`, so one asset can cover several cues.
