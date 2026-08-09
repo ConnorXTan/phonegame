@@ -863,6 +863,9 @@ final class GameEngine: NSObject, ObservableObject {
         }
         phase = .lobby
         refreshLobbyAdvertisement()   // back to "open" in the lobby list
+        // Leaving the review deletes the clips: published ones live on the
+        // gallery, unpublished ones are gone for good — nothing is kept.
+        killClips = []
     }
 
     // MARK: - Aim indicator
