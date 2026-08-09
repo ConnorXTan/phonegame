@@ -14,25 +14,27 @@ struct DeathView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: Space.lg) {
-                // Kill-feed skull, template-tinted to danger, over the word set
-                // in real type — the baked "ELIMINATED" banner clipped its glyphs.
+                // Kill-feed skull in its own color — the red silhouette keeps its
+                // white eye/nose holes, which a template tint would fill in flat.
                 Image(art: .killSkull)
-                    .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
                     .frame(width: skullSize, height: skullSize)
-                    .foregroundStyle(Color.echoDanger)
                     .accessibilityHidden(true)
 
-                Text("ELIMINATED")
+                Text(engine.lastKilledBy != nil ? "ELIMINATED BY:" : "ELIMINATED")
                     .font(.appBold(fixedSize: titleSize))
                     .tracking(2)
                     .foregroundStyle(Color.echoDanger)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
 
                 if let killer = engine.lastKilledBy {
-                    Text("tagged by \(killer.displayCallSign)")
-                        .font(.app(.headline))
-                        .foregroundStyle(Color.echoTextSecondary)
+                    Text(killer.displayCallSign)
+                        .font(.appBold(.title))
+                        .foregroundStyle(Color.echoText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                 }
 
                 Text(String(format: "%.1f", max(0, engine.respawnRemaining)))
