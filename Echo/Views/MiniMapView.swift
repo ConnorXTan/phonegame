@@ -41,11 +41,11 @@ struct MiniMapView: View {
                                  (size.width / 2 - 2) / sin(Self.halfAngle))
                 let maxRange = CGFloat(engine.settings.weaponRange)
 
-                // The fan itself is the widget's surface — echoBackground at
+                // The fan itself is the widget's surface — ltnBackground at
                 // Alpha.strong, the scrim weight that keeps everything on it
                 // legible over the camera feed.
                 ctx.fill(wedge(apex: apex, radius: radius),
-                         with: .color(.echoBackground.opacity(Alpha.strong)))
+                         with: .color(.ltnBackground.opacity(Alpha.strong)))
                 drawRangeArcs(ctx: ctx, apex: apex, radius: radius)
                 // Under the player blips: a drop and a person at the same
                 // spot should read as the person.
@@ -74,7 +74,7 @@ struct MiniMapView: View {
 
                 // Self last, so it sits on top of any blip that gets close.
                 ctx.fill(Path(ellipseIn: CGRect(x: apex.x - 4, y: apex.y - 4, width: 8, height: 8)),
-                         with: .color(.echoText))
+                         with: .color(.ltnText))
             }
         }
         .accessibilityHidden(true)   // geometry; the ranging sheet reads the same data as text
@@ -106,16 +106,16 @@ struct MiniMapView: View {
             var arc = Path()
             arc.addArc(center: apex, radius: radius * fraction,
                        startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
-            ctx.stroke(arc, with: .color(.echoSecondary.opacity(Alpha.subtle)), lineWidth: 1)
+            ctx.stroke(arc, with: .color(.ltnSecondary.opacity(Alpha.subtle)), lineWidth: 1)
         }
     }
 
     private func drawBlip(ctx: GraphicsContext, apex: CGPoint, at r: CGFloat, angle: CGFloat,
                           name: String, distance: Float, locked: Bool, isAlly: Bool) {
         let point = CGPoint(x: apex.x + sin(angle) * r, y: apex.y - cos(angle) * r)
-        // Neutral until locked: echoAccent sits only 20° from echoPrimary, so
+        // Neutral until locked: ltnAccent sits only 20° from ltnPrimary, so
         // two greens would be indistinguishable at a glance under pressure.
-        let color: Color = isAlly ? .echoTeamAlly : locked ? .echoPrimary : .echoTextSecondary
+        let color: Color = isAlly ? .ltnTeamAlly : locked ? .ltnPrimary : .ltnTextSecondary
         let dot = Path(ellipseIn: CGRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10))
         if isAlly {
             // Hollow, so allies differ from enemies by shape as well as hue —
@@ -154,17 +154,17 @@ struct MiniMapView: View {
                                     y: apex.y - cos(angle) * scaled)
                 let chip = Path(ellipseIn: CGRect(x: point.x - 7, y: point.y - 7,
                                                   width: 14, height: 14))
-                ctx.fill(chip, with: .color(.echoBackground.opacity(Alpha.heavy)))
+                ctx.fill(chip, with: .color(.ltnBackground.opacity(Alpha.heavy)))
                 let glyph = ctx.resolve(
                     Text("\(Image(systemName: drop.kind.symbol))")
                         .font(.app(fixedSize: 9))
-                        .foregroundStyle(Color.echoPowerup))
+                        .foregroundStyle(Color.ltnPowerup))
                 ctx.draw(glyph, at: point)
             } else {
                 var arc = Path()
                 arc.addArc(center: apex, radius: scaled,
                            startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
-                ctx.stroke(arc, with: .color(.echoPowerup.opacity(Alpha.strong)),
+                ctx.stroke(arc, with: .color(.ltnPowerup.opacity(Alpha.strong)),
                            style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
             }
         }
@@ -177,7 +177,7 @@ struct MiniMapView: View {
         var arc = Path()
         arc.addArc(center: apex, radius: r,
                    startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
-        ctx.stroke(arc, with: .color(.echoTextTertiary),
+        ctx.stroke(arc, with: .color(.ltnTextTertiary),
                    style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
     }
 
@@ -193,7 +193,7 @@ struct MiniMapView: View {
         let chip = CGRect(x: anchored.x - size.width / 2 - 3, y: anchored.y - size.height / 2 - 1,
                           width: size.width + 6, height: size.height + 2)
         ctx.fill(Path(roundedRect: chip, cornerRadius: 3),
-                 with: .color(.echoBackground.opacity(Alpha.heavy)))
+                 with: .color(.ltnBackground.opacity(Alpha.heavy)))
         ctx.draw(resolved, at: anchored)
     }
 }

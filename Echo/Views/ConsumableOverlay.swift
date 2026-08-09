@@ -75,16 +75,16 @@ struct EffectRingBadge: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(Color.echoBackground.opacity(Alpha.strong))
+                .fill(Color.ltnBackground.opacity(Alpha.strong))
             Circle()
-                .stroke(Color.echoText.opacity(Alpha.subtle), lineWidth: ringWidth)
+                .stroke(Color.ltnText.opacity(Alpha.subtle), lineWidth: ringWidth)
             Circle()
                 .trim(from: 0, to: max(0, min(1, fraction)))
-                .stroke(Color.echoPowerup, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
+                .stroke(Color.ltnPowerup, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Image(systemName: kind.symbol)
                 .font(.app(fixedSize: diameter * 0.42))
-                .foregroundStyle(Color.echoText)
+                .foregroundStyle(Color.ltnText)
         }
         .frame(width: diameter, height: diameter)
     }
@@ -107,11 +107,11 @@ private struct ConsumableMarker: View {
 
             Text(String(format: "%.1fm", distance))
                 .font(.appBold(.caption2).monospacedDigit())
-                .foregroundStyle(Color.echoText)
+                .foregroundStyle(Color.ltnText)
                 .padding(.horizontal, Space.xs)
                 .padding(.vertical, Space.xxs)
-                .background(Color.echoBackground.opacity(Alpha.heavy), in: Capsule())
+                .background(Color.ltnBackground.opacity(Alpha.heavy), in: Capsule())
         }
-        .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2, y: 1)
+        .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 2, y: 1)
     }
 }

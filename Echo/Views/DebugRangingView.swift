@@ -30,11 +30,11 @@ struct DebugRangingView: View {
                     Section("Radar") {
                         RadarView()
                             .frame(height: 180)
-                            .listRowBackground(Color.echoBackground)
+                            .listRowBackground(Color.ltnBackground)
                     }
                     if peers.isEmpty {
                         Text("No peers connected")
-                            .foregroundStyle(Color.echoTextSecondary)
+                            .foregroundStyle(Color.ltnTextSecondary)
                     }
                     ForEach(peers) { player in
                         row(for: player)
@@ -57,8 +57,8 @@ struct DebugRangingView: View {
         return HStack(spacing: Space.sm) {
             Circle()
                 .fill(inCone && inRange
-                      ? Color.echoPrimary
-                      : (reading != nil ? Color.echoSecondary : Color.echoInert))
+                      ? Color.ltnPrimary
+                      : (reading != nil ? Color.ltnSecondary : Color.ltnInert))
                 .frame(width: 10, height: 10)
                 .accessibilityLabel(inCone && inRange
                                     ? "In your sights"
@@ -69,7 +69,7 @@ struct DebugRangingView: View {
             Spacer(minLength: Space.sm)
             Text(reading?.distance.map { String(format: "%.2f m", $0) } ?? "—")
                 .font(.app(.subheadline).monospacedDigit())
-                .foregroundStyle(reading == nil ? Color.echoTextSecondary : Color.echoText)
+                .foregroundStyle(reading == nil ? Color.ltnTextSecondary : Color.ltnText)
                 .fixedSize()
         }
         .padding(.vertical, Space.xxs)

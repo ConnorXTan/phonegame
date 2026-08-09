@@ -174,9 +174,9 @@ struct EnemyTag: View {
 
     private var nameColor: Color {
         switch side {
-        case .neutral: return .echoTextSecondary
-        case .ally: return .echoTeamAlly
-        case .enemy: return .echoDanger
+        case .neutral: return .ltnTextSecondary
+        case .ally: return .ltnTeamAlly
+        case .enemy: return .ltnDanger
         }
     }
 
@@ -203,7 +203,7 @@ struct EnemyTag: View {
                 }
             }
         }
-        .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2, y: 1)
+        .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 2, y: 1)
     }
 
     private func fraction(of effect: ActiveEffect) -> Double {

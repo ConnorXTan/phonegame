@@ -40,7 +40,7 @@ struct LobbyView: View {
                 Label(engine.isHost ? "Hosting" : "Joined",
                       systemImage: "antenna.radiowaves.left.and.right")
                     .font(.app(.callout))
-                    .foregroundStyle(Color.echoSecondary)
+                    .foregroundStyle(Color.ltnSecondary)
             }
             .padding(.horizontal)
 
@@ -102,7 +102,7 @@ struct LobbyView: View {
                             sectionLabel("PLAYER LIMIT")
                             Text("\(engine.settings.maxPlayers)")
                                 .font(.app(.headline).monospacedDigit())
-                                .foregroundStyle(Color.echoText)
+                                .foregroundStyle(Color.ltnText)
                         }
                         Slider(
                             value: Binding(
@@ -115,7 +115,7 @@ struct LobbyView: View {
                             in: 2...8,
                             step: 1
                         )
-                        .tint(Color.echoPrimary)
+                        .tint(Color.ltnPrimary)
                         // A thumb position isn't a number, and VoiceOver can't
                         // read the one beside the label.
                         .accessibilityValue("\(engine.settings.maxPlayers) players")
@@ -126,17 +126,17 @@ struct LobbyView: View {
                     } label: {
                         Text(roster.count < 2 ? "Waiting for players…" : "Start Game")
                             .frame(maxWidth: .infinity)
-                            .foregroundStyle(Color.echoOnPrimary)
+                            .foregroundStyle(Color.ltnOnPrimary)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .tint(Color.echoPrimary)
+                    .tint(Color.ltnPrimary)
                     .disabled(teamsLopsided || roster.count < 2)
 
                     if teamsLopsided {
                         Text("Both teams need at least one player.")
                             .font(.app(.caption2))
-                            .foregroundStyle(Color.echoTextSecondary)
+                            .foregroundStyle(Color.ltnTextSecondary)
                     }
                 }
                 .padding(.horizontal)
@@ -144,10 +144,10 @@ struct LobbyView: View {
                 VStack(spacing: Space.sm) {
                     ProgressView()
                     Text("Waiting for the host to start…")
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                     Text("The host sets the match length.")
                         .font(.app(.caption2))
-                        .foregroundStyle(Color.echoTextTertiary)
+                        .foregroundStyle(Color.ltnTextTertiary)
                 }
                 .padding(.bottom, Space.md)
             }
@@ -232,14 +232,14 @@ struct LobbyView: View {
             VStack(spacing: 0) { rows() }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Space.md)
-                .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.md))
+                .background(Color.ltnSurface, in: RoundedRectangle(cornerRadius: Radius.md))
         }
     }
 
     private func placeholderRow(_ text: String) -> some View {
         Text(text)
             .font(.app(.caption))
-            .foregroundStyle(Color.echoTextTertiary)
+            .foregroundStyle(Color.ltnTextTertiary)
             .padding(.vertical, Space.md)
     }
 
@@ -252,7 +252,7 @@ struct LobbyView: View {
                 .controlSize(.small)
             Text("Waiting for players to join…")
                 .font(.app(.body))
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
         }
         .padding(.vertical, Space.md)
     }
@@ -262,7 +262,7 @@ struct LobbyView: View {
     /// players, and it's the only card on the screen that has any.
     private var rowSeparator: some View {
         Rectangle()
-            .fill(Color.echoSecondary.opacity(Alpha.muted))
+            .fill(Color.ltnSecondary.opacity(Alpha.muted))
             .frame(height: 1)
     }
 
@@ -298,7 +298,7 @@ struct LobbyView: View {
             statChip("timer", String(format: "%.2gs", engine.myRole.fireCooldown))
         }
         .font(.app(.caption))
-        .foregroundStyle(Color.echoTextSecondary)
+        .foregroundStyle(Color.ltnTextSecondary)
         .lineLimit(1)
         // The strip wins the row over the label it shares: ROLE is one short
         // word with room to spare, four numbers aren't.
@@ -319,7 +319,7 @@ struct LobbyView: View {
     }
 
     /// Same chip, fronted by a hand-drawn brand glyph. Template-rendered so the
-    /// mark inherits the strip's `echoTextSecondary`, keeping the row monochrome
+    /// mark inherits the strip's `ltnTextSecondary`, keeping the row monochrome
     /// rather than four loose colors.
     private func statChip(art: Art, _ text: String) -> some View {
         HStack(spacing: Space.xxs) {
@@ -341,7 +341,7 @@ struct LobbyView: View {
     private var rosterCount: some View {
         Text("\(roster.count)/\(engine.settings.maxPlayers)")
             .font(.appBold(.title2).monospacedDigit())
-            .foregroundStyle(Color.echoText)
+            .foregroundStyle(Color.ltnText)
             .textCase(nil)
             .accessibilityLabel("\(roster.count) of \(engine.settings.maxPlayers) players")
     }
@@ -352,7 +352,7 @@ struct LobbyView: View {
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
             .font(.app(.headline))
-            .foregroundStyle(Color.echoText)
+            .foregroundStyle(Color.ltnText)
             .textCase(nil)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -369,7 +369,7 @@ struct LobbyView: View {
                 .accessibilityHidden(true)
             Text(text)
                 .font(.app(.headline))
-                .foregroundStyle(Color.echoText)
+                .foregroundStyle(Color.ltnText)
                 .textCase(nil)
             Spacer(minLength: 0)
         }
@@ -385,19 +385,19 @@ struct LobbyView: View {
             Text(player.name.displayCallSign)
                 .font(.app(.body))
                 .foregroundStyle(player.isConnected
-                                 ? Color.echoText
-                                 : Color.echoTextTertiary)
+                                 ? Color.ltnText
+                                 : Color.ltnTextTertiary)
             if player.name == engine.myName {
                 Text("you")
                     .font(.app(.caption2))
                     .padding(.horizontal, Space.sm)
                     .padding(.vertical, Space.xxs)
-                    .background(Color.echoSurface, in: Capsule())
+                    .background(Color.ltnSurface, in: Capsule())
             }
             Spacer()
             Text(player.role.label.uppercased())
                 .font(.app(.caption2))
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
         }
         .padding(.vertical, Space.md)
         .accessibilityElement(children: .ignore)
@@ -414,14 +414,14 @@ struct LobbyView: View {
     private func spectatorRow(_ name: String) -> some View {
         HStack {
             Text(name.displayCallSign)
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
             Spacer()
             Image(art: .spectate)
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
                 .frame(height: spectateGlyph)
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
         }
         .padding(.vertical, Space.md)
         .accessibilityElement(children: .ignore)
@@ -437,16 +437,16 @@ struct LobbyView: View {
         let mine = team == engine.myTeam
         return HStack(spacing: Space.sm) {
             Circle()
-                .fill(Color.echoTeam(team, relativeTo: engine.myTeam))
+                .fill(Color.ltnTeam(team, relativeTo: engine.myTeam))
                 .frame(width: 8, height: 8)
                 .accessibilityHidden(true)
             Text("\(team.displayName.uppercased()) · \(members(of: team).count)")
                 .font(.appBold(.title3).monospacedDigit())
-                .foregroundStyle(Color.echoTeam(team, relativeTo: engine.myTeam))
+                .foregroundStyle(Color.ltnTeam(team, relativeTo: engine.myTeam))
             if mine {
                 Text("YOUR TEAM")
                     .font(.appBold(.caption))
-                    .foregroundStyle(Color.echoTeamAlly)
+                    .foregroundStyle(Color.ltnTeamAlly)
             }
         }
         .textCase(nil)

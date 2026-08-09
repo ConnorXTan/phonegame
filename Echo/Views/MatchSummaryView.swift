@@ -13,7 +13,7 @@ struct MatchSummaryView: View {
 
     var body: some View {
         ZStack {
-            Color.echoBackground.ignoresSafeArea()
+            Color.ltnBackground.ignoresSafeArea()
 
             if let result {
                 ScrollView {
@@ -46,7 +46,7 @@ struct MatchSummaryView: View {
             Text("TIME")
                 .font(.appBold(fixedSize: titleSize))
                 .tracking(6)
-                .foregroundStyle(Color.echoText)
+                .foregroundStyle(Color.ltnText)
 
             headline(result)
                 .font(.appBold(.title3))
@@ -83,8 +83,8 @@ struct MatchSummaryView: View {
     }
 
     private func tint(_ result: MatchResult) -> Color {
-        if result.isDraw { return .echoAccent }
-        return result.didIWin ? .echoSecondary : .echoDanger
+        if result.isDraw { return .ltnAccent }
+        return result.didIWin ? .ltnSecondary : .ltnDanger
     }
 
     // MARK: - Team score
@@ -96,17 +96,17 @@ struct MatchSummaryView: View {
         let mine = result.myTeam ?? .alpha
         let theirs = mine.other
         return HStack(spacing: 0) {
-            stat(mine.displayName.uppercased(), "\(result.kills(for: mine))", .echoTeamAlly)
+            stat(mine.displayName.uppercased(), "\(result.kills(for: mine))", .ltnTeamAlly)
             divider
-            stat(theirs.displayName.uppercased(), "\(result.kills(for: theirs))", .echoDanger)
+            stat(theirs.displayName.uppercased(), "\(result.kills(for: theirs))", .ltnDanger)
         }
         .padding(Space.lg)
-        .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
+        .background(Color.ltnSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
     }
 
     private var divider: some View {
         Rectangle()
-            .fill(Color.echoHairline)
+            .fill(Color.ltnHairline)
             .frame(width: 1, height: 42)
     }
 
@@ -118,7 +118,7 @@ struct MatchSummaryView: View {
             Text(label)
                 .font(.appBold(.caption2))
                 .tracking(1)
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.ltnTextSecondary)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
@@ -132,11 +132,11 @@ struct MatchSummaryView: View {
                 Text("FINAL STANDINGS")
                     .font(.appBold(.caption))
                     .tracking(1.5)
-                    .foregroundStyle(Color.echoTextSecondary)
+                    .foregroundStyle(Color.ltnTextSecondary)
                 Spacer()
                 Text("K / D / RATIO")
                     .font(.app(.caption2))
-                    .foregroundStyle(Color.echoTextTertiary)
+                    .foregroundStyle(Color.ltnTextTertiary)
             }
             .padding(.bottom, Space.md)
 
@@ -145,19 +145,19 @@ struct MatchSummaryView: View {
                 HStack(spacing: Space.md) {
                     Text("\(index + 1)")
                         .font(.appBold(.subheadline).monospacedDigit())
-                        .foregroundStyle(index == 0 ? Color.echoAccent : Color.echoTextSecondary)
+                        .foregroundStyle(index == 0 ? Color.ltnAccent : Color.ltnTextSecondary)
                         .frame(width: 20, alignment: .leading)
 
                     if result.teamPlay {
                         Circle()
-                            .fill(Color.echoTeam(player.team, relativeTo: result.myTeam))
+                            .fill(Color.ltnTeam(player.team, relativeTo: result.myTeam))
                             .frame(width: 8, height: 8)
                             .accessibilityLabel("Team \(player.team?.displayName ?? "unknown")")
                     }
 
                     Text(player.name.displayCallSign)
                         .font(isMe ? .appBold(.body) : .app(.body))
-                        .foregroundStyle(isMe ? Color.echoText : Color.echoTextSecondary)
+                        .foregroundStyle(isMe ? Color.ltnText : Color.ltnTextSecondary)
                         .lineLimit(1)
 
                     // "You" is emphasis, not a new meaning — weight and a
@@ -167,27 +167,27 @@ struct MatchSummaryView: View {
                             .font(.app(.caption2))
                             .padding(.horizontal, Space.sm)
                             .padding(.vertical, Space.xxs)
-                            .background(Color.echoSurface, in: Capsule())
+                            .background(Color.ltnSurface, in: Capsule())
                     }
 
                     Spacer(minLength: Space.sm)
 
                     Text("\(player.kills)")
                         .font(.appBold(.subheadline).monospacedDigit())
-                        .foregroundStyle(Color.echoSecondary)
+                        .foregroundStyle(Color.ltnSecondary)
                         .frame(width: 28, alignment: .trailing)
                     Text("\(player.deaths)")
                         .font(.app(.subheadline).monospacedDigit())
-                        .foregroundStyle(Color.echoDanger.opacity(Alpha.heavy))
+                        .foregroundStyle(Color.ltnDanger.opacity(Alpha.heavy))
                         .frame(width: 28, alignment: .trailing)
                     Text(player.kdString)
                         .font(.app(.caption).monospacedDigit())
-                        .foregroundStyle(Color.echoTextSecondary)
+                        .foregroundStyle(Color.ltnTextSecondary)
                         .frame(width: 44, alignment: .trailing)
                 }
                 .padding(.vertical, Space.md)
                 .padding(.horizontal, Space.md)
-                .background(isMe ? Color.echoSurface : .clear,
+                .background(isMe ? Color.ltnSurface : .clear,
                             in: RoundedRectangle(cornerRadius: Radius.md))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(
@@ -197,7 +197,7 @@ struct MatchSummaryView: View {
             }
         }
         .padding(Space.lg)
-        .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
+        .background(Color.ltnSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
     }
 
     // MARK: - Actions
@@ -209,11 +209,11 @@ struct MatchSummaryView: View {
             } label: {
                 Text(engine.isHost ? "Back to Lobby — run it again" : "Back to Lobby")
                     .frame(maxWidth: .infinity)
-                    .foregroundStyle(Color.echoOnPrimary)
+                    .foregroundStyle(Color.ltnOnPrimary)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .tint(Color.echoPrimary)
+            .tint(Color.ltnPrimary)
 
             Button("Leave Game", role: .destructive) { engine.leave() }
                 .font(.app(.footnote))
@@ -221,7 +221,7 @@ struct MatchSummaryView: View {
         .padding(.horizontal)
         .padding(.bottom, Space.lg)
         .background(
-            LinearGradient(colors: [Color.echoBackground.opacity(0), Color.echoBackground],
+            LinearGradient(colors: [Color.ltnBackground.opacity(0), Color.ltnBackground],
                            startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
         )
