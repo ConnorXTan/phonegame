@@ -4,6 +4,10 @@ import SwiftUI
 struct LTNApp: App {
     @StateObject private var engine = GameEngine()
 
+    init() {
+        LTNAppearance.apply()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
