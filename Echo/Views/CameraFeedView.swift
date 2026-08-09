@@ -9,7 +9,7 @@ struct CameraFeedView: View {
 
     var body: some View {
         ZStack {
-            Color.echoBackground
+            Color.ltnBackground
             if camera.isRunning {
                 ARViewfinder(session: camera.session)
                     .transition(.opacity)
@@ -25,13 +25,13 @@ struct CameraFeedView: View {
         VStack(spacing: Space.md) {
             Image(systemName: "video.slash")
                 .font(.system(size: glyphSize, weight: .thin))
-                .foregroundStyle(Color.echoTextTertiary)
+                .foregroundStyle(Color.ltnTextTertiary)
                 .accessibilityHidden(true)
             if let reason = camera.unavailableReason {
                 Text(reason)
                     .font(.app(.footnote))
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(Color.echoTextSecondary)
+                    .foregroundStyle(Color.ltnTextSecondary)
                     .frame(maxWidth: 280)
             }
             if camera.isBlockedByPermission {
@@ -41,7 +41,7 @@ struct CameraFeedView: View {
                 }
                 .font(.appBold(.footnote))
                 .buttonStyle(.bordered)
-                .tint(Color.echoPrimary)
+                .tint(Color.ltnPrimary)
             }
         }
         .padding(.bottom, 120)   // clear of the radar and fire button

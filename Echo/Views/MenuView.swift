@@ -22,13 +22,24 @@ struct MenuView: View {
         VStack(spacing: Space.xl) {
             Spacer()
 
+            // The logo is a wordmark, so the initials arrive meaning nothing on
+            // a first launch. The expansion sits directly under it as a
+            // subtitle — quiet enough to read past once you know it, present
+            // enough that nobody has to guess what they installed.
             VStack(spacing: Space.sm) {
                 Image(art: .logo)
                     .resizable()
                     .scaledToFit()
                     .frame(width: logoWidth)
-                    .accessibilityLabel("LTN")
+                    .accessibilityHidden(true)
+
+                Text("LASER TAG NOW")
+                    .font(.app(.subheadline))
+                    .tracking(4)
+                    .foregroundStyle(Color.ltnTextSecondary)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("LTN, Laser Tag Now")
 
             if let notice = engine.hostEndedNotice {
                 Label(notice, systemImage: "flag.checkered")
@@ -42,9 +53,9 @@ struct MenuView: View {
             if !isMac, let warning = engine.uwbWarning {
                 Label(warning, systemImage: "exclamationmark.triangle.fill")
                     .font(.app(.footnote))
-                    .foregroundStyle(Color.echoWarning)
+                    .foregroundStyle(Color.ltnWarning)
                     .padding(Space.md)
-                    .background(Color.echoWarning.opacity(Alpha.surface),
+                    .background(Color.ltnWarning.opacity(Alpha.surface),
                                 in: RoundedRectangle(cornerRadius: Radius.md))
                     .padding(.horizontal, Space.xl)
             }
@@ -52,9 +63,9 @@ struct MenuView: View {
             if let notice = engine.lobbyNotice {
                 Label(notice, systemImage: "exclamationmark.triangle.fill")
                     .font(.app(.footnote))
-                    .foregroundStyle(Color.echoWarning)
+                    .foregroundStyle(Color.ltnWarning)
                     .padding(Space.md)
-                    .background(Color.echoWarning.opacity(Alpha.surface),
+                    .background(Color.ltnWarning.opacity(Alpha.surface),
                                 in: RoundedRectangle(cornerRadius: Radius.md))
                     .padding(.horizontal, Space.xl)
             }
@@ -81,11 +92,11 @@ struct MenuView: View {
                                 .frame(width: buttonGlyph, height: buttonGlyph)
                         }
                         .frame(maxWidth: 260)
-                        .foregroundStyle(Color.echoOnPrimary)
+                        .foregroundStyle(Color.ltnOnPrimary)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .tint(Color.echoPrimary)
+                    .tint(Color.ltnPrimary)
 
                     Button {
                         engine.enterBrowser(asSpectator: false)
@@ -114,11 +125,11 @@ struct MenuView: View {
                     } label: {
                         Label("Host a Game", systemImage: "tv")
                             .frame(maxWidth: 260)
-                            .foregroundStyle(Color.echoOnPrimary)
+                            .foregroundStyle(Color.ltnOnPrimary)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .tint(Color.echoPrimary)
+                    .tint(Color.ltnPrimary)
 
                     Button {
                         engine.enterBrowser(asSpectator: true)
@@ -136,7 +147,7 @@ struct MenuView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-                    .tint(Color.echoText)   // neutral — the accent read as a warning here
+                    .tint(Color.ltnText)   // neutral — the accent read as a warning here
 
                     Button {
                         showManageGallery = true
@@ -146,7 +157,7 @@ struct MenuView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
-                    .tint(Color.echoText)
+                    .tint(Color.ltnText)
                     .sheet(isPresented: $showManageGallery) { ManageGalleryView() }
                 }
             }

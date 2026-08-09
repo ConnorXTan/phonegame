@@ -9,7 +9,7 @@ struct DeathView: View {
 
     var body: some View {
         ZStack {
-            Color.echoBackground
+            Color.ltnBackground
                 .opacity(Alpha.opaque)
                 .ignoresSafeArea()
 
@@ -25,26 +25,26 @@ struct DeathView: View {
                 Text(engine.lastKilledBy != nil ? "ELIMINATED BY:" : "ELIMINATED")
                     .font(.appBold(fixedSize: titleSize))
                     .tracking(2)
-                    .foregroundStyle(Color.echoDanger)
+                    .foregroundStyle(Color.ltnDanger)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
 
                 if let killer = engine.lastKilledBy {
                     Text(killer.displayCallSign)
                         .font(.appBold(.title))
-                        .foregroundStyle(Color.echoText)
+                        .foregroundStyle(Color.ltnText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                 }
 
                 Text(String(format: "%.1f", max(0, engine.respawnRemaining)))
                     .font(.appBold(fixedSize: countdownSize))
-                    .foregroundStyle(Color.echoText)
+                    .foregroundStyle(Color.ltnText)
                     .contentTransition(.numericText())
 
                 Text("respawning…")
                     .font(.app(.subheadline))
-                    .foregroundStyle(Color.echoTextTertiary)
+                    .foregroundStyle(Color.ltnTextTertiary)
             }
             .accessibilityElement(children: .combine)
         }
