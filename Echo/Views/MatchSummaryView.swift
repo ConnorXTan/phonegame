@@ -22,9 +22,6 @@ struct MatchSummaryView: View {
                         if result.teamPlay {
                             teamTotals(result)
                         }
-                        if let me = result.me {
-                            personalCard(me, placement: result.myPlacement)
-                        }
                         standings(result)
                     }
                     .padding(.horizontal)
@@ -55,10 +52,6 @@ struct MatchSummaryView: View {
                 .font(.appBold(.title3))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(tint(result))
-
-            Label(result.duration.durationLabel + " match", systemImage: "timer")
-                .font(.app(.caption))
-                .foregroundStyle(Color.echoTextSecondary)
         }
     }
 
@@ -111,35 +104,6 @@ struct MatchSummaryView: View {
         .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    // MARK: - Your line
-
-    private func personalCard(_ me: Player, placement: Int?) -> some View {
-        VStack(spacing: Space.md) {
-            HStack {
-                Text("YOUR MATCH")
-                    .font(.appBold(.caption))
-                    .tracking(1.5)
-                    .foregroundStyle(Color.echoTextSecondary)
-                Spacer()
-                if let placement {
-                    Text(placementLabel(placement))
-                        .font(.appBold(.caption))
-                        .foregroundStyle(placement == 1 ? Color.echoAccent : Color.echoTextSecondary)
-                }
-            }
-
-            HStack(spacing: 0) {
-                stat("KILLS", "\(me.kills)", .echoSecondary)
-                divider
-                stat("DEATHS", "\(me.deaths)", .echoDanger)
-                divider
-                stat("K/D", me.kdString, .echoText)
-            }
-        }
-        .padding(Space.lg)
-        .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
-    }
-
     private var divider: some View {
         Rectangle()
             .fill(Color.echoHairline)
@@ -158,15 +122,6 @@ struct MatchSummaryView: View {
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
-    }
-
-    private func placementLabel(_ place: Int) -> String {
-        switch place {
-        case 1: return "1st place"
-        case 2: return "2nd place"
-        case 3: return "3rd place"
-        default: return "\(place)th place"
-        }
     }
 
     // MARK: - Standings

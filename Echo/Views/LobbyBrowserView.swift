@@ -16,10 +16,6 @@ struct LobbyBrowserView: View {
                 HStack {
                     Button("Back", role: .cancel) { engine.leave() }
                     Spacer()
-                    Label(engine.myName.displayCallSign,
-                          systemImage: engine.isSpectator ? "tv" : "person.fill")
-                        .font(.app(.callout))
-                        .foregroundStyle(Color.echoTextSecondary)
                 }
                 .padding(.horizontal)
 

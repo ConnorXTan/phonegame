@@ -6,6 +6,10 @@ struct LobbyView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 32
     /// The spectate eye, sized to sit where a role label would.
     @ScaledMetric(relativeTo: .caption) private var spectateGlyph: CGFloat = 14
+    /// Brand glyph in a role-stat chip, matched to the chip's caption text.
+    @ScaledMetric(relativeTo: .caption) private var chipIcon: CGFloat = 13
+    /// Brand glyph beside a settings section heading.
+    @ScaledMetric(relativeTo: .headline) private var sectionIcon: CGFloat = 18
 
     private var roster: [Player] {
         engine.players.values.sorted { $0.name < $1.name }
@@ -76,7 +80,7 @@ struct LobbyView: View {
                     }
 
                     VStack(spacing: Space.sm) {
-                        sectionLabel("LENGTH")
+                        sectionLabel(art: .lobbyLength, "LENGTH")
                         Picker("Match length", selection: Binding(
                             get: { engine.settings.matchDuration },
                             set: {
@@ -288,9 +292,9 @@ struct LobbyView: View {
 
     private var roleStats: some View {
         HStack(spacing: Space.md) {
-            statChip("heart.fill", "\(engine.myRole.maxHP) hp")
-            statChip("bolt.fill", "\(engine.myRole.damage) dmg")
-            statChip("arrow.counterclockwise", "\(engine.myRole.magazineSize) rds")
+            statChip(art: .lobbyHearts, "\(engine.myRole.maxHP) hearts")
+            statChip(art: .lobbyDamage, "\(engine.myRole.damage) dmg")
+            statChip(art: .lobbyAmmo, "\(engine.myRole.magazineSize) rds")
             statChip("timer", String(format: "%.2gs", engine.myRole.fireCooldown))
         }
         .font(.app(.caption))
@@ -307,6 +311,23 @@ struct LobbyView: View {
     private func statChip(_ icon: String, _ text: String) -> some View {
         HStack(spacing: Space.xxs) {
             Image(systemName: icon)
+                .accessibilityHidden(true)
+            Text(text)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Same chip, fronted by a hand-drawn brand glyph. Template-rendered so the
+    /// mark inherits the strip's `echoTextSecondary`, keeping the row monochrome
+    /// rather than four loose colors.
+    private func statChip(art: Art, _ text: String) -> some View {
+        HStack(spacing: Space.xxs) {
+            Image(art: art)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: chipIcon, height: chipIcon)
                 .accessibilityHidden(true)
             Text(text)
                 .monospacedDigit()
@@ -334,6 +355,25 @@ struct LobbyView: View {
             .foregroundStyle(Color.echoText)
             .textCase(nil)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Section label fronted by a brand glyph, template-tinted to the label
+    /// color so it reads as one heading rather than a colored sticker.
+    private func sectionLabel(art: Art, _ text: String) -> some View {
+        HStack(spacing: Space.sm) {
+            Image(art: art)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: sectionIcon, height: sectionIcon)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.app(.headline))
+                .foregroundStyle(Color.echoText)
+                .textCase(nil)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Name and role, nothing else. Everyone in a lobby is connected and on a

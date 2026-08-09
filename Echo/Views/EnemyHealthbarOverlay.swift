@@ -26,7 +26,7 @@ struct EnemyHealthbarOverlay: View {
         GeometryReader { geo in
             TimelineView(.animation) { context in
                 ForEach(visibleTags(viewport: geo.size, at: context.date)) { tag in
-                    EnemyTag(name: tag.name, hpFraction: tag.hpFraction, side: tag.side)
+                    EnemyTag(name: tag.name, hpFraction: tag.hpFraction, hearts: tag.hearts, side: tag.side)
                         .position(x: tag.point.x, y: tag.point.y - 48)
                 }
             }
@@ -43,6 +43,7 @@ struct EnemyHealthbarOverlay: View {
         let name: String     // display call sign
         let point: CGPoint
         let hpFraction: CGFloat
+        let hearts: Int
         let side: EnemyTag.Side
     }
 
@@ -70,6 +71,7 @@ struct EnemyHealthbarOverlay: View {
                 name: player.name.displayCallSign,
                 point: point,
                 hpFraction: CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP)),
+                hearts: player.role.maxHP,
                 side: side))
         }
         return tags
@@ -146,6 +148,7 @@ struct EnemyTag: View {
 
     let name: String
     let hpFraction: CGFloat
+    var hearts: Int = 5
     var side: Side = .neutral
 
     /// Fixed geometry, not spacing: the gauge is read at a distance over a
@@ -173,7 +176,7 @@ struct EnemyTag: View {
                     .lineLimit(1)
             }
             .foregroundStyle(nameColor)
-            HeartBar(fraction: hpFraction, size: Self.heartSize)
+            HeartBar(fraction: hpFraction, total: hearts, size: Self.heartSize)
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2, y: 1)
     }
