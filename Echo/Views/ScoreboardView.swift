@@ -9,11 +9,11 @@ struct ScoreboardView: View {
     /// Column widths, shared by the header and every row. With the labels only
     /// at the top, the columns have to line up exactly or the header stops
     /// naming anything.
-    @ScaledMetric(relativeTo: .subheadline) private var rankWidth: CGFloat = 34
+    /// Wide enough for the word RANK on one line, which is what sets the name
+    /// column's left edge.
+    @ScaledMetric(relativeTo: .subheadline) private var rankWidth: CGFloat = 46
     @ScaledMetric(relativeTo: .subheadline) private var kdWidth: CGFloat = 58
     @ScaledMetric(relativeTo: .subheadline) private var hpWidth: CGFloat = 42
-    /// Fixed-geometry status heart — a gauge glyph, not prose.
-    @ScaledMetric(relativeTo: .subheadline) private var heartSize: CGFloat = 15
 
     private var ranked: [Player] {
         engine.players.values.sorted { a, b in
@@ -68,9 +68,6 @@ struct ScoreboardView: View {
         HStack(spacing: Space.md) {
             Text("RANK")
                 .frame(width: rankWidth, alignment: .leading)
-            // Stands in for the status heart below, so NAME sits over the names.
-            Color.clear
-                .frame(width: heartSize, height: 1)
             Text("NAME")
             Spacer(minLength: Space.sm)
             Text("K | D")
@@ -80,6 +77,7 @@ struct ScoreboardView: View {
         }
         .font(.caption2.bold())
         .tracking(1)
+        .lineLimit(1)   // a wrapped column label stops naming its column
         .foregroundStyle(Color.echoTextTertiary)
         .padding(.horizontal, Space.sm)   // matches the rows, so columns line up
         .padding(.bottom, Space.sm)
@@ -128,8 +126,6 @@ struct ScoreboardView: View {
                 .foregroundStyle(rank == 1 ? Color.echoAccent : Color.echoTextSecondary)
                 .frame(width: rankWidth, alignment: .leading)
 
-            statusHeart(for: player)
-
             Text(player.name.displayCallSign)
                 .font(isMe ? .headline.bold() : .headline)
                 .foregroundStyle(player.isConnected
@@ -175,30 +171,9 @@ struct ScoreboardView: View {
         .font(.subheadline.monospacedDigit())
     }
 
-    /// In play or down, in the same heart art the HUD gauge uses: a whole heart
-    /// for alive, the broken one for eliminated. Shape carries the read, so it
-    /// survives both color-deficient vision and a glance.
-    @ViewBuilder
-    private func statusHeart(for player: Player) -> some View {
-        Group {
-            if player.isConnected && player.isAlive {
-                Image(art: .heartFull)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Image(art: .heartEmpty)
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundStyle(player.isConnected
-                                     ? Color.echoDanger
-                                     : Color.echoInert)
-            }
-        }
-        .frame(width: heartSize, height: heartSize)
-        .accessibilityHidden(true)   // the row's own label speaks the status
-    }
-
+    /// Spoken only. There's no status glyph in the row — the HP column already
+    /// shows who's down — but VoiceOver has no column of numbers to scan, so it
+    /// still gets the word.
     private func statusLabel(for player: Player) -> String {
         guard player.isConnected else { return "Disconnected" }
         return player.isAlive ? "Alive" : "Down"
