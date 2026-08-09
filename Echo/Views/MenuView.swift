@@ -4,25 +4,42 @@ struct MenuView: View {
     @EnvironmentObject private var engine: GameEngine
 
     @ScaledMetric(relativeTo: .largeTitle) private var logoWidth: CGFloat = 220
-    @ScaledMetric(relativeTo: .subheadline) private var subtitleKerning: CGFloat = 4
+    /// Tied to `.largeTitle` — the same metric as `logoWidth` — rather than to
+    /// a text style of its own. The words are positioned as fractions of the
+    /// logo's width, so if the two scaled at different rates a large Dynamic
+    /// Type setting would grow the words faster than the stops they sit between
+    /// and run LASER into TAG. Sharing the metric fixes the ratio at every size.
+    @ScaledMetric(relativeTo: .largeTitle) private var subtitleSize: CGFloat = 19
 
-    /// Two separate reasons the subtitle sits left of the wordmark, corrected
-    /// together.
+    /// Where a word hangs off its stop.
+    private enum WordAnchor { case centered, leading }
+
+    /// Each word of the expansion sits under the letter it came from. The stops
+    /// come off the logo art by connected component, not by eye: on its 326pt
+    /// canvas the L spans x 27–127, the T 102–202 (they overlap — the art is
+    /// hand-drawn and tightly kerned, so only 2D components separate them), and
+    /// the N 213–319. Stored as fractions so they hold at any logo width.
     ///
-    /// One: the logo art is not symmetric. The target glyph hangs off the left
-    /// of the L, so the green "LTN" letterforms span x 27–319 of a 326pt canvas
-    /// and their center is 10pt right of the image's. Centering the subtitle on
-    /// the *frame* parks it left of the letters the eye actually pairs it with,
-    /// so give back that same 3.1% of the logo's width.
+    /// TAG and NOW start at their letters' vertical stems; only LASER hangs
+    /// from a center, since the L's stem *is* its left edge.
     ///
-    /// Two: letter spacing lands after the final character as well as between,
-    /// so the drawn glyphs carry a trailing gap that centering counts as ink.
-    /// That costs half a gap to the left. (`.kerning` is documented as spacing
-    /// *between* characters and was expected to avoid this; measuring the
-    /// render showed it does not, hence the explicit correction.)
-    private var wordmarkCenterOffset: CGFloat {
-        logoWidth * (10.0 / 326.0) + subtitleKerning / 2
-    }
+    /// The T's stem is not where the letter's bounding box suggests. Profiled
+    /// by row band, the crossbar spans the full x 102–202 but the stem below it
+    /// only x 138–172 — and its center (155) is 3pt right of the crossbar's
+    /// (152), because the mark is hand-drawn. Anchoring TAG to the box center
+    /// therefore started it 10px left of the stem it was supposed to sit under.
+    ///
+    /// Anchoring to stems also evens the row out: gaps go from 13/30pt to
+    /// 17/26pt, so no word reads as drifting away from the other two.
+    private static let letterStops: [(word: String, stop: CGFloat, anchor: WordAnchor)] = [
+        ("LASER", 77.0 / 326.0, .centered),
+        ("TAG", 138.0 / 326.0, .leading),
+        ("NOW", 213.0 / 326.0, .leading),
+    ]
+
+    /// Enough room for the tallest glyph plus its descender-free breathing
+    /// space; the row is positioned, so it needs an explicit height.
+    private var subtitleRowHeight: CGFloat { subtitleSize * 1.4 }
     @ScaledMetric(relativeTo: .body) private var spectateGlyph: CGFloat = 18
     /// Brand glyph on the primary menu buttons (Host / Find).
     @ScaledMetric(relativeTo: .body) private var buttonGlyph: CGFloat = 20
@@ -36,6 +53,35 @@ struct MenuView: View {
     /// A Mac can't play (no UWB — it could neither aim nor be hit), so it only
     /// gets the spectator/game-master role.
     private var isMac: Bool { ProcessInfo.processInfo.isiOSAppOnMac }
+
+    /// The expansion, laid out as three independently placed words rather than
+    /// one centered string — each one parked under its own initial. Positioning
+    /// in the logo's own coordinate space is what makes the alignment exact:
+    /// there is no string metric that would land the words under the letters by
+    /// accident.
+    private var subtitleRow: some View {
+        // ZStack(alignment: .leading) pins every word's leading guide to the
+        // same x and centers them vertically. Overriding that guide per word is
+        // what lets one word hang from its center and another from its left
+        // edge: the returned value is the offset *into* the view that gets
+        // pinned, so -x puts the left edge at x, and width/2 - x centers it
+        // there. Color.clear forces the stack to the logo's full width, which
+        // the stops are fractions of.
+        ZStack(alignment: .leading) {
+            Color.clear
+            ForEach(Self.letterStops, id: \.word) { stop in
+                let x = logoWidth * stop.stop
+                Text(stop.word)
+                    .font(.app(fixedSize: subtitleSize))
+                    .foregroundStyle(Color.ltnTextSecondary)
+                    .fixedSize()
+                    .alignmentGuide(.leading) { d in
+                        stop.anchor == .centered ? d.width / 2 - x : -x
+                    }
+            }
+        }
+        .frame(width: logoWidth, height: subtitleRowHeight)
+    }
 
     var body: some View {
         VStack(spacing: Space.xl) {
@@ -52,15 +98,7 @@ struct MenuView: View {
                     .frame(width: logoWidth)
                     .accessibilityHidden(true)
 
-                Text("LASER TAG NOW")
-                    .font(.app(.subheadline))
-                    // kerning, not tracking: tracking adds its gap after every
-                    // character *including the last*, so a centered string ends
-                    // up sitting half a gap left of where it looks like it
-                    // should. kerning only goes between characters.
-                    .kerning(subtitleKerning)
-                    .foregroundStyle(Color.ltnTextSecondary)
-                    .offset(x: wordmarkCenterOffset)
+                subtitleRow
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("LTN, Laser Tag Now")
