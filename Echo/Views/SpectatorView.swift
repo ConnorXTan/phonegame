@@ -342,72 +342,84 @@ struct SpectatorView: View {
         }
     }
 
+    /// In the lobby the rail is a roster, not a channel picker — there's no
+    /// camera to watch until the match starts, so cards only become watch
+    /// buttons in play. Spectators wait it out like players do on the phone.
+    @ViewBuilder
     private func playerCard(_ player: Player, rank: Int?) -> some View {
         let watching = engine.watchingPlayer == player.name
-        return Button {
-            engine.watch(watching ? nil : player.name)
-        } label: {
-            VStack(alignment: .leading, spacing: Space.sm) {
-                HStack(spacing: Space.sm) {
-                    if let rank {
-                        Text("\(rank)")
-                            .font(.app(.caption).monospacedDigit().bold())
-                            .foregroundStyle(rank == 1 ? Color.ltnAccent : Color.ltnTextTertiary)
-                            .frame(width: 16)
-                    }
-                    Circle()
-                        .fill(statusColor(for: player))
-                        .frame(width: 9, height: 9)
-                        .accessibilityLabel(statusLabel(for: player))
-                    Text(player.name.displayCallSign)
-                        .font(.app(.headline))
-                        .lineLimit(1)
-                    Label(player.role.label.uppercased(), systemImage: player.role.symbol)
-                        .font(.app(.caption2))
-                        .foregroundStyle(Color.ltnTextTertiary)
-                    if engine.settings.teamPlay, let team = player.team {
-                        Text(team.displayName.uppercased())
-                            .font(.appBold(.caption2))
-                            .tracking(1)
-                            .foregroundStyle(Color.ltnTeamAbsolute(team))
-                    }
-                    Spacer()
-                    if watching {
-                        Label("LIVE", systemImage: "record.circle.fill")
-                            .font(.appBold(.caption2))
-                            .foregroundStyle(Color.ltnPrimary)
-                    }
-                }
-                GeometryReader { geo in
-                    let frac = CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.ltnText.opacity(Alpha.subtle))
-                        Capsule()
-                            .fill(Color.ltnHealth(frac))
-                            .frame(width: geo.size.width * max(0, frac))
-                    }
-                }
-                .frame(height: 6)
-                .accessibilityHidden(true)   // the HP figure below carries this
-                HStack {
-                    Text("\(player.hp) HP")
-                    Spacer()
-                    Text("\(player.kills) K · \(player.deaths) D")
-                }
-                .font(.app(.caption2).monospacedDigit())
-                .foregroundStyle(Color.ltnTextSecondary)
+        if engine.phase == .lobby {
+            playerCardBody(player, rank: rank, watching: watching)
+        } else {
+            Button {
+                engine.watch(watching ? nil : player.name)
+            } label: {
+                playerCardBody(player, rank: rank, watching: watching)
             }
-            .padding(Space.md)
-            .background(watching ? Color.ltnPrimary.opacity(Alpha.surface) : Color.ltnSurface,
-                        in: RoundedRectangle(cornerRadius: Radius.md))
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md)
-                    .stroke(watching ? Color.ltnPrimary : .clear, lineWidth: 1.5)
-            )
+            .buttonStyle(.plain)
+            .hoverEffect(.highlight)
+            .accessibilityHint(watching ? "Stops watching this player" : "Watches this player's camera")
         }
-        .buttonStyle(.plain)
-        .hoverEffect(.highlight)
-        .accessibilityHint(watching ? "Stops watching this player" : "Watches this player's camera")
+    }
+
+    private func playerCardBody(_ player: Player, rank: Int?, watching: Bool) -> some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack(spacing: Space.sm) {
+                if let rank {
+                    Text("\(rank)")
+                        .font(.app(.caption).monospacedDigit().bold())
+                        .foregroundStyle(rank == 1 ? Color.ltnAccent : Color.ltnTextTertiary)
+                        .frame(width: 16)
+                }
+                Circle()
+                    .fill(statusColor(for: player))
+                    .frame(width: 9, height: 9)
+                    .accessibilityLabel(statusLabel(for: player))
+                Text(player.name.displayCallSign)
+                    .font(.app(.headline))
+                    .lineLimit(1)
+                Label(player.role.label.uppercased(), systemImage: player.role.symbol)
+                    .font(.app(.caption2))
+                    .foregroundStyle(Color.ltnTextTertiary)
+                if engine.settings.teamPlay, let team = player.team {
+                    Text(team.displayName.uppercased())
+                        .font(.appBold(.caption2))
+                        .tracking(1)
+                        .foregroundStyle(Color.ltnTeamAbsolute(team))
+                }
+                Spacer()
+                if watching {
+                    Label("LIVE", systemImage: "record.circle.fill")
+                        .font(.appBold(.caption2))
+                        .foregroundStyle(Color.ltnPrimary)
+                }
+            }
+            GeometryReader { geo in
+                let frac = CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP))
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.ltnText.opacity(Alpha.subtle))
+                    Capsule()
+                        .fill(Color.ltnHealth(frac))
+                        .frame(width: geo.size.width * max(0, frac))
+                }
+            }
+            .frame(height: 6)
+            .accessibilityHidden(true)   // the HP figure below carries this
+            HStack {
+                Text("\(player.hp) HP")
+                Spacer()
+                Text("\(player.kills) K · \(player.deaths) D")
+            }
+            .font(.app(.caption2).monospacedDigit())
+            .foregroundStyle(Color.ltnTextSecondary)
+        }
+        .padding(Space.md)
+        .background(watching ? Color.ltnPrimary.opacity(Alpha.surface) : Color.ltnSurface,
+                    in: RoundedRectangle(cornerRadius: Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md)
+                .stroke(watching ? Color.ltnPrimary : .clear, lineWidth: 1.5)
+        )
     }
 
     private func statusColor(for player: Player) -> Color {
