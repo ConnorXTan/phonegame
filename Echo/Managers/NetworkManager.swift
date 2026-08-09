@@ -684,12 +684,28 @@ final class NetworkManager: ObservableObject {
                 link.connection.cancel()   // garbage or hostile framing: drop the link
                 return
             }
-            link.connection.receive(minimumIncompleteLength: Int(length), maximumLength: Int(length)) { [weak self, weak link] data, _, _, error in
-                guard let self, let link, error == nil, let data, data.count == Int(length) else {
-                    link?.connection.cancel()
-                    return
-                }
-                self.handleFrame(data, on: link)
+            self.receiveBody(on: link, expecting: Int(length), collected: Data())
+        }
+    }
+
+    /// Frame bodies stream in slices. Network.framework only buffers a couple
+    /// of MB per connection, so asking for a whole multi-megabyte kill clip in
+    /// one receive never completes — the call sits waiting for a buffer the
+    /// framework refuses to fill. 1 MB at a time drains bytes as they land.
+    private func receiveBody(on link: PeerLink, expecting: Int, collected: Data) {
+        let chunk = min(expecting - collected.count, 1 << 20)
+        link.connection.receive(minimumIncompleteLength: chunk, maximumLength: chunk) { [weak self, weak link] data, _, _, error in
+            // A dead link mid-body can't recover: framing is lost with it.
+            guard let self, let link, error == nil, let data, !data.isEmpty else {
+                link?.connection.cancel()
+                return
+            }
+            var collected = collected
+            collected.append(data)
+            if collected.count < expecting {
+                self.receiveBody(on: link, expecting: expecting, collected: collected)
+            } else {
+                self.handleFrame(collected, on: link)
                 self.receiveFrame(on: link)
             }
         }

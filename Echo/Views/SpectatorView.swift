@@ -173,19 +173,21 @@ struct SpectatorView: View {
     private var setupPanel: some View {
         ScrollView {
             VStack(spacing: Space.xl) {
+                // Same vocabulary as the phone's lobby: a big white title,
+                // white headline section labels, controls straight on the
+                // background — no elevated panel, no icon-fronted captions.
                 VStack(spacing: Space.xs) {
                     Text("MATCH SETUP")
-                        .font(.appBold(.caption))
+                        .font(.appBold(.title2))
                         .tracking(3)
-                        .foregroundStyle(Color.ltnTextSecondary)
                     Text("Players join from their phones — the roster fills itself.")
                         .font(.app(.caption2))
                         .foregroundStyle(Color.ltnTextTertiary)
                 }
 
-                VStack(spacing: Space.lg) {
-                    settingRow(label: "Mode — \(engine.settings.teamPlay ? "two teams" : "free-for-all")",
-                               icon: "flag.2.crossed") {
+                VStack(spacing: Space.xl) {
+                    VStack(spacing: Space.sm) {
+                        sectionLabel("MODE")
                         Picker("Mode", selection: Binding(
                             get: { engine.settings.teamPlay },
                             set: { engine.setTeamPlay($0) }
@@ -196,7 +198,8 @@ struct SpectatorView: View {
                         .pickerStyle(.segmented)
                     }
 
-                    settingRow(label: "Match length", icon: "timer") {
+                    VStack(spacing: Space.sm) {
+                        sectionLabel("LENGTH")
                         Picker("Match length", selection: Binding(
                             get: { engine.settings.matchDuration },
                             set: {
@@ -211,7 +214,13 @@ struct SpectatorView: View {
                         .pickerStyle(.segmented)
                     }
 
-                    settingRow(label: "Player limit — \(engine.settings.maxPlayers)", icon: "person.3") {
+                    VStack(spacing: Space.sm) {
+                        HStack {
+                            sectionLabel("PLAYER LIMIT")
+                            Text("\(engine.settings.maxPlayers)")
+                                .font(.app(.headline).monospacedDigit())
+                                .foregroundStyle(Color.ltnText)
+                        }
                         Slider(
                             value: Binding(
                                 get: { Double(engine.settings.maxPlayers) },
@@ -224,18 +233,13 @@ struct SpectatorView: View {
                             step: 1
                         )
                         .tint(Color.ltnPrimary)
+                        .accessibilityValue("\(engine.settings.maxPlayers) players")
                     }
 
-                    Divider().overlay(Color.ltnHairline)
-
-                    HStack(spacing: Space.xl) {
-                        statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
-                    }
-                    .font(.app(.caption))
-                    .foregroundStyle(Color.ltnTextSecondary)
+                    statChip("angle", String(format: "%.0f° aim cone", engine.settings.aimConeDegrees))
+                        .font(.app(.caption))
+                        .foregroundStyle(Color.ltnTextSecondary)
                 }
-                .padding(Space.xl)
-                .background(Color.ltnSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
                 .frame(maxWidth: 560)
 
                 Button {
@@ -300,13 +304,14 @@ struct SpectatorView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func settingRow(label: String, icon: String, @ViewBuilder control: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            Label(label, systemImage: icon)
-                .font(.appBold(.caption))
-                .foregroundStyle(Color.ltnTextSecondary)
-            control()
-        }
+    /// The phone lobby's section header, verbatim: a plain white headline on
+    /// the screen's own background — how every settings block is named there.
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.app(.headline))
+            .foregroundStyle(Color.ltnText)
+            .textCase(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func statChip(_ icon: String, _ text: String) -> some View {
@@ -318,10 +323,11 @@ struct SpectatorView: View {
     private var playerRail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.md) {
+                // Same weight the phone lobby gives its roster headers: a
+                // white headline, not a dimmed micro-caption.
                 Text(engine.phase == .lobby ? "ROSTER" : "STANDINGS")
-                    .font(.appBold(.caption2))
-                    .tracking(2)
-                    .foregroundStyle(Color.ltnTextTertiary)
+                    .font(.app(.headline))
+                    .foregroundStyle(Color.ltnText)
                     .padding(.horizontal, Space.xs)
 
                 if roster.isEmpty {
