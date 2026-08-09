@@ -11,26 +11,31 @@ import SwiftUI
 /// is for geometry whose point size is already resolved (e.g. `@ScaledMetric`),
 /// so it isn't scaled twice.
 extension Font {
+    /// The brand face runs optically small, and on the Mac's big screen at
+    /// desk distance it read smaller still — so the laptop gets a global
+    /// bump. Phones keep the 1:1 ramp.
+    private static let appScale: CGFloat = ProcessInfo.processInfo.isiOSAppOnMac ? 1.25 : 1.0
+
     /// The brand face at a semantic text style, scaling with Dynamic Type.
     static func app(_ style: Font.TextStyle) -> Font {
-        .custom(appFontName, size: style.defaultSize, relativeTo: style)
+        .custom(appFontName, size: style.defaultSize * appScale, relativeTo: style)
     }
 
     /// The brand face at an already-resolved point size (no second scaling pass).
     static func app(fixedSize: CGFloat) -> Font {
-        .custom(appFontName, fixedSize: fixedSize)
+        .custom(appFontName, fixedSize: fixedSize * appScale)
     }
 
     /// The bold cut of the brand face. A genuine heavier weight (thickened
     /// outlines shipped as `fontbold.ttf`), not the synthetic bold SwiftUI
     /// applies when `.bold()` is chained on a single-weight face.
     static func appBold(_ style: Font.TextStyle) -> Font {
-        .custom(appBoldFontName, size: style.defaultSize, relativeTo: style)
+        .custom(appBoldFontName, size: style.defaultSize * appScale, relativeTo: style)
     }
 
     /// Bold cut at an already-resolved point size.
     static func appBold(fixedSize: CGFloat) -> Font {
-        .custom(appBoldFontName, fixedSize: fixedSize)
+        .custom(appBoldFontName, fixedSize: fixedSize * appScale)
     }
 
     private static let appFontName = "Myfont-Regular"
