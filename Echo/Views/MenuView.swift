@@ -55,7 +55,7 @@ struct MenuView: View {
                     .padding(.horizontal, Space.xl)
             }
 
-            TextField(isMac ? "Spectator name (optional)" : "Your call sign", text: $engine.playerName)
+            TextField(isMac ? "Spectator name (optional)" : "Username", text: $engine.playerName)
                 .textFieldStyle(.roundedBorder)
                 .multilineTextAlignment(.center)
                 .autocorrectionDisabled()
@@ -118,12 +118,6 @@ struct MenuView: View {
                     .controlSize(.large)
                     .tint(Color.echoText)   // neutral — the accent read as a warning here
                 }
-            }
-
-            if !isMac {
-                Text("Pick a short call sign — it's how other players see you.")
-                    .font(.caption2)
-                    .foregroundStyle(Color.echoTextSecondary)
             }
 
             Spacer()
