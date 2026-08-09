@@ -37,6 +37,10 @@ struct RootView: View {
                 }
             }
         }
+        // Brand face as the app-wide default, so text that doesn't set its own
+        // font (buttons, text fields, alerts) still speaks in Echo's voice.
+        // Explicit `.font(.app(...))` sites override this with the right style.
+        .font(.app(.body))
         .animation(.easeInOut(duration: 0.25), value: engine.phase)
     }
 }

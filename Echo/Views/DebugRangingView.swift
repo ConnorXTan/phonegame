@@ -64,11 +64,11 @@ struct DebugRangingView: View {
                                     ? "In your sights"
                                     : (reading != nil ? "Ranging" : "No signal"))
             Text(player.name.displayCallSign)
-                .font(.headline)
+                .font(.app(.headline))
                 .lineLimit(1)
             Spacer(minLength: Space.sm)
             Text(reading?.distance.map { String(format: "%.2f m", $0) } ?? "—")
-                .font(.subheadline.monospacedDigit())
+                .font(.app(.subheadline).monospacedDigit())
                 .foregroundStyle(reading == nil ? Color.echoTextSecondary : Color.echoText)
                 .fixedSize()
         }

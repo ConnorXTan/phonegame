@@ -38,7 +38,7 @@ struct RadarView: View {
                 // Peers we can range but not aim at (out of the UWB FoV cone).
                 for (i, item) in blindList.enumerated() {
                     let text = Text("\(item.0) · \(String(format: "%.1f m", item.1))")
-                        .font(.caption2)
+                        .font(.app(.caption2))
                         .foregroundStyle(Color.echoTextTertiary)
                     ctx.draw(text, at: CGPoint(x: 8, y: 10 + CGFloat(i) * 14), anchor: .leading)
                 }
@@ -95,7 +95,7 @@ struct RadarView: View {
         ctx.fill(Path(ellipseIn: CGRect(x: point.x - 6, y: point.y - 6, width: 12, height: 12)),
                  with: .color(color))
         let label = Text("\(name) \(String(format: "%.1f", distance))m")
-            .font(.caption2.bold())
+            .font(.appBold(.caption2))
             .foregroundStyle(color)
         ctx.draw(label, at: CGPoint(x: point.x, y: point.y - 14))
     }

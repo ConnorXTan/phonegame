@@ -21,17 +21,17 @@ struct DeathView: View {
 
                 if let killer = engine.lastKilledBy {
                     Text("tagged by \(killer.displayCallSign)")
-                        .font(.headline)
+                        .font(.app(.headline))
                         .foregroundStyle(Color.echoTextSecondary)
                 }
 
                 Text(String(format: "%.1f", max(0, engine.respawnRemaining)))
-                    .font(.system(size: countdownSize, weight: .bold, design: .monospaced))
+                    .font(.appBold(fixedSize: countdownSize))
                     .foregroundStyle(Color.echoText)
                     .contentTransition(.numericText())
 
                 Text("respawning…")
-                    .font(.subheadline)
+                    .font(.app(.subheadline))
                     .foregroundStyle(Color.echoTextTertiary)
             }
             .accessibilityElement(children: .combine)
