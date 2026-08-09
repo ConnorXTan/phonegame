@@ -454,9 +454,11 @@ private struct HitMarkerView: View {
     @State private var opacity: Double = 0
     @State private var scale: CGFloat = 1
 
-    // Sized to sit inside the locked reticle ring (74pt); a kill reads bigger
-    // as well as danger-red, so the two never rely on the art's hue alone.
-    private var markerSize: CGFloat { marker.isKill ? 64 : 52 }
+    // Dot-scale: the marker pops right at the boresight dot (8pt) rather than
+    // filling the reticle ring, so a hit never curtains what you're shooting at.
+    // A kill still reads bigger as well as danger-red, so the two never rely on
+    // the art's hue alone.
+    private var markerSize: CGFloat { marker.isKill ? 16 : 12 }
 
     var body: some View {
         // Template-rendered so the black/red marker art picks up the HUD's own
