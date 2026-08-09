@@ -17,3 +17,6 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 .DS_Store
+
+# Supabase CLI local state
+supabase/.temp/
