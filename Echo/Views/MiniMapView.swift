@@ -158,13 +158,13 @@ struct MiniMapView: View {
                 let glyph = ctx.resolve(
                     Text("\(Image(systemName: drop.kind.symbol))")
                         .font(.app(fixedSize: 9))
-                        .foregroundStyle(Color.echoAccent))
+                        .foregroundStyle(Color.echoPowerup))
                 ctx.draw(glyph, at: point)
             } else {
                 var arc = Path()
                 arc.addArc(center: apex, radius: scaled,
                            startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
-                ctx.stroke(arc, with: .color(.echoAccent.opacity(Alpha.strong)),
+                ctx.stroke(arc, with: .color(.echoPowerup.opacity(Alpha.strong)),
                            style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
             }
         }

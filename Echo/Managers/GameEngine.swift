@@ -52,9 +52,11 @@ final class GameEngine: NSObject, ObservableObject {
     // drop (see ConsumableSpawn for why), plus its own running effects.
     @Published private(set) var consumables: [ActiveConsumable] = []
     @Published private(set) var activeEffects: [ActiveEffect] = []
-    /// Other players' cloaks: wire name → when the hide-window lapses. Their
-    /// consumed broadcast starts it; read through isCloaked.
-    private var cloakedUntil: [String: Date] = [:]
+    /// Other players' running effects, mirrored from their consumed
+    /// broadcasts — drives the badges under their floating health bars, and
+    /// cloak reads its hide-window from here. Not authoritative: their own
+    /// phone is; this is display state.
+    private var remoteEffects: [String: [ActiveEffect]] = [:]
     /// Parity counter for armor — every other absorbed hit reflects.
     private var armorHitCount = 0
     /// Last place we saw each peer, in our AR world frame — refreshed on the
@@ -90,9 +92,15 @@ final class GameEngine: NSObject, ObservableObject {
     /// consumed broadcast opened. Cloak hides UI only — ranging, aiming, and
     /// hits all still work, which is the point.
     func isCloaked(_ name: String, at date: Date = Date()) -> Bool {
-        if name == myName { return hasEffect(.cloak, at: date) }
-        guard let until = cloakedUntil[name] else { return false }
-        return date < until
+        effects(for: name, at: date).contains { $0.kind == .cloak }
+    }
+
+    /// A player's running effects as this phone knows them — own list for
+    /// self, the mirrored broadcasts for everyone else. Feeds the badge rows
+    /// (HUD for self, floating tags for opponents).
+    func effects(for name: String, at date: Date = Date()) -> [ActiveEffect] {
+        let list = name == myName ? activeEffects : (remoteEffects[name] ?? [])
+        return list.filter { $0.until > date }
     }
 
     // Spectator mode (the laptop): watches the mesh, never plays.
@@ -397,7 +405,7 @@ final class GameEngine: NSObject, ObservableObject {
         matchResult = nil
         consumables = []
         activeEffects = []
-        cloakedUntil = [:]
+        remoteEffects = [:]
         lastKnownPositions = [:]
         nextConsumableSpawnAt = nil
         hostLiveDrops = [:]
@@ -569,7 +577,7 @@ final class GameEngine: NSObject, ObservableObject {
         killClips = []          // spectator: last match's review makes way
         consumables = []
         activeEffects = []
-        cloakedUntil = [:]
+        remoteEffects = [:]
         lastKnownPositions = [:]
         armorHitCount = 0
         hostLiveDrops = [:]
@@ -984,7 +992,7 @@ final class GameEngine: NSObject, ObservableObject {
         aimedTarget = nil
         consumables = []
         activeEffects = []
-        cloakedUntil = [:]
+        remoteEffects = [:]
         nextConsumableSpawnAt = nil
         hostLiveDrops = [:]
         // A kill still waiting out its post-kill roll freezes with whatever
@@ -1046,8 +1054,9 @@ final class GameEngine: NSObject, ObservableObject {
         if activeEffects.contains(where: { $0.until <= now }) {
             activeEffects.removeAll { $0.until <= now }
         }
-        for (name, until) in cloakedUntil where until <= now {
-            cloakedUntil[name] = nil
+        for (name, effects) in remoteEffects where effects.contains(where: { $0.until <= now }) {
+            let live = effects.filter { $0.until > now }
+            remoteEffects[name] = live.isEmpty ? nil : live
         }
         if consumables.contains(where: { $0.expiresAt <= now }) {
             consumables.removeAll { $0.expiresAt <= now }
@@ -1431,6 +1440,7 @@ extension GameEngine: NetworkManagerDelegate {
             players[player]?.isAlive = false
             players[player]?.deaths += 1
             players[killedBy]?.kills += 1
+            remoteEffects[player] = nil   // their phone drops buffs on death; mirror it
             killFeed.insert(KillEvent(killer: killedBy, victim: player), at: 0)
             trimFeed()
             if killedBy == myName {
@@ -1564,9 +1574,14 @@ extension GameEngine: NetworkManagerDelegate {
         case .consumableConsumed(let id, let by, let kind):
             consumables.removeAll { $0.id == id }
             hostLiveDrops[id] = nil
-            // A cloak everyone must honor: hide their tags until it lapses.
-            if kind == .cloak, by != myName, let duration = kind.effectDuration {
-                cloakedUntil[by] = Date().addingTimeInterval(duration)
+            // Mirror the grabber's timed effect so everyone can render it —
+            // the badge under their tag, and for cloak the hide-window itself.
+            if by != myName, let duration = kind.effectDuration {
+                var effects = remoteEffects[by, default: []]
+                effects.removeAll { $0.kind == kind }   // re-grab refreshes the clock
+                effects.append(ActiveEffect(
+                    kind: kind, until: Date().addingTimeInterval(duration), duration: duration))
+                remoteEffects[by] = effects
             }
         }
     }

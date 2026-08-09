@@ -463,9 +463,9 @@ struct GameHUDView: View {
     }
 }
 
-/// One running consumable effect: its glyph inside a ring that drains
-/// clockwise as time runs out. Shape carries the kind, the ring carries the
-/// clock — color is shared chrome, never the signal.
+/// One of OUR running effects: the shared ring badge at HUD size, which is
+/// the one place it scales with Dynamic Type — the same badge on enemy tags
+/// stays fixed-geometry like the tag it rides.
 private struct EffectBadge: View {
     let effect: ActiveEffect
     let at: Date
@@ -474,27 +474,14 @@ private struct EffectBadge: View {
 
     private var fraction: Double {
         guard effect.duration > 0 else { return 0 }
-        return max(0, min(1, effect.until.timeIntervalSince(at) / effect.duration))
+        return effect.until.timeIntervalSince(at) / effect.duration
     }
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.echoBackground.opacity(Alpha.strong))
-            Circle()
-                .stroke(Color.echoText.opacity(Alpha.subtle), lineWidth: 2.5)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(Color.echoAccent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                .rotationEffect(.degrees(-90))   // drains from 12 o'clock
-            Image(systemName: effect.kind.symbol)
-                .font(.app(.caption2))
-                .foregroundStyle(Color.echoText)
-        }
-        .frame(width: diameter, height: diameter)
-        .accessibilityElement()
-        .accessibilityLabel(effect.kind.label)
-        .accessibilityValue("\(max(0, Int(effect.until.timeIntervalSince(at).rounded(.up)))) seconds left")
+        EffectRingBadge(kind: effect.kind, fraction: fraction, diameter: diameter)
+            .accessibilityElement()
+            .accessibilityLabel(effect.kind.label)
+            .accessibilityValue("\(max(0, Int(effect.until.timeIntervalSince(at).rounded(.up)))) seconds left")
     }
 }
 

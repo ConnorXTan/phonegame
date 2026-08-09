@@ -52,6 +52,7 @@ Echo's palette is a dark tactical HUD read over a live camera feed. Keep it that
 | `.echoDanger` | Damage, death, enemy — deliberately its own token, not an alias |
 | `.echoWarning` | Recoverable problems |
 | `.echoInert` | Disconnected, disabled, out of play |
+| `.echoPowerup` | Consumable drops and active-effect countdown rings |
 
 Rules:
 

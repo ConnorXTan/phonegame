@@ -26,7 +26,8 @@ struct EnemyHealthbarOverlay: View {
         GeometryReader { geo in
             TimelineView(.animation) { context in
                 ForEach(visibleTags(viewport: geo.size, at: context.date)) { tag in
-                    EnemyTag(name: tag.name, hpFraction: tag.hpFraction, hearts: tag.hearts, side: tag.side)
+                    EnemyTag(name: tag.name, hpFraction: tag.hpFraction, hearts: tag.hearts,
+                             side: tag.side, effects: tag.effects, date: tag.date)
                         .position(x: tag.point.x, y: tag.point.y - 48)
                 }
             }
@@ -45,6 +46,8 @@ struct EnemyHealthbarOverlay: View {
         let hpFraction: CGFloat
         let hearts: Int
         let side: EnemyTag.Side
+        let effects: [ActiveEffect]
+        let date: Date
     }
 
     private func visibleTags(viewport: CGSize, at date: Date) -> [Tag] {
@@ -76,7 +79,9 @@ struct EnemyHealthbarOverlay: View {
                 point: point,
                 hpFraction: CGFloat(player.hp) / CGFloat(max(1, player.role.maxHP)),
                 hearts: player.role.maxHP,
-                side: side))
+                side: side,
+                effects: engine.effects(for: player.name, at: date),
+                date: date))
         }
         return tags
     }
@@ -154,11 +159,18 @@ struct EnemyTag: View {
     let hpFraction: CGFloat
     var hearts: Int = 5
     var side: Side = .neutral
+    /// Their running powerups, rendered as mini countdown badges under the
+    /// bar. Defaulted empty so the spectator feed's redraw (which doesn't
+    /// stream effect state) keeps its shorter call.
+    var effects: [ActiveEffect] = []
+    var date: Date = Date()
 
     /// Fixed geometry, not spacing: the gauge is read at a distance over a
     /// moving camera feed, so it keeps its size independent of type scaling.
     /// Five hearts at this size span roughly the old 64pt bar.
     private static let heartSize: CGFloat = 11
+    /// Mini version of the HUD's 30pt effect badge — subordinate to the tag.
+    private static let effectSize: CGFloat = 20
 
     private var nameColor: Color {
         switch side {
@@ -181,7 +193,21 @@ struct EnemyTag: View {
             }
             .foregroundStyle(nameColor)
             HeartBar(fraction: hpFraction, total: hearts, size: Self.heartSize)
+            if !effects.isEmpty {
+                HStack(spacing: Space.xs) {
+                    ForEach(effects) { effect in
+                        EffectRingBadge(kind: effect.kind,
+                                        fraction: fraction(of: effect),
+                                        diameter: Self.effectSize)
+                    }
+                }
+            }
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 2, y: 1)
+    }
+
+    private func fraction(of effect: ActiveEffect) -> Double {
+        guard effect.duration > 0 else { return 0 }
+        return effect.until.timeIntervalSince(date) / effect.duration
     }
 }

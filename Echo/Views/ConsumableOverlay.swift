@@ -58,10 +58,41 @@ struct ConsumableOverlay: View {
     }
 }
 
-/// The marker itself: the kind's glyph in a scrim disc, ringed by the despawn
-/// countdown, distance underneath so the player knows how far the sprint is.
-/// Fixed geometry, like EnemyTag — chrome read at a distance over a moving
-/// feed, not prose.
+/// The consumable signature, shared by every surface that shows one: the
+/// kind's glyph in a scrim disc, ringed in the powerup violet by a countdown
+/// that drains from 12 o'clock. On a field drop the ring is time until
+/// despawn; on an effect badge it's time until the buff lapses — same
+/// picture, same meaning: how long this lasts.
+struct EffectRingBadge: View {
+    let kind: ConsumableKind
+    let fraction: Double
+    let diameter: CGFloat
+
+    /// Stroke tracks the disc so the 20pt tag badge and the 44pt field
+    /// marker keep the same visual weight.
+    private var ringWidth: CGFloat { max(2, diameter / 12) }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.echoBackground.opacity(Alpha.strong))
+            Circle()
+                .stroke(Color.echoText.opacity(Alpha.subtle), lineWidth: ringWidth)
+            Circle()
+                .trim(from: 0, to: max(0, min(1, fraction)))
+                .stroke(Color.echoPowerup, style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Image(systemName: kind.symbol)
+                .font(.app(fixedSize: diameter * 0.42))
+                .foregroundStyle(Color.echoText)
+        }
+        .frame(width: diameter, height: diameter)
+    }
+}
+
+/// A field drop's marker: the shared badge at field size, distance chip
+/// underneath so the player knows how far the sprint is. Fixed geometry,
+/// like EnemyTag — chrome read at a distance over a moving feed, not prose.
 private struct ConsumableMarker: View {
     let kind: ConsumableKind
     let distance: Float
@@ -72,20 +103,7 @@ private struct ConsumableMarker: View {
 
     var body: some View {
         VStack(spacing: Space.xs) {
-            ZStack {
-                Circle()
-                    .fill(Color.echoBackground.opacity(Alpha.strong))
-                Circle()
-                    .stroke(Color.echoText.opacity(Alpha.subtle), lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: remaining)
-                    .stroke(Color.echoAccent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))   // countdown runs from 12 o'clock
-                Image(systemName: kind.symbol)
-                    .font(.app(fixedSize: 18))
-                    .foregroundStyle(Color.echoAccent)
-            }
-            .frame(width: Self.discSize, height: Self.discSize)
+            EffectRingBadge(kind: kind, fraction: remaining, diameter: Self.discSize)
 
             Text(String(format: "%.1fm", distance))
                 .font(.appBold(.caption2).monospacedDigit())
