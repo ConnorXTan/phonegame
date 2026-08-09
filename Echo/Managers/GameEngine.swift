@@ -497,7 +497,7 @@ final class GameEngine: NSObject, ObservableObject {
             let now = Date()
             for player in opponents where player.isAlive && player.isConnected
                 && !isCloaked(player.name, at: now) {
-                guard let world = ranging.displayWorldPosition(for: player.name, at: now)
+                guard let world = ranging.displayWorldPosition(for: player.name)
                 else { continue }
                 let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
                 guard inCamera.z < 0 else { continue }   // behind the lens projects to a mirrored ghost
@@ -1103,9 +1103,8 @@ final class GameEngine: NSObject, ObservableObject {
     /// Same position estimate the floating tags draw from, cached so a spawn
     /// can be placed even for peers that later leave the UWB field of view.
     private func cachePeerPositions() {
-        let now = Date()
         for player in opponents where player.isConnected {
-            if let world = ranging.displayWorldPosition(for: player.name, at: now) {
+            if let world = ranging.displayWorldPosition(for: player.name) {
                 lastKnownPositions[player.name] = world
             }
         }
