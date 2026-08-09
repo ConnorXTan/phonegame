@@ -5,6 +5,24 @@ import CoreImage
 import CoreMedia
 import Foundation
 import ImageIO
+import simd
+
+/// A detected wall flattened to the floor: the vertical plane's footprint as a
+/// world-space XZ segment, in metres. Purely visual — walls draw on the
+/// minimap, but whether a shot connects through one stays a property of the
+/// UWB signal itself, never of this geometry.
+struct WallSegment {
+    let start: SIMD2<Float>
+    let end: SIMD2<Float>
+}
+
+/// The camera flattened onto the floor: where the player stands and which way
+/// the aim (out the back of the phone) points, in world XZ metres.
+struct GroundPose {
+    let position: SIMD2<Float>
+    let forward: SIMD2<Float>                              // unit
+    var right: SIMD2<Float> { SIMD2(-forward.y, forward.x) }
+}
 
 /// Owns the one ARSession the app runs. It does double duty: it draws the
 /// viewfinder behind the HUD *and* feeds NearbyInteraction's camera assistance.
@@ -28,6 +46,11 @@ final class AimCameraManager: NSObject, ObservableObject {
     var frameTap: ((Data) -> Void)?
 
     let session = ARSession()
+
+    /// Vertical plane anchors by identifier, from the session delegate. ARKit
+    /// grows, merges, and removes these as it sees more of the room, so the
+    /// map fills in progressively as the player looks around.
+    private var verticalPlanes: [UUID: ARPlaneAnchor] = [:]
 
     private let encodeQueue = DispatchQueue(label: "echo.frame-encode")
     private let ciContext = CIContext()
@@ -88,6 +111,7 @@ final class AimCameraManager: NSObject, ObservableObject {
         guard !isRunning else { return session }
         // ARKit raises the camera permission prompt itself if it's still
         // undetermined, and starts delivering frames once it's granted.
+        verticalPlanes = [:]   // .removeExistingAnchors wipes them in ARKit too
         session.run(Self.makeConfiguration(), options: [.resetTracking, .removeExistingAnchors])
         applyExposureCap()
         isRunning = true
@@ -106,6 +130,51 @@ final class AimCameraManager: NSObject, ObservableObject {
         guard isRunning else { return }
         session.pause()
         isRunning = false
+    }
+
+    // MARK: - Walls (minimap)
+
+    /// Detected walls as floor-plan segments. Seen from above, a vertical
+    /// rectangle collapses to a line — the two projected corners farthest
+    /// apart are that line, whichever local axis ARKit made the "width".
+    var wallSegments: [WallSegment] {
+        verticalPlanes.values.compactMap { anchor in
+            let extent = anchor.planeExtent
+            // Corners of the extent rectangle (rotated about local Y) in
+            // anchor space, pushed to world and flattened to the floor.
+            let rot = extent.rotationOnYAxis
+            let axisX = SIMD3<Float>(cos(rot), 0, -sin(rot)) * (extent.width / 2)
+            let axisZ = SIMD3<Float>(sin(rot), 0, cos(rot)) * (extent.height / 2)
+            let corners = [axisX + axisZ, axisX - axisZ, -axisX + axisZ, -axisX - axisZ]
+                .map { corner -> SIMD2<Float> in
+                    let world = anchor.transform * SIMD4<Float>(anchor.center + corner, 1)
+                    return SIMD2(world.x, world.z)
+                }
+            var best: (a: SIMD2<Float>, b: SIMD2<Float>, d: Float) = (corners[0], corners[0], -1)
+            for i in corners.indices {
+                for j in (i + 1)..<corners.count {
+                    let d = simd_distance_squared(corners[i], corners[j])
+                    if d > best.d { best = (corners[i], corners[j], d) }
+                }
+            }
+            // Footprints under 0.3 m are detection noise, not walls.
+            guard best.d > 0.09 else { return nil }
+            return WallSegment(start: best.a, end: best.b)
+        }
+    }
+
+    /// Nil until ARKit delivers frames, or while the phone points straight
+    /// up/down (aim has no floor-plane heading to project).
+    var groundPose: GroundPose? {
+        guard isRunning, let camera = session.currentFrame?.camera else { return nil }
+        let t = camera.transform
+        // The camera looks along its own -Z regardless of device roll, so
+        // this works in portrait without any device-frame gymnastics.
+        var forward = SIMD2<Float>(-t.columns.2.x, -t.columns.2.z)
+        let length = simd_length(forward)
+        guard length > 0.1 else { return nil }
+        forward /= length
+        return GroundPose(position: SIMD2(t.columns.3.x, t.columns.3.z), forward: forward)
     }
 
     // MARK: - Exposure cap (U2 aim responsiveness)
@@ -157,21 +226,40 @@ final class AimCameraManager: NSObject, ObservableObject {
         return ciContext.jpegRepresentation(of: image, colorSpace: colorSpace, options: [quality: 0.45])
     }
 
-    /// The configuration NearbyInteraction accepts for camera assistance —
-    /// anything else invalidates the NISession with `.invalidARConfiguration`.
+    /// The configuration NearbyInteraction accepts for camera assistance. NI
+    /// constrains exactly four properties — gravity alignment, no
+    /// collaboration, no face tracking, no initial world map; breaking those
+    /// invalidates the NISession with `.invalidARConfiguration`. Plane
+    /// detection is outside that set, so wall tracking rides the same session.
     private static func makeConfiguration() -> ARWorldTrackingConfiguration {
         let config = ARWorldTrackingConfiguration()
         config.worldAlignment = .gravity
         config.isCollaborationEnabled = false
         config.userFaceTrackingEnabled = false
         config.initialWorldMap = nil
-        config.planeDetection = []          // nothing is rendered; skip the work
+        config.planeDetection = [.vertical]   // walls for the minimap; floors stay off — nothing uses them
         config.environmentTexturing = .none
         return config
     }
 }
 
 extension AimCameraManager: ARSessionDelegate {
+    // Anchor callbacks arrive on the main queue (no delegateQueue is set),
+    // matching this class's main-thread-only contract. A merge shows up as a
+    // remove of one plane plus a grow of its survivor, so the dictionary
+    // never keeps both halves of a merged wall.
+    func session(_ session: ARSession, didAdd anchors: [ARAnchor]) { trackWalls(in: anchors) }
+    func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) { trackWalls(in: anchors) }
+    func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+        for anchor in anchors { verticalPlanes[anchor.identifier] = nil }
+    }
+
+    private func trackWalls(in anchors: [ARAnchor]) {
+        for case let plane as ARPlaneAnchor in anchors where plane.alignment == .vertical {
+            verticalPlanes[plane.identifier] = plane
+        }
+    }
+
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard frameTap != nil, !encodingInFlight,
               Date().timeIntervalSince(lastTapAt) >= 1.0 / 20.0 else { return }   // ack pacing is the real governor
