@@ -247,35 +247,38 @@ enum ClipEncoder {
         let composition = AVMutableComposition()
         let videoAsset = AVURLAsset(url: video)
         let audioAsset = AVURLAsset(url: audio)
-        guard let videoTrack = videoAsset.tracks(withMediaType: .video).first,
-              let audioTrack = audioAsset.tracks(withMediaType: .audio).first,
-              let compVideo = composition.addMutableTrack(withMediaType: .video,
-                                                          preferredTrackID: kCMPersistentTrackID_Invalid),
-              let compAudio = composition.addMutableTrack(withMediaType: .audio,
-                                                          preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { return completion(.failure(EncodeError.writerFailed)) }
-        do {
-            try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: videoAsset.duration),
-                                          of: videoTrack, at: .zero)
-            let audioDuration = min(audioAsset.duration, videoAsset.duration)
-            try compAudio.insertTimeRange(CMTimeRange(start: .zero, duration: audioDuration),
-                                          of: audioTrack, at: .zero)
-        } catch { return completion(.failure(error)) }
+        Task {
+            do {
+                guard let videoTrack = try await videoAsset.loadTracks(withMediaType: .video).first,
+                      let audioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first,
+                      let compVideo = composition.addMutableTrack(withMediaType: .video,
+                                                                  preferredTrackID: kCMPersistentTrackID_Invalid),
+                      let compAudio = composition.addMutableTrack(withMediaType: .audio,
+                                                                  preferredTrackID: kCMPersistentTrackID_Invalid)
+                else { return completion(.failure(EncodeError.writerFailed)) }
+                let videoDuration = try await videoAsset.load(.duration)
+                try compVideo.insertTimeRange(CMTimeRange(start: .zero, duration: videoDuration),
+                                              of: videoTrack, at: .zero)
+                let audioDuration = min(try await audioAsset.load(.duration), videoDuration)
+                try compAudio.insertTimeRange(CMTimeRange(start: .zero, duration: audioDuration),
+                                              of: audioTrack, at: .zero)
+            } catch { return completion(.failure(error)) }
 
-        let out = FileManager.default.temporaryDirectory
-            .appendingPathComponent("killcam-final-\(UUID().uuidString).mp4")
-        guard let export = AVAssetExportSession(asset: composition,
-                                                presetName: AVAssetExportPresetHighestQuality)
-        else { return completion(.failure(EncodeError.writerFailed)) }
-        export.outputURL = out
-        export.outputFileType = .mp4
-        export.exportAsynchronously {
-            try? FileManager.default.removeItem(at: video)
-            try? FileManager.default.removeItem(at: audio)
-            if export.status == .completed {
-                completion(.success(out))
-            } else {
-                completion(.failure(export.error ?? EncodeError.writerFailed))
+            let out = FileManager.default.temporaryDirectory
+                .appendingPathComponent("killcam-final-\(UUID().uuidString).mp4")
+            guard let export = AVAssetExportSession(asset: composition,
+                                                    presetName: AVAssetExportPresetHighestQuality)
+            else { return completion(.failure(EncodeError.writerFailed)) }
+            export.outputURL = out
+            export.outputFileType = .mp4
+            export.exportAsynchronously {
+                try? FileManager.default.removeItem(at: video)
+                try? FileManager.default.removeItem(at: audio)
+                if export.status == .completed {
+                    completion(.success(out))
+                } else {
+                    completion(.failure(export.error ?? EncodeError.writerFailed))
+                }
             }
         }
     }
