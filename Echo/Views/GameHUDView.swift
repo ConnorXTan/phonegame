@@ -14,7 +14,6 @@ struct GameHUDView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var fireDiameter: CGFloat = 118
     @ScaledMetric(relativeTo: .title2) private var fireLabelSize: CGFloat = 23
     @ScaledMetric(relativeTo: .title3) private var reloadLabelSize: CGFloat = 16
-    @ScaledMetric(relativeTo: .caption2) private var ammoCountSize: CGFloat = 11
     @ScaledMetric(relativeTo: .caption2) private var killSkullSize: CGFloat = 13
     /// Fixed-geometry heart gauge in the status strip.
     @ScaledMetric(relativeTo: .footnote) private var heartSize: CGFloat = 16
@@ -53,13 +52,19 @@ struct GameHUDView: View {
                                     in: RoundedRectangle(cornerRadius: Radius.sm))
                         .padding(.horizontal)
                 }
-                // Minimap left, kill feed right — they share the band under the
-                // status strip instead of stacking and eating the viewfinder.
+                // Minimap left; hearts then kill feed right — they share the band
+                // under the status strip instead of stacking and eating the
+                // viewfinder.
                 HStack(alignment: .top, spacing: Space.sm) {
                     MiniMapView()
                         .frame(width: miniMapDiameter, height: miniMapDiameter)
                         .padding(.leading, Space.xs)   // hugs the edge to offset the smaller disc
-                    killToasts   // carries its own trailing inset
+                    VStack(alignment: .trailing, spacing: Space.sm) {
+                        heartGauge
+                        killToasts
+                    }
+                    // Flush with the 28pt glyphs inside their 48pt targets above.
+                    .padding(.trailing, Space.xl)
                 }
                 Spacer()
                 fireControl
@@ -98,50 +103,53 @@ struct GameHUDView: View {
     // MARK: - Status strip
 
     private var topBar: some View {
-        VStack(spacing: Space.xxs) {   // bar rides tight under the readouts
-            // Clock hard left, controls hard right, score dead center — the
-            // score rides an overlay so it centers on the bar itself rather
-            // than on whatever width the side clusters happen to have.
+        // Clock hard left, controls hard right, score dead center — the score
+        // rides an overlay so it centers on the bar itself rather than on
+        // whatever width the side clusters happen to have.
+        HStack(spacing: 0) {
+            HStack(spacing: Space.xs) {
+                matchClock
+                shieldBadge
+            }
+
+            Spacer(minLength: Space.sm)
+
+            // Zero spacing between them: each already carries a 48pt target,
+            // so extra gap would only push the row wider.
             HStack(spacing: 0) {
-                HStack(spacing: Space.xs) {
-                    matchClock
-                    shieldBadge
-                }
-
-                Spacer(minLength: Space.sm)
-
-                // Zero spacing between them: each already carries a 48pt
-                // target, so extra gap would only push the row wider.
-                HStack(spacing: 0) {
-                    hudArtButton(.leaderboard, "Leaderboard") { showScores = true }
-                    hudArtButton(.exitGame, "Leave match") { engine.leave() }
-                }
+                hudArtButton(.leaderboard, "Leaderboard") { showScores = true }
+                hudArtButton(.exitGame, "Leave match") { engine.leave() }
             }
-            .overlay {
-                // Team play: the score that decides the match outranks a
-                // personal K/D (which still lives in the scoreboard).
-                if engine.settings.teamPlay {
-                    teamScore
-                } else {
-                    Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(Color.echoTextSecondary)
-                        .fixedSize()
-                        .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
-                }
-            }
-            .font(.subheadline)
-            .foregroundStyle(Color.echoText)
-
-            HeartBar(fraction: hpFraction, size: heartSize)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement()
-                .accessibilityLabel("Health")
-                .accessibilityValue("\(engine.me?.hp ?? 0) of \(engine.myRole.maxHP)")
         }
+        .overlay {
+            // Team play: the score that decides the match outranks a personal
+            // K/D (which still lives in the scoreboard).
+            if engine.settings.teamPlay {
+                teamScore
+            } else {
+                Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(Color.echoTextSecondary)
+                    .fixedSize()
+                    .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
+            }
+        }
+        .font(.subheadline)
+        .foregroundStyle(Color.echoText)
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
         .padding(.horizontal, Space.lg)
         .padding(.top, Space.sm)
+    }
+
+    /// The health gauge rides the right column, directly under the leaderboard
+    /// and exit glyphs — it lines the gauge up with the chrome it belongs to and
+    /// clears the left column so the minimap can start a row higher.
+    private var heartGauge: some View {
+        HeartBar(fraction: hpFraction, size: heartSize)
+            .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
+            .accessibilityElement()
+            .accessibilityLabel("Health")
+            .accessibilityValue("\(engine.me?.hp ?? 0) of \(engine.myRole.maxHP)")
     }
 
     /// A HUD chrome button: `.title3` glyph on the full 44x44 HIG target, so a
@@ -256,7 +264,6 @@ struct GameHUDView: View {
             }
             .animation(.easeOut(duration: 0.25), value: live.map(\.id))
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal)
         }
     }
 
@@ -302,38 +309,30 @@ struct GameHUDView: View {
     // MARK: - Scope
 
     /// Dead center of the screen, independent of the HUD stack — the dot marks
-    /// boresight, which is straight out the back of the phone.
+    /// boresight, which is straight out the back of the phone. The lock reads
+    /// off the reticle itself (it closes *and* turns green) plus the enemy
+    /// healthbar, so no caption sits under it stealing viewfinder.
     private var aimOverlay: some View {
         ZStack {
             ScopeReticle(locked: engine.aimedTarget != nil)
             HitMarkerView(marker: engine.hitMarker)
-            statusPill.offset(y: 82)
         }
         .allowsHitTesting(false)
+        .accessibilityElement()
+        .accessibilityLabel("Aim")
+        .accessibilityValue(lockDescription)
     }
 
-    private var statusPill: some View {
-        TimelineView(.periodic(from: .now, by: 0.2)) { _ in
-            let locked = engine.aimedTarget != nil
-            Text(lockLabel)
-                .font(.footnote.weight(locked ? .bold : .regular))
-                .foregroundStyle(locked ? Color.echoPrimary : Color.echoTextSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Space.md)
-                .padding(.vertical, Space.sm)
-                .background(Color.echoBackground.opacity(Alpha.muted), in: Capsule())
-        }
-    }
-
-    private var lockLabel: String {
+    /// VoiceOver's version of the lock caption — the sighted read is the
+    /// reticle's own geometry, but a screen-reader player still needs the words.
+    private var lockDescription: String {
         guard let target = engine.aimedTarget else {
-            return engine.aimHint ?? "point the BACK of the phone at your target"
+            return engine.aimHint ?? "No target"
         }
-        let name = target.displayCallSign.uppercased()
         guard let distance = engine.ranging.latestReading(for: target)?.distance else {
-            return "LOCKED · \(name)"
+            return "Locked on \(target.displayCallSign)"
         }
-        return "LOCKED · \(name) · \(String(format: "%.1f m", distance))"
+        return "Locked on \(target.displayCallSign), \(String(format: "%.1f meters", distance))"
     }
 
     // MARK: - Fire button
@@ -368,17 +367,12 @@ struct GameHUDView: View {
                      capacity: engine.magazineSize,
                      reloadProgress: reloadProgress)
 
-            VStack(spacing: Space.xxs) {
-                Text(engine.isReloading ? "RELOAD" : "FIRE")
-                    .font(.system(size: engine.isReloading ? reloadLabelSize : fireLabelSize,
-                                  weight: .black, design: .rounded))
-                Text(engine.isReloading
-                     ? String(format: "%.1fs", max(0, engine.reloadRemaining))
-                     : "\(engine.ammo)/\(engine.magazineSize)")
-                    .font(.system(size: ammoCountSize, weight: .bold, design: .rounded).monospacedDigit())
-                    .opacity(Alpha.heavy)
-            }
-            .foregroundStyle(fireLabelColor)
+            // One word, centered. The count lives in the ring around the button
+            // — printing it again inside was the same fact twice.
+            Text(engine.isReloading ? "RELOAD" : "FIRE")
+                .font(.system(size: engine.isReloading ? reloadLabelSize : fireLabelSize,
+                              weight: .black, design: .rounded))
+                .foregroundStyle(fireLabelColor)
         }
         .frame(width: fireDiameter, height: fireDiameter)
         .contentShape(Circle())
@@ -429,8 +423,9 @@ struct GameHUDView: View {
                 .scaledToFit()
                 .padding(Space.xs)
                 .frame(width: reloadDiameter, height: reloadDiameter)
+                // Scrim only — the art already draws its own ring, so a stroke
+                // here was a second circle around the first.
                 .background(Color.echoBackground.opacity(Alpha.strong), in: Circle())
-                .overlay(Circle().stroke(Color.echoText.opacity(Alpha.muted), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Reload")
@@ -577,9 +572,6 @@ private struct ScopeReticle: View {
                 .fill(Color.echoPrimary)
                 .frame(width: 8, height: 8)
                 .shadow(color: Color.echoPrimary.opacity(Alpha.heavy), radius: locked ? 10 : 5)
-            Circle()
-                .stroke(Color.echoText.opacity(Alpha.heavy), lineWidth: 1)
-                .frame(width: 15, height: 15)
         }
         .compositingGroup()
         .shadow(color: Color.echoBackground.opacity(Alpha.muted), radius: 2)
