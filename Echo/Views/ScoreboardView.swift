@@ -158,15 +158,18 @@ struct ScoreboardView: View {
     }
 
     /// Kills and deaths as one figure, split by a dim rule — two numbers that
-    /// are read together shouldn't look like two separate columns.
+    /// are read together shouldn't look like two separate columns. Scored green
+    /// against died red, the same pairing the final standings use, so a number
+    /// means the same thing in the match as it does after it. Position tells them
+    /// apart too: kills always sit left of the rule.
     private func killDeath(_ player: Player) -> some View {
         (
             Text("\(player.kills)")
-                .foregroundStyle(Color.echoText)
+                .foregroundStyle(Color.echoSecondary)
             + Text(" | ")
                 .foregroundStyle(Color.echoTextTertiary)
             + Text("\(player.deaths)")
-                .foregroundStyle(Color.echoTextSecondary)
+                .foregroundStyle(Color.echoDanger.opacity(Alpha.heavy))
         )
         .font(.subheadline.monospacedDigit())
     }
