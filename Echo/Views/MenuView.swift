@@ -11,18 +11,23 @@ struct MenuView: View {
     /// and run LASER into TAG. Sharing the metric fixes the ratio at every size.
     @ScaledMetric(relativeTo: .largeTitle) private var subtitleSize: CGFloat = 19
 
-    /// Each word of the expansion sits under the letter it came from. The three
-    /// stops are the letterforms' own centers, measured off the logo art by
-    /// connected component: on its 326pt canvas the L spans x 27–127, the T
-    /// 102–202 (they overlap — the art is hand-drawn and tightly kerned), and
+    /// Where a word hangs off its stop.
+    private enum WordAnchor { case centered, leading }
+
+    /// Each word of the expansion sits under the letter it came from. The stops
+    /// come off the logo art by connected component, not by eye: on its 326pt
+    /// canvas the L spans x 27–127, the T 102–202 (they overlap — the art is
+    /// hand-drawn and tightly kerned, so only 2D components separate them), and
     /// the N 213–319. Stored as fractions so they hold at any logo width.
     ///
-    /// Note the stops are *not* evenly spaced: L→T is 23% of the width but T→N
-    /// is 35%. That asymmetry is in the wordmark itself, so the row inherits it.
-    private static let letterStops: [(word: String, center: CGFloat)] = [
-        ("LASER", 77.0 / 326.0),
-        ("TAG", 152.0 / 326.0),
-        ("NOW", 266.0 / 326.0),
+    /// LASER and TAG hang from their letters' centers. NOW starts at the N's
+    /// left edge instead: centering it left 49pt of daylight after TAG against
+    /// only 13pt before it, which read as NOW drifting off on its own. Anchoring
+    /// to the stem closes that to 23pt and the row scans as one line.
+    private static let letterStops: [(word: String, stop: CGFloat, anchor: WordAnchor)] = [
+        ("LASER", 77.0 / 326.0, .centered),
+        ("TAG", 152.0 / 326.0, .centered),
+        ("NOW", 213.0 / 326.0, .leading),
     ]
 
     /// Enough room for the tallest glyph plus its descender-free breathing
@@ -48,14 +53,24 @@ struct MenuView: View {
     /// there is no string metric that would land the words under the letters by
     /// accident.
     private var subtitleRow: some View {
-        ZStack(alignment: .topLeading) {
+        // ZStack(alignment: .leading) pins every word's leading guide to the
+        // same x and centers them vertically. Overriding that guide per word is
+        // what lets one word hang from its center and another from its left
+        // edge: the returned value is the offset *into* the view that gets
+        // pinned, so -x puts the left edge at x, and width/2 - x centers it
+        // there. Color.clear forces the stack to the logo's full width, which
+        // the stops are fractions of.
+        ZStack(alignment: .leading) {
             Color.clear
             ForEach(Self.letterStops, id: \.word) { stop in
+                let x = logoWidth * stop.stop
                 Text(stop.word)
                     .font(.app(fixedSize: subtitleSize))
                     .foregroundStyle(Color.ltnTextSecondary)
                     .fixedSize()
-                    .position(x: logoWidth * stop.center, y: subtitleRowHeight / 2)
+                    .alignmentGuide(.leading) { d in
+                        stop.anchor == .centered ? d.width / 2 - x : -x
+                    }
             }
         }
         .frame(width: logoWidth, height: subtitleRowHeight)
