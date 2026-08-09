@@ -497,7 +497,7 @@ final class GameEngine: NSObject, ObservableObject {
             let now = Date()
             for player in opponents where player.isAlive && player.isConnected
                 && !isCloaked(player.name, at: now) {
-                guard let world = ranging.displayWorldPosition(for: player.name, at: now)
+                guard let world = ranging.displayWorldPosition(for: player.name)
                 else { continue }
                 let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
                 guard inCamera.z < 0 else { continue }   // behind the lens projects to a mirrored ghost
@@ -823,20 +823,18 @@ final class GameEngine: NSObject, ObservableObject {
         reloadRemaining = 0
     }
 
-    /// The core algorithm: most-centered live target inside the aim cone and
-    /// weapon range, with a short reading buffer so a single nil-direction
-    /// frame doesn't eat the shot. The window is deliberately tight: camera-
-    /// assisted NI (U2 chips) can coast on a stale ARKit anchor after the
-    /// peer moves, and old readings must not hold a lock.
+    /// The core algorithm: most-centered live target inside the aim cone,
+    /// with a short reading buffer so a single nil-direction frame doesn't
+    /// eat the shot. The window is deliberately tight: camera-assisted NI
+    /// (U2 chips) can coast on a stale ARKit anchor after the peer moves,
+    /// and old readings must not hold a lock. Range never gates a shot —
+    /// anywhere UWB can range is in play.
     func resolveShot() -> String? {
         var best: (name: String, angle: Float)?
         for player in opponents where player.isAlive && isEnemy(player) {
             guard let reading = ranging.latestDirectional(for: player.name, within: 0.2),
                   let angle = reading.angleOffBoresight else { continue }
-            let distance = reading.distance
-                ?? ranging.latestReading(for: player.name)?.distance
-                ?? .infinity
-            guard angle < settings.aimConeRadians, distance < settings.weaponRange else { continue }
+            guard angle < settings.aimConeRadians else { continue }
             if best == nil || angle < best!.angle {
                 best = (player.name, angle)
             }
@@ -1105,9 +1103,8 @@ final class GameEngine: NSObject, ObservableObject {
     /// Same position estimate the floating tags draw from, cached so a spawn
     /// can be placed even for peers that later leave the UWB field of view.
     private func cachePeerPositions() {
-        let now = Date()
         for player in opponents where player.isConnected {
-            if let world = ranging.displayWorldPosition(for: player.name, at: now) {
+            if let world = ranging.displayWorldPosition(for: player.name) {
                 lastKnownPositions[player.name] = world
             }
         }

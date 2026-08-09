@@ -8,10 +8,6 @@ struct RangingReading {
     let distance: Float?          // meters
     let direction: simd_float3?   // unit vector in phone coordinates; nil = out of FoV
     let horizontalAngle: Float?   // radians, from camera assistance
-    /// Camera pose when the reading arrived. A bearing is measured in the
-    /// device frame *at that moment* — cast from a later pose it swings with
-    /// the camera (readings land at ~5 Hz, panning happens at frame rate).
-    let cameraTransform: simd_float4x4?
 
     /// Radians off boresight. Boresight = straight out the BACK of the phone,
     /// which is -Z in the device coordinate frame (aim like taking a photo).
@@ -187,24 +183,20 @@ final class RangingManager: NSObject, ObservableObject {
         return simd_float3(t.x, t.y, t.z)
     }
 
-    /// Where shots on this peer actually land, as a world position — the one
-    /// estimate every overlay should draw from. The shoot path resolves on
-    /// raw bearings (`resolveShot`), so whenever a fresh bearing exists the
-    /// tag draws on it — by construction it can't drift from the aim truth.
-    /// The fused `worldTransform` only fills bearing dropouts (peer outside
-    /// the UWB field of view): it's world-anchored but can coast away from
-    /// where shots resolve, so it never overrides a live bearing. Nil once
-    /// readings go stale (~1 s), same rule as the shoot path: old data must
-    /// not pin a tag to empty space.
-    func displayWorldPosition(for peerName: String, at date: Date) -> simd_float3? {
-        guard let reading = latestReading(for: peerName),
-              date.timeIntervalSince(reading.timestamp) < 1.0 else { return nil }
-        if let bearing = latestDirectional(for: peerName, within: 1.0),
-           let ray = worldRay(from: bearing) {
-            let distance = bearing.distance ?? latestDistance(for: peerName) ?? 5
-            return clampedToHandHeight(ray.origin + ray.direction * distance)
-        }
-        return worldPosition(for: peerName).map(clampedToHandHeight)
+    /// Where a shot would land right now, as a world position — the tag
+    /// draws here and nowhere else. `resolveShot` tests the latest bearing's
+    /// device-frame angle against the current boresight, so the tag casts
+    /// that same bearing out of the CURRENT camera pose: between readings it
+    /// pans with the phone exactly like the shot test does, and the two can
+    /// never disagree. Deliberately no fused-`worldTransform` fallback — when
+    /// the radio has no aim solution the honest UI is no tag at all; a
+    /// coasted anchor floats hearts over empty space. Nil once bearings go
+    /// stale (~1 s), same rule as the shoot path.
+    func displayWorldPosition(for peerName: String) -> simd_float3? {
+        guard let bearing = latestDirectional(for: peerName, within: 1.0),
+              let ray = worldRay(from: bearing) else { return nil }
+        let distance = bearing.distance ?? latestDistance(for: peerName) ?? 5
+        return clampedToHandHeight(ray.origin + ray.direction * distance)
     }
 
     /// Freshest UWB distance in the buffer — time-of-flight, the one
@@ -228,9 +220,9 @@ final class RangingManager: NSObject, ObservableObject {
         return clamped
     }
 
-    /// A bearing as a world-space ray, cast from the camera pose captured
-    /// when it was measured — world-anchored, so it holds still while the
-    /// local camera pans. (Unstamped readings fall back to the current pose.)
+    /// A bearing as a world-space ray out of the CURRENT camera pose —
+    /// device-anchored on purpose, mirroring how `resolveShot` reads the
+    /// same bearing against the current boresight.
     private func worldRay(from reading: RangingReading)
         -> (origin: simd_float3, direction: simd_float3)? {
         let deviceDirection: simd_float3
@@ -241,8 +233,7 @@ final class RangingManager: NSObject, ObservableObject {
         } else {
             return nil
         }
-        guard let t = reading.cameraTransform
-            ?? camera?.session.currentFrame?.camera.transform else { return nil }
+        guard let t = camera?.session.currentFrame?.camera.transform else { return nil }
         // NI's device frame (portrait: +X right, +Y top, -Z out the back) is
         // ARKit's camera frame rotated 90° about Z — camera +X runs down the
         // long axis toward the home-button end.
@@ -352,8 +343,7 @@ extension RangingManager: NISessionDelegate {
                 timestamp: Date(),
                 distance: obj.distance,
                 direction: obj.direction,
-                horizontalAngle: obj.horizontalAngle,
-                cameraTransform: self.camera?.session.currentFrame?.camera.transform))
+                horizontalAngle: obj.horizontalAngle))
             let cutoff = Date().addingTimeInterval(-1)
             if pr.readings.first.map({ $0.timestamp < cutoff }) == true {
                 pr.readings.removeAll { $0.timestamp < cutoff }
