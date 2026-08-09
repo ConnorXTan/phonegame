@@ -1,6 +1,10 @@
-# Echo
+# LTN — Laser Tag Now
 
 UWB laser tag for iPhone. SwiftUI, iOS 26+. Camera-assisted aiming over U2-chip ranging.
+
+The app ships as **LTN**; the Xcode project, target, scheme and source folder are all still
+named `Echo`. Paths like `Echo/Views/` below are real and current — don't "fix" them. Anything
+user-facing says LTN.
 
 ---
 
@@ -35,34 +39,34 @@ where the glyph is a diagram element, not prose.
 
 ## Color
 
-Echo's palette is a dark tactical HUD read over a live camera feed. Keep it that way.
+LTN's palette is a dark tactical HUD read over a live camera feed. Keep it that way.
 
 **`Echo/Design/Theme.swift` is the single source of truth.** Views reference names, never values.
 
 | Token | Role |
 |---|---|
-| `.echoText` | Primary copy |
-| `.echoBackground` | The surface everything sits on |
-| `.echoPrimary` | Interactive and aimed-at: buttons, fire control, acquired lock |
-| `.echoSecondary` | Alive, connected, scored |
-| `.echoAccent` | Standout non-critical state: placement, urgency, host controls |
-| `.echoOnPrimary` | Labels *on* a filled primary/secondary/accent control — see below |
-| `.echoTextSecondary` / `.echoTextTertiary` | Supporting copy — a *dimmer primary*, never gray |
-| `.echoSurface` / `.echoHairline` | Card fills and dividers, as tints of the text color |
-| `.echoDanger` | Damage, death, enemy — deliberately its own token, not an alias |
-| `.echoWarning` | Recoverable problems |
-| `.echoInert` | Disconnected, disabled, out of play |
-| `.echoPowerup` | Consumable drops and active-effect countdown rings |
+| `.ltnText` | Primary copy |
+| `.ltnBackground` | The surface everything sits on |
+| `.ltnPrimary` | Interactive and aimed-at: buttons, fire control, acquired lock |
+| `.ltnSecondary` | Alive, connected, scored |
+| `.ltnAccent` | Standout non-critical state: placement, urgency, host controls |
+| `.ltnOnPrimary` | Labels *on* a filled primary/secondary/accent control — see below |
+| `.ltnTextSecondary` / `.ltnTextTertiary` | Supporting copy — a *dimmer primary*, never gray |
+| `.ltnSurface` / `.ltnHairline` | Card fills and dividers, as tints of the text color |
+| `.ltnDanger` | Damage, death, enemy — deliberately its own token, not an alias |
+| `.ltnWarning` | Recoverable problems |
+| `.ltnInert` | Disconnected, disabled, out of play |
+| `.ltnPowerup` | Consumable drops and active-effect countdown rings |
 
 Rules:
 
-- **Filled controls take `.echoOnPrimary` labels, never `.echoText`.** All three actives are light
-  (L 55–70%). White on `echoPrimary` measures 1.6:1 — illegible. The dark background color on the
+- **Filled controls take `.ltnOnPrimary` labels, never `.ltnText`.** All three actives are light
+  (L 55–70%). White on `ltnPrimary` measures 1.6:1 — illegible. The dark background color on the
   same fill measures 12.4:1. If a fill can be either light or dark (the fire button, enabled vs.
   disabled), the label color has to flip with it.
-- **Don't pair two actives that sit close on the wheel.** `echoAccent` is 20° from `echoPrimary`;
+- **Don't pair two actives that sit close on the wheel.** `ltnAccent` is 20° from `ltnPrimary`;
   using one for "locked" and the other for "not locked" gives two greens nobody can separate under
-  pressure. When a ramp needs three legible steps, go `echoSecondary → echoWarning → echoDanger`.
+  pressure. When a ramp needs three legible steps, go `ltnSecondary → ltnWarning → ltnDanger`.
 - **One accent.** A second "just for this button" accent destroys the first one's meaning.
 - **Semantic colors stay semantic.** Red means harm. If red also means "host" and "selected" and
   "recording," it means nothing. Reach for weight, size, or spacing before reaching for a new hue.
@@ -112,7 +116,7 @@ scale the counter up until it fights the reticle.
 
 - **Hierarchy comes from weight and color first, size second.** Three sizes and two weights beat
   seven sizes. Large-and-bold-and-bright is one emphasis applied three times.
-- **Two type families, maximum.** Echo currently mixes `.rounded` and `.monospaced`. That's a fine
+- **Two type families, maximum.** LTN currently mixes `.rounded` and `.monospaced`. That's a fine
   pairing with a clear rule: **monospaced for live numerics** (distance, timers, K/D — anything
   that ticks), **rounded for everything else.** Never both in one line of text.
 - **`.monospacedDigit()` on every changing number.** Without it, digits jitter as they update.
