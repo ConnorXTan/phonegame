@@ -197,9 +197,22 @@
     savedToggle.onclick = () => {
       savedOnly = !savedOnly;
       savedToggle.classList.toggle('on', savedOnly);
-      lastKey = '';
       render();
     };
+
+    // Thumbnails hold off on fetching until the card nears the viewport —
+    // a page of eager <video> elements is what made the grid crawl.
+    const thumbObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const video = entry.target;
+        if (!video.src && video.dataset.src) {
+          video.preload = 'metadata';
+          video.src = video.dataset.src;
+        }
+        thumbObserver.unobserve(video);
+      }
+    }, { rootMargin: '400px' });
 
     function openClip(key) {
       const clip = clips.find((c) => c.key === key);
@@ -234,37 +247,50 @@
         clip.saved = !clip.saved;
         fetch(`/api/react?action=${clip.saved ? 'save' : 'unsave'}&clip=${encodeURIComponent(key)}&device=${device}`, { method: 'POST' });
       }
-      lastKey = '';
       render();
     }
     window.react = react;
 
     function render() {
       const visible = savedOnly ? clips.filter((c) => c.saved) : clips;
-      const key = visible.map((c) => `${c.url}|${c.likes}|${c.liked}|${c.saved}`).join('~');
-      if (key === lastKey) return;   // don't interrupt playing videos
-      lastKey = key;
       count.textContent = `${visible.length} clip${visible.length === 1 ? '' : 's'}`;
       empty.hidden = visible.length > 0;
-      grid.innerHTML = visible.map((c) => `
-        <figure class="card">
-          <div class="thumb" onclick="openClip('${esc(c.key)}')">
-            <!-- #t=0.1 makes browsers decode and paint that frame as the
-                 poster; bare preload="metadata" often leaves black. -->
-            <video src="${esc(c.url)}#t=0.1" muted playsinline preload="metadata"></video>
-            <div class="play">&#9655;</div>
-          </div>
-          <figcaption>
-            <b>${esc(c.killer)}</b> eliminated <b>${esc(c.victim)}</b>
-            <time>${new Date(c.timestamp).toLocaleString()}</time>
-            <div class="actions">
-              <button class="${c.liked ? 'on-like' : ''}"
-                onclick="react('${esc(c.key)}', 'toggle-like')">&hearts; ${c.likes}</button>
-              <button class="${c.saved ? 'on-save' : ''}"
-                onclick="react('${esc(c.key)}', 'toggle-save')">${c.saved ? 'Saved' : 'Save'}</button>
+      // The grid only rebuilds when the SET of clips changes. Rebuilding on a
+      // like meant every thumbnail video was torn down and re-downloaded —
+      // counts and button states refresh in place instead.
+      const structure = visible.map((c) => c.key).join('~');
+      if (structure !== lastKey) {
+        lastKey = structure;
+        grid.innerHTML = visible.map((c) => `
+          <figure class="card" data-card="${esc(c.key)}">
+            <div class="thumb" onclick="openClip('${esc(c.key)}')">
+              <!-- #t=0.1 makes browsers decode and paint that frame as the
+                   poster; bare preload="metadata" often leaves black. The src
+                   waits in data-src until the card scrolls near the viewport. -->
+              <video data-src="${esc(c.url)}#t=0.1" muted playsinline preload="none"></video>
+              <div class="play">&#9655;</div>
             </div>
-          </figcaption>
-        </figure>`).join('');
+            <figcaption>
+              <b>${esc(c.killer)}</b> eliminated <b>${esc(c.victim)}</b>
+              <time>${new Date(c.timestamp).toLocaleString()}</time>
+              <div class="actions">
+                <button class="like" onclick="react('${esc(c.key)}', 'toggle-like')"></button>
+                <button class="save" onclick="react('${esc(c.key)}', 'toggle-save')"></button>
+              </div>
+            </figcaption>
+          </figure>`).join('');
+        grid.querySelectorAll('video[data-src]').forEach((v) => thumbObserver.observe(v));
+      }
+      for (const c of visible) {
+        const card = grid.querySelector(`[data-card="${CSS.escape(c.key)}"]`);
+        if (!card) continue;
+        const like = card.querySelector('.like');
+        like.classList.toggle('on-like', c.liked);
+        like.innerHTML = `&hearts; ${c.likes}`;
+        const save = card.querySelector('.save');
+        save.classList.toggle('on-save', c.saved);
+        save.textContent = c.saved ? 'Saved' : 'Save';
+      }
     }
 
     async function load() {
