@@ -322,10 +322,12 @@ final class GameEngine: NSObject, ObservableObject {
     }
 
     func leave() {
-        if isHost, phase != .menu, let net = network {
+        if phase != .menu, let net = network {
             // Tell everyone before tearing down, and give the reliable send a
-            // beat to flush — disconnect() right after send can drop it.
-            net.send(.hostEnded)
+            // beat to flush — disconnect() right after send can drop it. The
+            // explicit goodbye is what separates an intentional leave (remove
+            // me everywhere, now) from a radio blip (keep my seat).
+            net.send(isHost ? .hostEnded : .playerLeft)
             network = nil   // stale-guards drop any further callbacks
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { net.stop() }
         } else {
@@ -919,7 +921,13 @@ final class GameEngine: NSObject, ObservableObject {
             players[name]?.hp = player.role.maxHP
             players[name]?.isAlive = true
         }
+        // Whoever dropped mid-match and never came back isn't in the next
+        // one — no ghosts in the lobby roster.
+        for (name, player) in players where !player.isConnected && name != myName {
+            players[name] = nil
+        }
         phase = .lobby
+        if isHost { broadcastRoster() }
         refreshLobbyAdvertisement()   // back to "open" in the lobby list
         // Leaving the review deletes the clips: published ones live on the
         // gallery, unpublished ones are gone for good — nothing is kept.
@@ -1324,6 +1332,25 @@ extension GameEngine: NetworkManagerDelegate {
             }
             leave()
             hostEndedNotice = "The host ended the game."
+
+        case .playerLeft:
+            // Deliberate departure: no blip protection, no ghost rows.
+            spectators.remove(peerName)
+            players[peerName] = nil
+            ranging.removePeer(peerName)
+            if streamingTo == peerName {
+                streamingTo = nil
+                camera.frameTap = nil
+            }
+            if watchingPlayer == peerName {
+                watchingPlayer = nil
+                spectatorFrame = nil
+                spectatorOverlay = nil
+            }
+            if isHost {
+                broadcastRoster()
+                refreshLobbyAdvertisement()
+            }
 
         case .lobbyRoster(let playerNames, let spectatorNames):
             guard !isHost else { return }   // members mirror the host's list

@@ -160,6 +160,7 @@ enum GameMessage: Codable {
     case spectatorHello                         // sender is a spectator (laptop), not a player
     case cameraRequest(active: Bool)            // spectator → player: stream me your viewfinder
     case hostEnded                              // host closed the game; everyone back to the menu
+    case playerLeft                             // sender left on purpose — remove them everywhere now
     case lobbyRoster(players: [String], spectators: [String])   // host-authoritative membership; drives mesh + UI
     case joinDenied(reason: String)             // host turned the sender's join down (e.g. lobby full)
     case overlayState(SpectatorOverlayState)    // streamer → spectator: HUD elements to redraw over the feed
