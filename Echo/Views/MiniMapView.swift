@@ -61,9 +61,10 @@ struct MiniMapView: View {
                                  isAlly: engine.settings.teamPlay && !engine.isEnemy(player))
                     } else {
                         // Ranged but no bearing in view: the distance is solid,
-                        // the direction isn't. A dashed arc says exactly that.
-                        drawDistanceArc(ctx: ctx, apex: apex, at: scaled,
-                                        name: player.name.displayCallSign, distance: distance)
+                        // the direction isn't. A dashed arc says exactly that —
+                        // and stays nameless, because a label with no dot under
+                        // it is a name floating over a direction we don't have.
+                        drawDistanceArc(ctx: ctx, apex: apex, at: scaled)
                     }
                 }
 
@@ -107,9 +108,12 @@ struct MiniMapView: View {
 
     /// Detected walls as seen from above, in the fan's frame: apex is you,
     /// aim points up. Metres map linearly to points (rim = weapon range) and
-    /// the layer clips to the wedge, so only the room ahead draws. Same hue
-    /// family as the range arcs, one weight up — the locked target keeps
-    /// `echoPrimary` and the dot shape, so the two greens never share a role.
+    /// the layer clips to the wedge, so only the room ahead draws.
+    ///
+    /// Drawn in `echoWarning` rather than the green family: everything else on
+    /// this widget — range rings, blips, the lock — is a green, and room
+    /// geometry read as one more of them. Yellow is the only hue on the map, so
+    /// nothing here can be confused for a caution state.
     private func drawWalls(ctx: GraphicsContext, apex: CGPoint, radius: CGFloat, maxRange: CGFloat) {
         guard let pose = engine.camera.groundPose else { return }
         let segments = engine.camera.wallSegments
@@ -122,8 +126,8 @@ struct MiniMapView: View {
         }
         var layer = ctx   // copy: clip the walls, not the whole canvas
         layer.clip(to: wedge(apex: apex, radius: radius))
-        layer.stroke(path, with: .color(.echoSecondary.opacity(Alpha.strong)),
-                     style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        layer.stroke(path, with: .color(.echoWarning.opacity(Alpha.heavy)),
+                     style: StrokeStyle(lineWidth: 3, lineCap: .round))
     }
 
     /// World-XZ metres → canvas points: project the offset from the player
@@ -154,15 +158,15 @@ struct MiniMapView: View {
                   at: CGPoint(x: point.x, y: point.y - 12))
     }
 
-    private func drawDistanceArc(ctx: GraphicsContext, apex: CGPoint, at r: CGFloat,
-                                 name: String, distance: Float) {
+    /// Someone at this range, somewhere off the fan. Pure geometry: the arc's
+    /// radius against the range rings is the whole reading, so there's nothing
+    /// for a name to add that wouldn't also imply a bearing we don't have.
+    private func drawDistanceArc(ctx: GraphicsContext, apex: CGPoint, at r: CGFloat) {
         var arc = Path()
         arc.addArc(center: apex, radius: r,
                    startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
         ctx.stroke(arc, with: .color(.echoTextTertiary),
                    style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-        drawLabel(ctx: ctx, "\(name) \(String(format: "%.1f", distance))m", .echoTextSecondary,
-                  at: CGPoint(x: apex.x, y: apex.y - r - 8))
     }
 
     /// Labels sit over a live camera feed, so each gets its own backing chip —
