@@ -6,7 +6,7 @@ import simd
 /// 6/8/10 (Light/Regular/Heavy) while damage scales 1/2/3, so shots-to-kill
 /// depends on the matchup — a Heavy three-taps a Regular, a Light needs ten
 /// hits to drop a Heavy. Light pays for its thin health and pea-shooter with
-/// full-auto spray (much easier to land hits inside the tight 5° cone), the
+/// full-auto spray (much easier to land hits inside the tight aim cone), the
 /// deepest magazine, and a fast reload.
 ///
 /// There are no i-frames between hits — fire rate, magazine, and reload are
@@ -112,7 +112,7 @@ struct GameSettings: Codable, Equatable {
     var aimConeRadians: Float { aimConeDegrees * .pi / 180 }
 
     static let standard = GameSettings(
-        aimConeDegrees: 5,
+        aimConeDegrees: 9,
         respawnDelay: 5, spawnProtection: 1,
         matchDuration: 300, maxPlayers: 6)
 
