@@ -157,8 +157,17 @@ grep -rnE "Color\.(red|green|blue|gray|yellow|orange|cyan)|Color\(red:" Echo/Vie
 grep -rnE "\.opacity\(0\.[0-9]" Echo/Views/*.swift
 ```
 
-There is no simulator runtime installed that matches the iOS 26.5 SDK, so `xcodebuild` cannot
-resolve a destination. To verify compilation:
+The iOS 26.5 simulator runtime is installed, so `xcodebuild` resolves a destination and the app
+runs in the Simulator. To build and launch:
+
+```sh
+xcodebuild -project Echo.xcodeproj -scheme Echo -destination 'generic/platform=iOS Simulator' build
+```
+
+The Simulator has no camera feed and no U2 chip, so the live HUD can't be exercised end to end
+there — it's good for menus, lobby, and static HUD layout, not for ranging or aiming.
+
+For a fast compile-only check without a full build:
 
 ```sh
 xcrun swiftc -typecheck -sdk "$(xcrun --sdk iphonesimulator26.5 --show-sdk-path)" \

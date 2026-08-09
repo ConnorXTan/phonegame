@@ -721,8 +721,11 @@ struct SpectatorView: View {
                                         .resizable()
                                         .scaledToFit()
                                         .foregroundStyle(marker.isKill ? Color.echoDanger : Color.echoText)
-                                        .frame(width: marker.isKill ? 22 : 16,
-                                               height: marker.isKill ? 22 : 16)
+                                        // Same reticle-relative read as the live
+                                        // HUD, scaled to this view's 40pt
+                                        // crosshair instead of its 74pt ring.
+                                        .frame(width: marker.isKill ? 29 : 25,
+                                               height: marker.isKill ? 29 : 25)
                                         .opacity(1 - fade)
                                         .scaleEffect(0.8 + 0.4 * fade)
                                         .position(x: fit.midX, y: fit.midY)
