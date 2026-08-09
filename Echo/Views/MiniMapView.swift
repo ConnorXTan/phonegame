@@ -162,7 +162,7 @@ struct MiniMapView: View {
                 var arc = Path()
                 arc.addArc(center: apex, radius: scaled,
                            startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
-                ctx.stroke(arc, with: .color(.echoPowerup.opacity(Alpha.strong)),
+                ctx.stroke(arc, with: .color(drop.kind.tint.opacity(Alpha.strong)),
                            style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
             }
         }

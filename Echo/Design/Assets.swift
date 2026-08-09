@@ -47,6 +47,17 @@ extension ConsumableKind {
         case .armor:   .armor
         }
     }
+
+    /// Ring/countdown colour, matched to the mark's own hue so each power-up
+    /// reads as one thing. Reuses existing tokens rather than new literals.
+    var tint: Color {
+        switch self {
+        case .medpack: .echoSecondary   // green
+        case .drink:   .echoDanger      // red
+        case .cloak:   .echoTeamAlly    // blue
+        case .armor:   .echoWarning     // yellow
+        }
+    }
 }
 
 extension Image {
