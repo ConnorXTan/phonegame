@@ -1,8 +1,8 @@
-import { del, list } from '@vercel/blob';
+import { db, BUCKET } from '../lib/supabase-store.js';
 
 // Deletion rides the same trust boundary as publishing: only holders of the
-// upload secret (the game master's app) can remove a clip. Also sweeps the
-// clip's like/save markers so no social residue orphans.
+// upload secret (the game master's app) can remove a clip. The row delete
+// cascades to like/save marks so no social residue orphans.
 const clean = (s) => String(s ?? '').replace(/[^A-Za-z0-9-_.]/g, '').slice(0, 96);
 
 export default async function handler(req, res) {
@@ -13,11 +13,12 @@ export default async function handler(req, res) {
   const key = clean(req.query.clip);
   if (!key) return res.status(400).json({ error: 'missing clip' });
 
-  const targets = [`clips/${key}`];
-  for (const kind of ['likes', 'saves']) {
-    const { blobs } = await list({ prefix: `social/${kind}/${key}/`, limit: 1000 });
-    targets.push(...blobs.map((b) => b.pathname));
-  }
-  try { await del(targets); } catch {}   // already-gone is fine: idempotent
-  res.status(200).json({ ok: true, removed: targets.length });
+  const supa = db();
+  const marks = await supa.from('social_marks')
+    .select('*', { count: 'exact', head: true }).eq('clip_key', key);
+  const del = await supa.from('clips').delete().eq('key', key).select();
+  if (del.error) throw new Error(`clip delete: ${del.error.message}`);
+  await supa.storage.from(BUCKET).remove([`clips/${key}`]);   // already-gone is fine
+
+  res.status(200).json({ ok: true, removed: (del.data?.length ?? 0) + (marks.count ?? 0) });
 }

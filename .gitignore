@@ -10,7 +10,13 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Vercel CLI link (repo root deploys target the killcam-web project)
+.vercel/
 # Xcode per-user state — window layout, open tabs; regenerated constantly
 xcuserdata/
 *.xcuserstate
 .DS_Store
+
+# Supabase CLI local state
+supabase/.temp/
