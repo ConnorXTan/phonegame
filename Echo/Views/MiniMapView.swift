@@ -3,7 +3,8 @@ import simd
 
 /// Corner minimap: you sit at the centre, straight up is out the back of the
 /// phone (where you're aiming). Each peer in weapon range is a blip with its
-/// distance in metres.
+/// distance in metres, and walls ARKit has spotted draw as floor-plan lines —
+/// a picture of the room, not game logic: they never block a shot.
 ///
 /// Genuine data visualisation rather than icon art, so `Canvas` is the right
 /// tool — the geometry *is* the content. Sibling of `RadarView`, which is the
@@ -30,6 +31,7 @@ struct MiniMapView: View {
 
                 drawRings(ctx: ctx, center: center, radius: radius)
                 drawCone(ctx: ctx, center: center, radius: radius)
+                drawWalls(ctx: ctx, center: center, radius: radius, maxRange: maxRange)
 
                 for player in livePeers {
                     // Stale blips lie about where someone is — drop them.
@@ -91,6 +93,38 @@ struct MiniMapView: View {
                     clockwise: false)
         path.closeSubpath()
         ctx.fill(path, with: .color(.echoPrimary.opacity(Alpha.surface)))
+    }
+
+    /// Detected walls as seen from above, in the same ego-centric frame as
+    /// the blips: you at the centre, aim pointing up. Metres map linearly to
+    /// points (radius = weapon range) and the layer clips to the map circle,
+    /// so a long corridor wall can't escape the widget. Dimmer than any blip
+    /// — the room is context, the people are the content.
+    private func drawWalls(ctx: GraphicsContext, center: CGPoint, radius: CGFloat, maxRange: CGFloat) {
+        guard let pose = engine.camera.groundPose else { return }
+        let segments = engine.camera.wallSegments
+        guard !segments.isEmpty else { return }
+        let scale = radius / maxRange
+        var path = Path()
+        for segment in segments {
+            path.move(to: mapPoint(segment.start, pose: pose, center: center, scale: scale))
+            path.addLine(to: mapPoint(segment.end, pose: pose, center: center, scale: scale))
+        }
+        var layer = ctx   // copy: clip the walls, not the whole canvas
+        layer.clip(to: Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
+                                              width: radius * 2, height: radius * 2)))
+        layer.stroke(path, with: .color(.echoTextSecondary.opacity(Alpha.strong)),
+                     style: StrokeStyle(lineWidth: 2, lineCap: .round))
+    }
+
+    /// World-XZ metres → canvas points: project the offset from the player
+    /// onto the aim frame (forward = up on the map, right = right).
+    private func mapPoint(_ world: SIMD2<Float>, pose: GroundPose,
+                          center: CGPoint, scale: CGFloat) -> CGPoint {
+        let offset = world - pose.position
+        return CGPoint(
+            x: center.x + CGFloat(simd_dot(offset, pose.right)) * scale,
+            y: center.y - CGFloat(simd_dot(offset, pose.forward)) * scale)
     }
 
     private func drawBlip(ctx: GraphicsContext, center: CGPoint, at r: CGFloat, angle: CGFloat,
