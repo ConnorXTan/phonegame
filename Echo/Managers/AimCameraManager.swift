@@ -57,7 +57,7 @@ final class AimCameraManager: NSObject, ObservableObject {
     private var clipBuffer: [(jpeg: Data, overlay: SpectatorOverlayState)] = []
     private var lastClipAt = Date.distantPast
     static let clipFrameInterval: TimeInterval = 1.0 / 8.0
-    private static let clipFrameCount = 40
+    private static let clipFrameCount = 56   // ~7 s: ~5 s of hunt + 2 s of aftermath
 
     /// The last ~5 s of viewfinder, oldest first, with per-frame overlays.
     func snapshotClip() -> (frames: [Data], overlays: [SpectatorOverlayState]) {

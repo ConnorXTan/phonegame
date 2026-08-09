@@ -337,6 +337,7 @@ final class GameEngine: NSObject, ObservableObject {
         camera.frameTap = nil
         camera.clipBufferEnabled = false
         pendingKillClips = []
+        delayedCaptures = []
         killClips = []
         camera.stop()   // after the NI sessions that were using it
         stopTimers()
@@ -607,8 +608,27 @@ final class GameEngine: NSObject, ObservableObject {
     /// the match so replays never contend with live traffic.
     private var pendingKillClips: [KillClip] = []
     private var soundLog: [(name: String, volume: Float, rate: Float, at: Date)] = []
+    /// Kills waiting out the post-kill roll before their buffer is frozen.
+    private var delayedCaptures: [(id: UUID, victim: String)] = []
+    /// The clip keeps rolling this long past the kill, so the replay shows
+    /// the aftermath instead of cutting on the killing frame.
+    private static let postKillRoll: TimeInterval = 2.0
 
     private func captureKillClip(victim: String) {
+        let requestID = UUID()
+        delayedCaptures.append((requestID, victim))
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.postKillRoll) { [weak self] in
+            self?.completeCapture(requestID)
+        }
+    }
+
+    /// Freeze the buffer for one pending kill. Also called by endMatch for
+    /// any still-waiting captures — a final-seconds kill must not lose its
+    /// clip to the buffer being disabled.
+    private func completeCapture(_ requestID: UUID) {
+        guard let index = delayedCaptures.firstIndex(where: { $0.id == requestID }) else { return }
+        let victim = delayedCaptures[index].victim
+        delayedCaptures.remove(at: index)
         let snapshot = camera.snapshotClip()
         guard !snapshot.frames.isEmpty else { return }
         // The buffer's first frame is (count × interval) ago; sounds map to
@@ -877,6 +897,9 @@ final class GameEngine: NSObject, ObservableObject {
         cancelReload()
         aimedTarget = nil
         despawnDummy()
+        // A kill still waiting out its post-kill roll freezes with whatever
+        // the buffer holds — better a short clip than a lost one.
+        for capture in delayedCaptures { completeCapture(capture.id) }
         camera.clipBufferEnabled = false
         phase = .summary
         haptics.playMatchEnd()
