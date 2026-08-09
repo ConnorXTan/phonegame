@@ -6,6 +6,8 @@ struct MenuView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var logoWidth: CGFloat = 220
     @ScaledMetric(relativeTo: .body) private var spectateGlyph: CGFloat = 18
 
+    @State private var showManageGallery = false
+
     private var nameEmpty: Bool {
         engine.playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -117,6 +119,17 @@ struct MenuView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .tint(Color.echoText)   // neutral — the accent read as a warning here
+
+                    Button {
+                        showManageGallery = true
+                    } label: {
+                        Label("Manage Gallery", systemImage: "photo.stack")
+                            .frame(maxWidth: 260)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .tint(Color.echoText)
+                    .sheet(isPresented: $showManageGallery) { ManageGalleryView() }
                 }
             }
 
