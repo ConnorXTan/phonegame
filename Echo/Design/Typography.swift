@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Echo's brand typeface. The whole interface is set in `Myfont` (shipped as
+/// LTN's brand typeface. The whole interface is set in `Myfont` (shipped as
 /// `fontregular.ttf`, PostScript name `Myfont-Regular`) so the app speaks in one
 /// voice rather than the system default.
 ///
