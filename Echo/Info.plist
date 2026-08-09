@@ -2,12 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>LTN</string>
 	<key>NSNearbyInteractionUsageDescription</key>
-	<string>Echo uses Ultra Wideband ranging to know when your phone is aimed at another player.</string>
+	<string>LTN uses Ultra Wideband ranging to know when your phone is aimed at another player.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Echo connects directly to nearby players&apos; phones to run the game — no server involved.</string>
+	<string>LTN connects directly to nearby players&apos; phones to run the game — no server involved.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Echo shows a live viewfinder so you can see what you&apos;re aiming at, and the same feed sharpens UWB aiming accuracy. Nothing is recorded.</string>
+	<string>LTN shows a live viewfinder so you can see what you&apos;re aiming at, and the same feed sharpens UWB aiming accuracy. Nothing is recorded.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_lasertag._tcp</string>

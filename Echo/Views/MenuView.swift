@@ -27,7 +27,7 @@ struct MenuView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: logoWidth)
-                    .accessibilityLabel("Echo")
+                    .accessibilityLabel("LTN")
             }
 
             if let notice = engine.hostEndedNotice {
