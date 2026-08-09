@@ -28,6 +28,36 @@ enum Art: String {
     case lobbyDamage = "lobby-damage"
     case lobbyAmmo = "lobby-ammo"
     case lobbyLength = "lobby-length"
+
+    // Consumable power-ups.
+    case overdrive = "overdrive"
+    case medpack = "medpack"
+    case cloak = "cloak"
+    case armor = "armor"
+}
+
+extension ConsumableKind {
+    /// The hand-drawn mark for this power-up, shown on the drop marker, the
+    /// active-effect badge, and the minimap blip.
+    var art: Art {
+        switch self {
+        case .medpack: .medpack
+        case .drink:   .overdrive
+        case .cloak:   .cloak
+        case .armor:   .armor
+        }
+    }
+
+    /// Ring/countdown colour, matched to the mark's own hue so each power-up
+    /// reads as one thing. Reuses existing tokens rather than new literals.
+    var tint: Color {
+        switch self {
+        case .medpack: .echoSecondary   // green
+        case .drink:   .echoDanger      // red
+        case .cloak:   .echoTeamAlly    // blue
+        case .armor:   .echoWarning     // yellow
+        }
+    }
 }
 
 extension Image {
