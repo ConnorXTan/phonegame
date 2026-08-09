@@ -99,36 +99,38 @@ struct GameHUDView: View {
 
     private var topBar: some View {
         VStack(spacing: Space.xxs) {   // bar rides tight under the readouts
-            // Two clusters: match state hard left, controls hard right. Your
-            // own name is one thing you never need reminding of, and the bar
-            // below already carries HP — so the numbers take the prime spot.
+            // Clock hard left, controls hard right, score dead center — the
+            // score rides an overlay so it centers on the bar itself rather
+            // than on whatever width the side clusters happen to have.
             HStack(spacing: 0) {
                 HStack(spacing: Space.xs) {
                     matchClock
-                    // Team play: the score that decides the match outranks a
-                    // personal K/D (which still lives in the scoreboard).
-                    if engine.settings.teamPlay {
-                        teamScore
-                    } else {
-                        Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
-                            .font(.footnote.monospacedDigit())
-                            .foregroundStyle(Color.echoTextSecondary)
-                            .fixedSize()
-                            .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
-                    }
                     shieldBadge
                 }
 
                 Spacer(minLength: Space.sm)
 
-                // Zero spacing between them: each already carries a 44pt
+                // Zero spacing between them: each already carries a 48pt
                 // target, so extra gap would only push the row wider.
                 HStack(spacing: 0) {
                     hudArtButton(.leaderboard, "Leaderboard") { showScores = true }
                     hudArtButton(.exitGame, "Leave match") { engine.leave() }
                 }
             }
-            .font(.footnote)
+            .overlay {
+                // Team play: the score that decides the match outranks a
+                // personal K/D (which still lives in the scoreboard).
+                if engine.settings.teamPlay {
+                    teamScore
+                } else {
+                    Text("K \(engine.me?.kills ?? 0) · D \(engine.me?.deaths ?? 0)")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(Color.echoTextSecondary)
+                        .fixedSize()
+                        .accessibilityLabel("\(engine.me?.kills ?? 0) kills, \(engine.me?.deaths ?? 0) deaths")
+                }
+            }
+            .font(.subheadline)
             .foregroundStyle(Color.echoText)
 
             HeartBar(fraction: hpFraction, size: heartSize)
@@ -138,9 +140,7 @@ struct GameHUDView: View {
                 .accessibilityValue("\(engine.me?.hp ?? 0) of \(engine.myRole.maxHP)")
         }
         .shadow(color: Color.echoBackground.opacity(Alpha.strong), radius: 3, y: 1)
-        // Tighter than the usual inset: the 44pt targets end in transparent
-        // padding, so the glyphs still sit a comfortable distance from the edge.
-        .padding(.horizontal, Space.sm)
+        .padding(.horizontal, Space.lg)
         .padding(.top, Space.sm)
     }
 
@@ -168,8 +168,8 @@ struct GameHUDView: View {
             Image(art: art)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 24, height: 24)   // glyph inside the 44pt target
-                .frame(width: 44, height: 44)
+                .frame(width: 28, height: 28)   // glyph inside the 48pt target
+                .frame(width: 48, height: 48)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel(label)
@@ -191,7 +191,7 @@ struct GameHUDView: View {
             + Text("\(theirs.initial) \(theirKills)")
                 .foregroundStyle(Color.echoDanger)
         )
-        .font(.footnote.bold().monospacedDigit())
+        .font(.subheadline.bold().monospacedDigit())
         .fixedSize()
         .accessibilityLabel("Team \(mine.displayName) \(myKills), team \(theirs.displayName) \(theirKills)")
     }
@@ -203,7 +203,7 @@ struct GameHUDView: View {
         TimelineView(.periodic(from: .now, by: 0.1)) { context in
             let shielded = engine.isInvulnerable(at: context.date)
             Image(systemName: "shield.lefthalf.filled")
-                .font(.subheadline)
+                .font(.headline)
                 .foregroundStyle(Color.echoAccent)
                 .opacity(shielded ? 1 : 0)
                 .accessibilityLabel(shielded ? "Shielded" : "")
@@ -220,9 +220,10 @@ struct GameHUDView: View {
     private var matchClock: some View {
         let remaining = engine.matchRemaining
         let urgent = remaining <= 30
-        return Label(remaining.clockString, systemImage: "timer")
-            .font(.subheadline.bold().monospacedDigit())
+        return Text(remaining.clockString)
+            .font(.headline.bold().monospacedDigit())
             .foregroundStyle(urgent ? Color.echoDanger : Color.echoText)
+            .accessibilityLabel("Match time \(remaining.clockString)")
             .opacity(urgent && clockPulse ? Alpha.muted : 1)
             .animation(urgent ? .easeInOut(duration: 0.5).repeatForever(autoreverses: true) : .default,
                        value: clockPulse)
