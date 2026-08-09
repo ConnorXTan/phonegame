@@ -841,7 +841,7 @@ final class GameEngine: NSObject, ObservableObject {
         var best: (name: String, angle: Float)?
         for player in opponents where player.isAlive && isEnemy(player) {
             guard let reading = ranging.latestDirectional(for: player.name, within: 0.2),
-                  let angle = aimAngle(to: player.name, fallback: reading) else { continue }
+                  let angle = reading.angleOffBoresight else { continue }
             let distance = reading.distance
                 ?? ranging.latestReading(for: player.name)?.distance
                 ?? .infinity
@@ -851,23 +851,6 @@ final class GameEngine: NSObject, ObservableObject {
             }
         }
         return best?.name
-    }
-
-    /// Radians between the camera boresight and the peer. Prefers the ARKit
-    /// anchor over the raw reading because it constrains the VERTICAL axis
-    /// too — a horizontalAngle-only reading (the U2 fallback) locks anywhere
-    /// in a vertical stripe, including the air above the phone. The caller's
-    /// fresh-reading gate still applies, so a dead session can't hold a lock
-    /// through a lingering anchor.
-    private func aimAngle(to name: String, fallback reading: RangingReading) -> Float? {
-        guard let world = ranging.worldPosition(for: name),
-              let frame = camera.session.currentFrame else { return reading.angleOffBoresight }
-        let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
-        let v = simd_float3(inCamera.x, inCamera.y, inCamera.z)
-        guard simd_length(v) > 0.001 else { return reading.angleOffBoresight }
-        let unit = simd_normalize(v)
-        guard unit.z < 0 else { return nil }   // behind the lens — never a lock
-        return acos(max(-1, min(1, -unit.z)))
     }
 
     private func applyHit(from shooter: String, damage: Int) {
