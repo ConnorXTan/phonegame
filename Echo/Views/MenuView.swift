@@ -22,13 +22,24 @@ struct MenuView: View {
         VStack(spacing: Space.xl) {
             Spacer()
 
+            // The logo is a wordmark, so the initials arrive meaning nothing on
+            // a first launch. The expansion sits directly under it as a
+            // subtitle — quiet enough to read past once you know it, present
+            // enough that nobody has to guess what they installed.
             VStack(spacing: Space.sm) {
                 Image(art: .logo)
                     .resizable()
                     .scaledToFit()
                     .frame(width: logoWidth)
-                    .accessibilityLabel("LTN")
+                    .accessibilityHidden(true)
+
+                Text("LASER TAG NOW")
+                    .font(.app(.subheadline))
+                    .tracking(4)
+                    .foregroundStyle(Color.echoTextSecondary)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("LTN, Laser Tag Now")
 
             if let notice = engine.hostEndedNotice {
                 Label(notice, systemImage: "flag.checkered")
