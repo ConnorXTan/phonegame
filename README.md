@@ -1,4 +1,4 @@
-# Echo
+# LTN — Laser Tag Now
 
 iPhone laser tag over Ultra Wideband. Aim your phone like a camera, fire, and the other player's phone buzzes, flashes red, and loses HP. No server, no venue Wi-Fi — the phones talk directly to each other.
 
@@ -21,7 +21,7 @@ Built from [iphone-laser-tag-plan.md](iphone-laser-tag-plan.md):
 ## Build & run
 
 1. `open Echo.xcodeproj`
-2. Target **Echo** → Signing & Capabilities → pick your team (automatic signing). Change the bundle ID if it collides.
+2. Target **Echo** (the Xcode target still carries the old name; the app ships as LTN) → Signing & Capabilities → pick your team (automatic signing). Change the bundle ID if it collides.
 3. Build to each player's phone. On first launch, allow **Local Network**, **Nearby Interaction**, and **Camera** (camera assistance makes UWB aiming noticeably more reliable).
 
 ## How to play
