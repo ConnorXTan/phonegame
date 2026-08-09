@@ -62,7 +62,7 @@ struct SpectatorView: View {
                     .foregroundStyle(Color.echoPrimary)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("ECHO")
+                    Text("LTN")
                         .font(.headline.weight(.black))
                         .tracking(2)
                     Text("GAME MASTER")
