@@ -228,7 +228,6 @@ struct SpectatorView: View {
                     Divider().overlay(Color.ltnHairline)
 
                     HStack(spacing: Space.xl) {
-                        statChip("scope", String(format: "%.0f m", engine.settings.weaponRange))
                         statChip("angle", String(format: "%.0f°", engine.settings.aimConeDegrees))
                     }
                     .font(.app(.caption))
