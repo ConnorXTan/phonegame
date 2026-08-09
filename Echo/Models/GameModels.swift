@@ -54,7 +54,7 @@ enum PlayerRole: String, Codable, CaseIterable, Identifiable {
 
     var fireCooldown: TimeInterval {
         switch self {
-        case .light: return 0.25
+        case .light: return 0.15
         case .regular: return 0.5
         case .heavy: return 1.0
         }
