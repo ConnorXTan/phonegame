@@ -32,70 +32,23 @@ struct LobbyView: View {
             HStack {
                 Button("Leave", role: .destructive) { engine.leave() }
                 Spacer()
+                // Connection state, in the token that means connected.
                 Label(engine.isHost ? "Hosting" : "Joined",
                       systemImage: "antenna.radiowaves.left.and.right")
                     .font(.callout)
-                    .foregroundStyle(Color.echoTextSecondary)
+                    .foregroundStyle(Color.echoSecondary)
             }
             .padding(.horizontal)
 
-            Text("LOBBY")
-                .font(.system(size: titleSize, weight: .black, design: .rounded))
-                .tracking(3)
+            // Title and roster ride together — the count belongs to LOBBY, and
+            // a full xl gap left the roster floating mid-screen.
+            VStack(spacing: Space.md) {
+                Text("LOBBY")
+                    .font(.system(size: titleSize, weight: .black, design: .rounded))
+                    .tracking(3)
 
-            List {
-                if engine.settings.teamPlay {
-                    ForEach(Team.allCases) { team in
-                        Section {
-                            ForEach(members(of: team)) { player in
-                                playerRow(player)
-                            }
-                            if members(of: team).isEmpty {
-                                Text("No one yet")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.echoTextTertiary)
-                            }
-                        } header: {
-                            teamHeader(team)
-                        }
-                    }
-                    if !unassigned.isEmpty {
-                        Section {
-                            ForEach(unassigned) { player in
-                                playerRow(player)
-                            }
-                        } header: {
-                            sectionLabel("PICKING A TEAM")
-                        }
-                    }
-                } else {
-                    Section {
-                        ForEach(roster) { player in
-                            playerRow(player)
-                        }
-                        if roster.count < 2 {
-                            HStack {
-                                ProgressView()
-                                Text("Waiting for players to join…")
-                                    .foregroundStyle(Color.echoTextSecondary)
-                                    .padding(.leading, Space.sm)
-                            }
-                        }
-                    } header: {
-                        rosterCount
-                    }
-                }
-                if !engine.spectators.isEmpty {
-                    Section {
-                        ForEach(engine.spectators.sorted(), id: \.self) { name in
-                            spectatorRow(name)
-                        }
-                    } header: {
-                        sectionLabel("SPECTATORS · \(engine.spectators.count)")
-                    }
-                }
+                rosterBoard
             }
-            .scrollContentBackground(.hidden)
 
             rolePicker
                 .padding(.horizontal)
@@ -106,9 +59,10 @@ struct LobbyView: View {
             }
 
             if engine.isHost {
-                // One step wider than the gap inside a block, so each label
-                // groups with the control under it rather than floating between.
-                VStack(spacing: Space.lg) {
+                // Three steps wider than the gap inside a block, so each label
+                // groups with the control under it rather than floating between —
+                // and the same gap the outer stack puts between ROLE and MODE.
+                VStack(spacing: Space.xl) {
                     VStack(spacing: Space.sm) {
                         sectionLabel("MODE")
                         Picker("Mode", selection: Binding(
@@ -197,11 +151,129 @@ struct LobbyView: View {
         .padding(.vertical)
     }
 
+    // MARK: - Roster
+
+    /// Hand-built rather than a `List`: a list carries its own section insets,
+    /// so every roster header sat a step to the right of every other label on
+    /// the screen, and its row fill came from the system's gray instead of the
+    /// palette. Scrolls only when the roster outgrows the space it's given.
+    private var rosterBoard: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Space.lg) {
+                if engine.settings.teamPlay {
+                    ForEach(Team.allCases) { team in
+                        rosterGroup {
+                            teamHeader(team)
+                        } rows: {
+                            if members(of: team).isEmpty {
+                                placeholderRow("No one yet")
+                            } else {
+                                ForEach(Array(members(of: team).enumerated()),
+                                        id: \.element.id) { index, player in
+                                    if index > 0 { rowSeparator }
+                                    playerRow(player)
+                                }
+                            }
+                        }
+                    }
+                    if !unassigned.isEmpty {
+                        rosterGroup {
+                            sectionLabel("PICKING A TEAM")
+                        } rows: {
+                            ForEach(Array(unassigned.enumerated()),
+                                    id: \.element.id) { index, player in
+                                if index > 0 { rowSeparator }
+                                playerRow(player)
+                            }
+                        }
+                    }
+                } else {
+                    rosterGroup {
+                        rosterCount
+                    } rows: {
+                        ForEach(Array(roster.enumerated()), id: \.element.id) { index, player in
+                            if index > 0 { rowSeparator }
+                            playerRow(player)
+                        }
+                        if roster.count < 2 {
+                            rowSeparator
+                            waitingRow
+                        }
+                    }
+                }
+                if !engine.spectators.isEmpty {
+                    rosterGroup {
+                        sectionLabel("SPECTATORS · \(engine.spectators.count)")
+                    } rows: {
+                        ForEach(Array(engine.spectators.sorted().enumerated()),
+                                id: \.element) { index, name in
+                            if index > 0 { rowSeparator }
+                            spectatorRow(name)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    /// A header on the screen's own margin, with its rows in one card under it.
+    private func rosterGroup<Header: View, Rows: View>(
+        @ViewBuilder header: () -> Header,
+        @ViewBuilder rows: () -> Rows
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            header()
+            VStack(spacing: 0) { rows() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Space.md)
+                .background(Color.echoSurface, in: RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private func placeholderRow(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(Color.echoTextTertiary)
+            .padding(.vertical, Space.md)
+    }
+
+    /// The last line of the roster card until someone shows up, so it's built
+    /// like a roster row: same `.body` as a player name, and a small spinner
+    /// that doesn't stand taller than the names above it.
+    private var waitingRow: some View {
+        HStack(spacing: Space.sm) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Waiting for players to join…")
+                .font(.body)
+                .foregroundStyle(Color.echoTextSecondary)
+        }
+        .padding(.vertical, Space.md)
+    }
+
+    /// A rule between roster rows, in the palette's "connected, in play" green
+    /// rather than the neutral hairline — this card's contents are the live
+    /// players, and it's the only card on the screen that has any.
+    private var rowSeparator: some View {
+        Rectangle()
+            .fill(Color.echoSecondary.opacity(Alpha.muted))
+            .frame(height: 1)
+    }
+
+    // MARK: - Settings
+
     /// Everyone picks their own loadout while waiting; the choice broadcasts
-    /// so the whole roster shows it.
+    /// so the whole roster shows it. The loadout numbers ride the label's own
+    /// line — they describe the selection, so they don't need a row of their own
+    /// under the control.
     private var rolePicker: some View {
         VStack(spacing: Space.sm) {
-            sectionLabel("ROLE")
+            HStack(alignment: .firstTextBaseline) {
+                sectionLabel("ROLE")
+                roleStats
+            }
             Picker("Role", selection: Binding(
                 get: { engine.myRole },
                 set: { engine.selectRole($0) }
@@ -211,19 +283,35 @@ struct LobbyView: View {
                 }
             }
             .pickerStyle(.segmented)
-            HStack(spacing: Space.xl) {
-                statChip("heart.fill", "\(engine.myRole.maxHP) hp")
-                statChip("bolt.fill", "\(engine.myRole.damage) dmg")
-                statChip("arrow.counterclockwise", "\(engine.myRole.magazineSize) rds")
-                statChip("timer", String(format: "%.2gs", engine.myRole.fireCooldown))
-            }
-            .font(.caption)
-            .foregroundStyle(Color.echoTextSecondary)
         }
     }
 
+    private var roleStats: some View {
+        HStack(spacing: Space.md) {
+            statChip("heart.fill", "\(engine.myRole.maxHP) hp")
+            statChip("bolt.fill", "\(engine.myRole.damage) dmg")
+            statChip("arrow.counterclockwise", "\(engine.myRole.magazineSize) rds")
+            statChip("timer", String(format: "%.2gs", engine.myRole.fireCooldown))
+        }
+        .font(.caption)
+        .foregroundStyle(Color.echoTextSecondary)
+        .lineLimit(1)
+        // The strip wins the row over the label it shares: ROLE is one short
+        // word with room to spare, four numbers aren't.
+        .layoutPriority(1)
+    }
+
+    /// Glyph and value sit two points apart — they're one fact — with six times
+    /// that between chips, so the strip reads as four pairs rather than eight
+    /// loose pieces.
     private func statChip(_ icon: String, _ text: String) -> some View {
-        Label(text, systemImage: icon)
+        HStack(spacing: Space.xxs) {
+            Image(systemName: icon)
+                .accessibilityHidden(true)
+            Text(text)
+                .monospacedDigit()
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// The roster count, and the loudest thing on the screen after the title —
@@ -255,6 +343,7 @@ struct LobbyView: View {
     private func playerRow(_ player: Player) -> some View {
         HStack {
             Text(player.name.displayCallSign)
+                .font(.body)
                 .foregroundStyle(player.isConnected
                                  ? Color.echoText
                                  : Color.echoTextTertiary)
@@ -270,6 +359,7 @@ struct LobbyView: View {
                 .font(.caption2)
                 .foregroundStyle(Color.echoTextSecondary)
         }
+        .padding(.vertical, Space.md)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "\(player.name.displayCallSign)"
@@ -293,6 +383,7 @@ struct LobbyView: View {
                 .frame(height: spectateGlyph)
                 .foregroundStyle(Color.echoTextSecondary)
         }
+        .padding(.vertical, Space.md)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(name.displayCallSign), spectating")
     }
