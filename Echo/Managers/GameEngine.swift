@@ -76,7 +76,6 @@ final class GameEngine: NSObject, ObservableObject {
     let ranging = RangingManager()
     let haptics = HapticsManager()
     let camera = AimCameraManager()
-    private let dummy = TargetDummy()
 
     private var aimTimer: Timer?
     private var autoFireTimer: Timer?
@@ -85,7 +84,6 @@ final class GameEngine: NSObject, ObservableObject {
     private var matchDeadline: Date?
     private var reloadTimer: Timer?
     private var pendingSnapshots: [String: (state: PlayerState, at: Date)] = [:]
-    private var dummyInvulnerableUntil: Date?   // the dummy's half of the same rule
 
     var myName: String { network?.myName ?? playerName }
     var me: Player? { players[myName] }
@@ -262,7 +260,7 @@ final class GameEngine: NSObject, ObservableObject {
     func refreshLobbyAdvertisement() {
         guard isHost else { return }
         network?.updateLobbyAdvertisement(
-            playerCount: players.keys.filter { $0 != TargetDummy.name }.count,
+            playerCount: players.count,
             capacity: settings.maxPlayers,
             isLive: phase == .playing,
             isTeams: settings.teamPlay)
@@ -314,7 +312,7 @@ final class GameEngine: NSObject, ObservableObject {
     /// spectator so joiners can see who's running the show.
     private func broadcastRoster() {
         guard isHost, let net = network else { return }
-        let playerNames = players.keys.filter { $0 != TargetDummy.name }.sorted()
+        let playerNames = players.keys.sorted()
         var spectatorNames = spectators.sorted()
         if isSpectator { spectatorNames.append(myName) }
         net.send(.lobbyRoster(players: playerNames, spectators: spectatorNames))
@@ -334,7 +332,6 @@ final class GameEngine: NSObject, ObservableObject {
             network?.stop()
             network = nil
         }
-        despawnDummy()
         ranging.stopAll()
         camera.frameTap = nil
         camera.clipBufferEnabled = false
@@ -467,13 +464,15 @@ final class GameEngine: NSObject, ObservableObject {
         let world4 = t * simd_float4(inCamera, 0)
         let origin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
         let direction = simd_normalize(simd_float3(world4.x, world4.y, world4.z))
-        return origin + direction * (reading.distance ?? TargetDummy.distance)
+        return origin + direction * (reading.distance ?? 5)
     }
 
     /// Host taps Start: broadcast settings, then start locally. The game
-    /// master can't start while somebody else's real match is running.
+    /// master can't start while somebody else's real match is running, and a
+    /// match needs at least two players — there's no practice dummy anymore.
     func startGame() {
-        guard phase == .lobby, isHost, !externalMatchInProgress, let net = network else { return }
+        guard phase == .lobby, isHost, !externalMatchInProgress,
+              players.count >= 2, let net = network else { return }
         net.send(.startGame(settings: settings))
         beginMatch(with: settings)
     }
@@ -539,14 +538,10 @@ final class GameEngine: NSObject, ObservableObject {
         // don't range). Both sides send; ordering races are handled inside
         // RangingManager.
         let playerPeers = (network?.connectedPeers ?? []).filter { !spectators.contains($0) }
-        if !playerPeers.isEmpty {
-            for peer in playerPeers {
-                if let data = ranging.prepare(peerName: peer) {
-                    network?.send(.discoveryToken(data), to: [peer])
-                }
+        for peer in playerPeers {
+            if let data = ranging.prepare(peerName: peer) {
+                network?.send(.discoveryToken(data), to: [peer])
             }
-        } else {
-            spawnDummy()   // solo test: nobody to shoot, so conjure a target
         }
     }
 
@@ -570,9 +565,7 @@ final class GameEngine: NSObject, ObservableObject {
         net.send(.shotFired(by: myName))
         defer { if ammo == 0 { startReload() } }   // auto-reload on the last round
         guard let victim else { return }
-        if victim == TargetDummy.name {
-            hitDummy()
-        } else if net.isConnected(victim) {
+        if net.isConnected(victim) {
             net.send(.hit(target: victim, by: myName, damage: myRole.damage), to: [victim])
             confirmHit()
             // Optimistic: drop their bar now instead of a network round trip
@@ -895,8 +888,6 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func endMatch(with finalPlayers: [Player]) {
         guard phase == .playing else { return }
-        // Snapshot before despawning the dummy — in a solo test it holds the
-        // only opponent stats worth showing.
         matchResult = MatchResult(
             players: finalPlayers,
             duration: settings.matchDuration,
@@ -914,7 +905,6 @@ final class GameEngine: NSObject, ObservableObject {
         respawnRemaining = 0
         cancelReload()
         aimedTarget = nil
-        despawnDummy()
         // A kill still waiting out its post-kill roll freezes with whatever
         // the buffer holds — better a short clip than a lost one.
         for capture in delayedCaptures { completeCapture(capture.id) }
@@ -973,61 +963,6 @@ final class GameEngine: NSObject, ObservableObject {
         }
         let hint = ranging.anyConvergenceHint
         if hint != aimHint { aimHint = hint }
-    }
-
-    // MARK: - Target dummy (solo practice)
-
-    private func spawnDummy() {
-        var target = Player(name: TargetDummy.name)   // a Regular, 100 HP
-        // Solo practice with teams on: the dummy mans the other side, so the
-        // enemy-only aim filter still finds it.
-        if settings.teamPlay { target.team = myTeam?.other ?? .bravo }
-        players[TargetDummy.name] = target
-        dummyInvulnerableUntil = nil
-        dummy.onReading = { [weak self] reading in
-            self?.ranging.injectSyntheticReading(reading, for: TargetDummy.name)
-        }
-        dummy.spawn()
-    }
-
-    private func despawnDummy() {
-        guard players[TargetDummy.name] != nil else { return }
-        dummy.stop()
-        ranging.removeSynthetic(TargetDummy.name)
-        players[TargetDummy.name] = nil
-        dummyInvulnerableUntil = nil
-    }
-
-    /// Victim-side logic, played locally: the dummy takes damage, dies, and
-    /// respawns at a new bearing so you have to hunt for it.
-    private func hitDummy() {
-        guard var target = players[TargetDummy.name], target.isAlive else { return }
-        // Unreachable while fireCooldown >= hitInvulnerability (you're the only
-        // shooter here), but it keeps practice honest if either is retuned.
-        let now = Date()
-        if let until = dummyInvulnerableUntil, now < until { return }
-        dummyInvulnerableUntil = now.addingTimeInterval(settings.hitInvulnerability)
-        target.hp = max(0, target.hp - myRole.damage)
-        confirmHit()
-        if target.hp <= 0 {
-            target.isAlive = false
-            target.deaths += 1
-            players[myName]?.kills += 1
-            killFeed.insert(KillEvent(killer: myName, victim: TargetDummy.name), at: 0)
-            trimFeed()
-            confirmHit(kill: true)
-            captureKillClip(victim: TargetDummy.name)
-            dummy.relocate()
-            DispatchQueue.main.asyncAfter(deadline: .now() + settings.respawnDelay) { [weak self] in
-                guard let self, self.phase == .playing,
-                      var revived = self.players[TargetDummy.name] else { return }
-                revived.hp = revived.role.maxHP
-                revived.isAlive = true
-                self.dummyInvulnerableUntil = Date().addingTimeInterval(self.settings.spawnProtection)
-                self.players[TargetDummy.name] = revived
-            }
-        }
-        players[TargetDummy.name] = target
     }
 
     // MARK: - Helpers
@@ -1139,7 +1074,7 @@ extension GameEngine: NetworkManagerDelegate {
             // Host gates capacity here: spectators never count, reconnects
             // (already in players) always pass.
             if isHost, players[name] == nil,
-               players.keys.filter({ $0 != TargetDummy.name }).count >= settings.maxPlayers {
+               players.count >= settings.maxPlayers {
                 manager.send(.joinDenied(reason: "Lobby is full (\(settings.maxPlayers) players)."), to: [peerName])
                 return
             }
@@ -1161,7 +1096,6 @@ extension GameEngine: NetworkManagerDelegate {
                 }
             }
             if phase == .playing {
-                if !isSpectator { despawnDummy() }   // a real target arrived
                 // Late joiner or reconnect mid-match: sync settings + full
                 // state (host), our own authoritative row (everyone), and
                 // pair up UWB. Ordered unicasts land after .startGame.

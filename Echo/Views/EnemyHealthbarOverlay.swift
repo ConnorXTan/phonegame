@@ -11,7 +11,7 @@ import UIKit
 ///   1. `NISession.worldTransform` — camera-assistance fusion, world-anchored,
 ///      so the bar stays glued at frame rate while the local camera pans.
 ///   2. The latest device-frame reading (raw U1 direction, or horizontalAngle
-///      for the target dummy and pre-convergence U2 phones) cast out from the
+///      for pre-convergence U2 phones) cast out from the
 ///      current camera pose.
 /// Either way the bar hides once readings go stale (~1 s) — same rule as the
 /// shoot path: old data must not pin a bar to empty space.
@@ -107,7 +107,7 @@ struct EnemyHealthbarOverlay: View {
         let world4 = t * simd_float4(inCamera, 0)
         let origin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
         let direction = simd_normalize(simd_float3(world4.x, world4.y, world4.z))
-        return origin + direction * (reading.distance ?? TargetDummy.distance)
+        return origin + direction * (reading.distance ?? 5)
     }
 }
 

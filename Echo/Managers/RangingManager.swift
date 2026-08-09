@@ -64,7 +64,6 @@ final class RangingManager: NSObject, ObservableObject {
 
     private var peers: [String: PeerRanging] = [:]
     private var invalidationStreaks: [String: Int] = [:]
-    private var syntheticReadings: [String: [RangingReading]] = [:]   // solo-practice targets, no NISession
 
     /// Most recent NISession invalidation per peer, for the debug sheet —
     /// playtests run without Xcode attached, so the raw NIError code has to be
@@ -93,9 +92,7 @@ final class RangingManager: NSObject, ObservableObject {
         return convergenceHints.values.sorted().first
     }
 
-    /// True when a real peer has yielded a usable bearing in the last second.
-    /// Deliberately ignores synthetic solo-practice targets — those fabricate
-    /// angles without ARKit, and would mask a genuine convergence problem.
+    /// True when a peer has yielded a usable bearing in the last second.
     private var isCameraAssistanceLive: Bool {
         peers.keys.contains { latestDirectional(for: $0, within: 1) != nil }
     }
@@ -177,8 +174,7 @@ final class RangingManager: NSObject, ObservableObject {
 
     /// Peer's position in the shared ARSession's world coordinates — the
     /// camera-assistance fusion result, re-projectable at frame rate. Nil
-    /// until convergence, and always nil for synthetic targets (no NISession
-    /// behind them) — callers fall back to the raw readings.
+    /// until convergence — callers fall back to the raw readings.
     func worldPosition(for peerName: String) -> simd_float3? {
         guard let pr = peers[peerName],
               let object = pr.latestObject,
@@ -191,22 +187,6 @@ final class RangingManager: NSObject, ObservableObject {
     func sampleRate(for peerName: String) -> Int {
         let cutoff = Date().addingTimeInterval(-1)
         return readings(for: peerName).filter { $0.timestamp >= cutoff }.count
-    }
-
-    // MARK: - Synthetic targets (solo practice)
-
-    func injectSyntheticReading(_ reading: RangingReading, for name: String) {
-        var buffer = syntheticReadings[name] ?? []
-        buffer.append(reading)
-        let cutoff = Date().addingTimeInterval(-1)
-        buffer.removeAll { $0.timestamp < cutoff }
-        syntheticReadings[name] = buffer
-        if !peerNames.contains(name) { peerNames.append(name) }
-    }
-
-    func removeSynthetic(_ name: String) {
-        syntheticReadings[name] = nil
-        peerNames.removeAll { $0 == name }
     }
 
     // MARK: - Lifecycle
@@ -224,7 +204,6 @@ final class RangingManager: NSObject, ObservableObject {
         peers = [:]
         peerNames = []
         invalidationStreaks = [:]
-        syntheticReadings = [:]
         convergenceHints = [:]
         lastInvalidations = [:]
     }
@@ -269,7 +248,7 @@ final class RangingManager: NSObject, ObservableObject {
     }
 
     private func readings(for peerName: String) -> [RangingReading] {
-        peers[peerName]?.readings ?? syntheticReadings[peerName] ?? []
+        peers[peerName]?.readings ?? []
     }
 
     private func onMain(_ work: @escaping () -> Void) {

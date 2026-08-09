@@ -238,7 +238,7 @@ struct SpectatorView: View {
                 Button {
                     engine.startGame()
                 } label: {
-                    Label(roster.isEmpty ? "Waiting for players…" : "Start Match",
+                    Label(roster.count < 2 ? "Waiting for players…" : "Start Match",
                           systemImage: "play.fill")
                         .font(.app(.headline))
                         .frame(minWidth: 260)
@@ -247,10 +247,10 @@ struct SpectatorView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(Color.echoPrimary)
-                .disabled(roster.isEmpty)
+                .disabled(roster.count < 2)
 
                 if !roster.isEmpty {
-                    Text("\(roster.count) in — you can keep waiting or start now.")
+                    Text(roster.count < 2 ? "Matches need at least two players." : "\(roster.count) in — you can keep waiting or start now.")
                         .font(.app(.caption2))
                         .foregroundStyle(Color.echoTextTertiary)
                 }

@@ -124,14 +124,14 @@ struct LobbyView: View {
                     Button {
                         engine.startGame()
                     } label: {
-                        Text(roster.count < 2 ? "Start Anyway (solo test)" : "Start Game")
+                        Text(roster.count < 2 ? "Waiting for players…" : "Start Game")
                             .frame(maxWidth: .infinity)
                             .foregroundStyle(Color.echoOnPrimary)
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .tint(Color.echoPrimary)
-                    .disabled(teamsLopsided)
+                    .disabled(teamsLopsided || roster.count < 2)
 
                     if teamsLopsided {
                         Text("Both teams need at least one player.")
