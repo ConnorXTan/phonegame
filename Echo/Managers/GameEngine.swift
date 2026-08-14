@@ -508,7 +508,8 @@ final class GameEngine: NSObject, ObservableObject {
                     name: player.name.displayCallSign,
                     x: point.x / viewport.width,
                     y: point.y / viewport.height,
-                    hp: Double(player.hp) / Double(max(1, player.role.maxHP))))
+                    hp: Double(player.hp) / Double(max(1, player.role.maxHP)),
+                    maxHP: player.role.maxHP))
             }
         }
         return SpectatorOverlayState(tags: tags, lockedTarget: aimedTarget?.displayCallSign)

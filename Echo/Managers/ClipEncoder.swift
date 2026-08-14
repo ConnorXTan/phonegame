@@ -1,10 +1,14 @@
 import AVFoundation
 import CoreVideo
+import SwiftUI
 import UIKit
 
 /// JPEG frame sequence → H.264 MP4 with the shooter's HUD baked in and the
 /// app sounds reconstructed as a real audio track — what the public gallery
-/// plays. Runs off-main; hardware-encoded, so a 40-frame clip takes about a
+/// plays. The HUD chrome is `ClipOverlayView` — the same SwiftUI view the
+/// spectator feed and in-app review draw — rasterized per frame, so the
+/// gallery can't drift from what the app shows. Runs off-main apart from
+/// those rasterizations; hardware-encoded, so a 40-frame clip takes about a
 /// second on Apple Silicon / A-series.
 enum ClipEncoder {
     static let framesPerSecond = Int32(AimCameraManager.clipFramesPerSecond)   // matches the capture cadence by construction
@@ -75,13 +79,26 @@ enum ClipEncoder {
         guard writer.startWriting() else { throw EncodeError.writerFailed }
         writer.startSession(atSourceTime: .zero)
 
+        let pixelSize = CGSize(width: firstImage.width, height: firstImage.height)
         for (index, jpeg) in frames.enumerated() {
             let overlay = overlays.indices.contains(index) ? overlays[index] : nil
             let clipTime = Double(index) / Double(framesPerSecond)
-            let liveMarkers = markers.filter {
+            let hasLiveMarker = markers.contains {
                 clipTime - $0.offset >= 0 && clipTime - $0.offset < ClipMarkerEvent.duration
             }
-            guard let cgImage = composited(jpeg, overlay: overlay, markers: liveMarkers, at: clipTime),
+            // ImageRenderer is main-actor-only; hop over per frame so at most
+            // one rasterized overlay is ever in flight (a whole clip's worth
+            // up front would be hundreds of MB of BGRA).
+            var chrome: CGImage?
+            if overlay != nil || hasLiveMarker {
+                DispatchQueue.main.sync {
+                    chrome = MainActor.assumeIsolated {
+                        renderChrome(overlay: overlay, markers: markers,
+                                     clipTime: clipTime, pixelSize: pixelSize)
+                    }
+                }
+            }
+            guard let cgImage = composited(jpeg, chrome: chrome),
                   let buffer = pixelBuffer(from: cgImage, width: width, height: height,
                                            pool: adaptor.pixelBufferPool) else {
                 continue   // one bad frame shouldn't sink the clip
@@ -99,92 +116,41 @@ enum ClipEncoder {
         return url
     }
 
-    // MARK: - Overlay compositing (mirrors the live HUD's look)
+    // MARK: - Overlay compositing (the replay's SwiftUI chrome, rasterized)
 
-    private static func composited(_ jpeg: Data, overlay: SpectatorOverlayState?,
-                                   markers: [ClipMarkerEvent], at clipTime: TimeInterval) -> CGImage? {
+    /// Reference width, in points, the chrome is laid out at before scaling up
+    /// to the frame's pixels — phone-screen scale, so hearts, crosshair, and
+    /// markers keep the proportions the live HUD and in-app replay show.
+    private static let chromeLogicalWidth: CGFloat = 360
+
+    /// One frame's HUD chrome — the same `ClipOverlayView` the spectator feed
+    /// and in-app review draw — rendered transparent at the camera frame's
+    /// pixel size, ready to composite.
+    @MainActor
+    private static func renderChrome(overlay: SpectatorOverlayState?, markers: [ClipMarkerEvent],
+                                     clipTime: TimeInterval, pixelSize: CGSize) -> CGImage? {
+        guard pixelSize.width > 0 else { return nil }
+        let scale = pixelSize.width / chromeLogicalWidth
+        let logical = CGSize(width: chromeLogicalWidth, height: pixelSize.height / scale)
+        let renderer = ImageRenderer(content:
+            ClipOverlayView(overlay: overlay, markers: markers, clipTime: clipTime,
+                            fit: CGRect(origin: .zero, size: logical))
+                .frame(width: logical.width, height: logical.height))
+        renderer.scale = scale
+        return renderer.cgImage
+    }
+
+    private static func composited(_ jpeg: Data, chrome: CGImage?) -> CGImage? {
         guard let base = UIImage(data: jpeg) else { return nil }
+        guard let chrome else { return base.cgImage }   // nothing to draw — skip the re-render
         let size = base.size
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
-        let image = UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             base.draw(in: CGRect(origin: .zero, size: size))
-            if let overlay {
-                for tag in overlay.tags {
-                    drawTag(name: tag.name, hp: CGFloat(tag.hp),
-                            at: CGPoint(x: CGFloat(tag.x) * size.width,
-                                        y: CGFloat(tag.y) * size.height - 40))
-                }
-                drawCrosshair(in: size, context: ctx.cgContext)
-            }
-            for marker in markers {
-                drawMarker(marker, at: clipTime, in: size)
-            }
+            UIImage(cgImage: chrome).draw(in: CGRect(origin: .zero, size: size))
         }
         return image.cgImage
-    }
-
-    /// The HUD's hit-marker art with its bloom-fade, sampled at this frame's
-    /// point in the animation.
-    private static func drawMarker(_ marker: ClipMarkerEvent, at clipTime: TimeInterval,
-                                   in size: CGSize) {
-        let artName = marker.isKill ? Art.hitMarkerKill.rawValue : Art.hitMarker.rawValue
-        guard let art = UIImage(named: artName) else { return }
-        let fade = min(1, max(0, (clipTime - marker.offset) / ClipMarkerEvent.duration))
-        let baseSize: CGFloat = marker.isKill ? 22 : 16
-        let drawSize = baseSize * (0.8 + 0.4 * fade)
-        let tint: UIColor = marker.isKill
-            ? UIColor(red: 0.94, green: 0.25, blue: 0.25, alpha: 1)
-            : .white
-        let rect = CGRect(x: size.width / 2 - drawSize / 2,
-                          y: size.height / 2 - drawSize / 2,
-                          width: drawSize, height: drawSize)
-        art.withTintColor(tint, renderingMode: .alwaysOriginal)
-            .draw(in: rect, blendMode: .normal, alpha: 1 - fade)
-    }
-
-    /// Approximations of the Theme tokens for offline drawing.
-    private static let lockedColor = UIColor(red: 0.30, green: 0.90, blue: 0.22, alpha: 0.95)
-
-    private static func healthColor(_ fraction: CGFloat) -> UIColor {
-        fraction > 0.5 ? UIColor(red: 0.45, green: 0.96, blue: 0.66, alpha: 1)
-        : fraction > 0.25 ? UIColor(red: 1.0, green: 0.8, blue: 0.2, alpha: 1)
-        : UIColor(red: 0.94, green: 0.25, blue: 0.25, alpha: 1)
-    }
-
-    private static func drawTag(name: String, hp: CGFloat, at point: CGPoint) {
-        let barWidth: CGFloat = 64
-        let barHeight: CGFloat = 5
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 11, weight: .bold),
-            .foregroundColor: UIColor.white.withAlphaComponent(0.9),
-        ]
-        let text = name.uppercased() as NSString
-        let textSize = text.size(withAttributes: attributes)
-        text.draw(at: CGPoint(x: point.x - textSize.width / 2,
-                              y: point.y - textSize.height - 3),
-                  withAttributes: attributes)
-        let barRect = CGRect(x: point.x - barWidth / 2, y: point.y,
-                             width: barWidth, height: barHeight)
-        UIColor.black.withAlphaComponent(0.4).setFill()
-        UIBezierPath(roundedRect: barRect, cornerRadius: barHeight / 2).fill()
-        let fillRect = CGRect(x: barRect.minX, y: barRect.minY,
-                              width: barWidth * max(0, min(1, hp)), height: barHeight)
-        healthColor(hp).setFill()
-        UIBezierPath(roundedRect: fillRect, cornerRadius: barHeight / 2).fill()
-    }
-
-    /// Neutral aim reference only — no lock ring, no callout; the markers
-    /// and health bars carry the drama.
-    private static func drawCrosshair(in size: CGSize, context: CGContext) {
-        let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        context.setStrokeColor(UIColor.white.withAlphaComponent(0.4).cgColor)
-        context.setLineWidth(2)
-        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] as [(CGFloat, CGFloat)] {
-            context.move(to: CGPoint(x: center.x + dx * 8, y: center.y + dy * 8))
-            context.addLine(to: CGPoint(x: center.x + dx * 26, y: center.y + dy * 26))
-        }
-        context.strokePath()
     }
 
     // MARK: - Audio reconstruction

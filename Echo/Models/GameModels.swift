@@ -305,6 +305,13 @@ struct SpectatorOverlayState: Codable, Equatable {
         let x: Double
         let y: Double
         let hp: Double       // 0–1 fraction
+        /// Heart slots for this player's role. Optional on the wire so clips
+        /// recorded before the field existed still decode.
+        let maxHP: Int?
+
+        /// What the gauge should draw — pre-`maxHP` recordings fall back to
+        /// the default five slots.
+        var hearts: Int { maxHP ?? 5 }
     }
     let tags: [Tag]
     let lockedTarget: String?   // display call sign under the crosshair, if locked

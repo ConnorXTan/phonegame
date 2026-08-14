@@ -451,14 +451,7 @@ struct SpectatorView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     // Their HUD, redrawn: enemy tags pinned to the frame and
                     // the crosshair — nothing else from their chrome.
-                    if let overlay = engine.spectatorOverlay {
-                        ForEach(overlay.tags, id: \.name) { tag in
-                            EnemyTag(name: tag.name, hpFraction: CGFloat(tag.hp))
-                                .position(x: fit.minX + CGFloat(tag.x) * fit.width,
-                                          y: fit.minY + CGFloat(tag.y) * fit.height - 40)
-                        }
-                        spectatedCrosshair(overlay, center: CGPoint(x: fit.midX, y: fit.midY))
-                    }
+                    ClipOverlayView(overlay: engine.spectatorOverlay, fit: fit)
                 }
                 .clipped()
                 .allowsHitTesting(false)
@@ -494,15 +487,6 @@ struct SpectatorView: View {
         return CGRect(x: (container.width - size.width) / 2,
                       y: (container.height - size.height) / 2,
                       width: size.width, height: size.height)
-    }
-
-    /// The spectated player's aim reference: a neutral crosshair only — the
-    /// hit markers and health bars carry the drama, no lock callout.
-    private func spectatedCrosshair(_ overlay: SpectatorOverlayState, center: CGPoint) -> some View {
-        Image(systemName: "plus")
-            .font(.system(size: 40, weight: .thin))
-            .foregroundStyle(Color.ltnText.opacity(Alpha.muted))
-            .position(center)
     }
 
     /// Who's on air and how they're doing, pinned over the feed.
@@ -727,40 +711,14 @@ struct SpectatorView: View {
                                 .resizable()
                                 .scaledToFit()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            // The shooter's HUD at that instant: enemy tags
-                            // pinned into the frame plus their crosshair.
-                            if clip.overlays.indices.contains(index) {
-                                let overlay = clip.overlays[index]
-                                ForEach(overlay.tags, id: \.name) { tag in
-                                    EnemyTag(name: tag.name, hpFraction: CGFloat(tag.hp))
-                                        .position(x: fit.minX + CGFloat(tag.x) * fit.width,
-                                                  y: fit.minY + CGFloat(tag.y) * fit.height - 40)
-                                }
-                                spectatedCrosshair(overlay, center: CGPoint(x: fit.midX, y: fit.midY))
-                            }
-                            // Hit/kill markers replayed with the HUD's art and
-                            // bloom-fade, timed off the clip clock.
-                            let clipTime = Double(index) / Self.clipFPS
-                            ForEach(Array(clip.markers.enumerated()), id: \.offset) { item in
-                                let marker = item.element
-                                let age = clipTime - marker.offset
-                                if age >= 0, age < ClipMarkerEvent.duration {
-                                    let fade = age / ClipMarkerEvent.duration
-                                    Image(art: marker.isKill ? .hitMarkerKill : .hitMarker)
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .foregroundStyle(marker.isKill ? Color.ltnDanger : Color.ltnText)
-                                        // Same reticle-relative read as the live
-                                        // HUD, against this view's 40pt
-                                        // crosshair rather than its 74pt ring.
-                                        .frame(width: marker.isKill ? 17 : 15,
-                                               height: marker.isKill ? 17 : 15)
-                                        .opacity(1 - fade)
-                                        .scaleEffect(0.8 + 0.4 * fade)
-                                        .position(x: fit.midX, y: fit.midY)
-                                }
-                            }
+                            // The shooter's HUD at that instant — the same
+                            // view the published MP4 bakes into its pixels.
+                            ClipOverlayView(
+                                overlay: clip.overlays.indices.contains(index)
+                                    ? clip.overlays[index] : nil,
+                                markers: clip.markers,
+                                clipTime: Double(index) / Self.clipFPS,
+                                fit: fit)
                         }
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                     }
