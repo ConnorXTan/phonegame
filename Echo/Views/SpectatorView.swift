@@ -13,7 +13,7 @@ struct SpectatorView: View {
 
     // Kill review playback: which clip is open and when playback started
     // (drives the flipbook clock). Frames decode per tick, not up front —
-    // ~7 s of 720p bitmaps would be hundreds of MB held decoded.
+    // ~4 s of 720p bitmaps would be hundreds of MB held decoded.
     @State private var reviewClipID: UUID?
     @State private var reviewStarted = Date()
     private static let clipFPS = Double(ClipEncoder.framesPerSecond)

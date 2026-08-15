@@ -8,8 +8,8 @@ import UIKit
 /// plays. The HUD chrome is `ClipOverlayView` — the same SwiftUI view the
 /// spectator feed and in-app review draw — rasterized per frame, so the
 /// gallery can't drift from what the app shows. Runs off-main apart from
-/// those rasterizations; hardware-encoded, so a 40-frame clip takes about a
-/// second on Apple Silicon / A-series.
+/// those rasterizations; hardware-encoded, so a full ~4 s clip takes a
+/// couple of seconds on Apple Silicon / A-series.
 enum ClipEncoder {
     static let framesPerSecond = Int32(AimCameraManager.clipFramesPerSecond)   // matches the capture cadence by construction
 
@@ -59,7 +59,7 @@ enum ClipEncoder {
             AVVideoWidthKey: width,
             AVVideoHeightKey: height,
             // 3 Mbps is generous for 720×1280 at this cadence — the source
-            // JPEGs are the quality ceiling, and 7 s still lands ~2.7 MB,
+            // JPEGs are the quality ceiling, and 4 s lands ~1.5 MB, well
             // inside the upload proxy's 4.5 MB body limit.
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: 3_000_000,
