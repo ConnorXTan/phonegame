@@ -106,6 +106,17 @@ struct MenuView: View {
                     .controlSize(.large)
                 }
                 .disabled(nameEmpty)
+
+                // Solo drills need no lobby, no call sign — and no UWB, so
+                // it stays enabled even when the warning above is showing.
+                Button {
+                    engine.enterTraining()
+                } label: {
+                    Label("Training Range", systemImage: "target")
+                        .frame(maxWidth: 260)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
 
             if isMac {

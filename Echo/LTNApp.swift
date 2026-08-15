@@ -48,6 +48,12 @@ struct RootView: View {
                 case .lobby: LobbyView()
                 case .playing: GameHUDView()
                 case .summary: MatchSummaryView()
+                case .training:
+                    if let range = engine.trainingRange {
+                        TrainingHUDView(range: range)
+                    } else {
+                        MenuView()
+                    }
                 }
             }
         }

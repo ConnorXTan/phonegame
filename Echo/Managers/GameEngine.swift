@@ -6,7 +6,7 @@ import simd
 import UIKit
 
 enum GamePhase: Equatable {
-    case menu, browsing, lobby, playing, summary
+    case menu, browsing, lobby, playing, summary, training
 }
 
 /// Source of truth for game state. Hit resolution runs on the SHOOTER's phone
@@ -118,6 +118,9 @@ final class GameEngine: NSObject, ObservableObject {
     @Published private(set) var joiningLobby: String?          // wire name of the host we're connecting to
     @Published private(set) var lobbyNotice: String?           // join failures ("lobby full") for the menu/browser
     private var streamingTo: String?                           // player side: who gets our viewfinder
+
+    /// Solo drone drill state — non-nil exactly while `phase == .training`.
+    @Published private(set) var trainingRange: TrainingRange?
 
     private(set) var network: NetworkManager?
     /// Browse-only manager warming the peer cache while we sit on the menu.
@@ -601,9 +604,71 @@ final class GameEngine: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - Training range
+
+    /// Solo practice against virtual drones — no lobby, no network, no UWB.
+    /// ARKit alone anchors the targets, so even a phone without a U2 chip
+    /// can drill here.
+    func enterTraining() {
+        guard phase == .menu else { return }
+        hostEndedNotice = nil
+        lobbyNotice = nil
+        // The menu's browse-only warm-up has nobody to find on the range —
+        // stop it rather than leave a browser running behind the camera.
+        prewarmDebounce?.cancel()
+        prewarmed?.stop()
+        prewarmed = nil
+        trainingRange = TrainingRange()
+        camera.requestAccessIfNeeded()
+        camera.start()
+        cancelReload()
+        ammo = myRole.magazineSize
+        lastFireTime = nil
+        aimedTarget = nil
+        phase = .training
+        haptics.prepare()
+        SoundManager.shared.prepare()
+        startAimTimer()
+        UIApplication.shared.isIdleTimerDisabled = true   // drills outlast auto-lock
+    }
+
+    func exitTraining() {
+        guard phase == .training else { return }
+        stopTimers()
+        camera.stop()
+        trainingRange = nil
+        aimedTarget = nil
+        phase = .menu
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// Training twin of the networked path below: identical trigger feel —
+    /// cooldown, magazine, reload, haptics — but the shot resolves against
+    /// drones and console orbs, entirely on this phone.
+    private func fireTraining() {
+        guard let range = trainingRange, !isReloading else { return }
+        guard ammo > 0 else { startReload(); return }
+        let now = Date()
+        if let last = lastFireTime, now.timeIntervalSince(last) < currentFireCooldown { return }
+        lastFireTime = now
+        ammo -= 1
+        let outcome = range.registerShot(
+            camera: camera.session.currentFrame?.camera.transform,
+            coneRadians: settings.aimConeRadians)
+        haptics.playFire()
+        switch outcome {
+        case .droneHit: confirmHit()
+        case .droneKill: confirmHit(kill: true)
+        case .orbHit: haptics.playPickup()   // a control, not a target — pickup chirp, no marker
+        case .miss: break
+        }
+        if ammo == 0 { startReload() }
+    }
+
     // MARK: - Combat
 
     func fire() {
+        if phase == .training { fireTraining(); return }
         guard phase == .playing, isAlive, let net = network else { return }
         guard !isReloading else { return }
         // Dry trigger on an empty mag racks the reload instead of firing.
@@ -791,7 +856,8 @@ final class GameEngine: NSObject, ObservableObject {
 
     /// Manual reload (the button beside FIRE) and the auto-reload on empty.
     func startReload() {
-        guard phase == .playing, isAlive, !isReloading, ammo < myRole.magazineSize else { return }
+        guard phase == .playing || phase == .training,
+              isAlive, !isReloading, ammo < myRole.magazineSize else { return }
         reloadTotal = currentReloadDuration
         reloadRemaining = reloadTotal
         haptics.playReloadStart()
@@ -1226,6 +1292,20 @@ final class GameEngine: NSObject, ObservableObject {
 
     private func updateAimedTarget() {
         tickConsumables()
+        if phase == .training {
+            // The range rides the same 10 Hz tick: spawn/expiry bookkeeping
+            // first, then the lock indicator off the same cone test the
+            // trigger uses.
+            trainingRange?.tick(session: camera.session, at: Date())
+            let target = trainingRange?.aimedTargetID(
+                camera: camera.session.currentFrame?.camera.transform,
+                coneRadians: settings.aimConeRadians)
+            if target != aimedTarget {
+                aimedTarget = target
+                if target != nil { haptics.playLockTick() }
+            }
+            return
+        }
         guard phase == .playing, isAlive else {
             if aimedTarget != nil { aimedTarget = nil }
             return
