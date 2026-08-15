@@ -27,8 +27,8 @@ final class AimCameraManager: NSObject, ObservableObject {
     /// main queue at ~12 fps. Nil (the normal state) costs nothing per frame.
     var frameTap: ((Data) -> Void)?
 
-    /// Killcam capture: while enabled, a rolling ~7 s of viewfinder JPEGs is
-    /// kept (15 fps × 105 frames ≈ 16 MB), each paired with the HUD overlay
+    /// Killcam capture: while enabled, a rolling ~4 s of viewfinder JPEGs is
+    /// kept (30 fps × 120 frames ≈ 18 MB), each paired with the HUD overlay
     /// (crosshair + enemy tags) at that instant. Snapshotted the moment a
     /// kill confirms. Unlike the spectator tap these frames never ride the
     /// live mesh, so they stay near-native — they are the replay and the
@@ -41,16 +41,20 @@ final class AimCameraManager: NSObject, ObservableObject {
     private var clipBuffer: [(jpeg: Data, overlay: SpectatorOverlayState)] = []
     private var lastClipAt = Date.distantPast
     /// Capture cadence — the single source of truth; the encoder and the
-    /// replay views derive from it. 15 fps is the stills pipeline's
-    /// comfortable ceiling: every frame is a full JPEG encode on a phone
-    /// that's also running ARKit, UWB, and the HUD, and each step up scales
-    /// memory and the post-match transfer linearly. True 30 fps wants a
-    /// rolling hardware H.264 buffer instead of stills.
-    static let clipFramesPerSecond = 15
+    /// replay views derive from it. 30 fps runs the stills pipeline at its
+    /// edge: every frame is a full JPEG encode on a phone that's also running
+    /// ARKit, UWB, and the HUD, with a ~33 ms budget per frame. When an
+    /// encode overruns, `encodingInFlight` sheds frames instead of queueing —
+    /// but replay timing assumes the nominal rate, so a device that sheds
+    /// consistently plays its clips fast; if that shows up on-device, dial
+    /// this back to 24 (or the old 15). Memory and the post-match transfer
+    /// scale linearly with it; going past 30 wants a rolling hardware H.264
+    /// buffer instead of stills.
+    static let clipFramesPerSecond = 30
     static let clipFrameInterval: TimeInterval = 1.0 / Double(clipFramesPerSecond)
-    private static let clipFrameCount = clipFramesPerSecond * 7   // ~7 s: ~5 s of hunt + 2 s of aftermath
+    private static let clipFrameCount = clipFramesPerSecond * 4   // ~4 s: ~2 s of hunt + 2 s of aftermath
 
-    /// The last ~5 s of viewfinder, oldest first, with per-frame overlays.
+    /// The last ~4 s of viewfinder, oldest first, with per-frame overlays.
     func snapshotClip() -> (frames: [Data], overlays: [SpectatorOverlayState]) {
         (clipBuffer.map(\.jpeg), clipBuffer.map(\.overlay))
     }

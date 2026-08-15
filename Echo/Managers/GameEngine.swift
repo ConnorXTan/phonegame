@@ -511,7 +511,8 @@ final class GameEngine: NSObject, ObservableObject {
                     name: player.name.displayCallSign,
                     x: point.x / viewport.width,
                     y: point.y / viewport.height,
-                    hp: Double(player.hp) / Double(max(1, player.role.maxHP))))
+                    hp: Double(player.hp) / Double(max(1, player.role.maxHP)),
+                    maxHP: player.role.maxHP))
             }
         }
         return SpectatorOverlayState(tags: tags, lockedTarget: aimedTarget?.displayCallSign)
@@ -587,7 +588,7 @@ final class GameEngine: NSObject, ObservableObject {
         // that's already delivering frames. Also covers solo practice, where
         // there are no peers and so no NI session to start it.
         camera.start()
-        camera.clipBufferEnabled = true   // killcam: keep the last ~5 s rolling
+        camera.clipBufferEnabled = true   // killcam: keep the last ~4 s rolling
         startAimTimer()
         haptics.prepare()
         SoundManager.shared.prepare()
@@ -724,7 +725,7 @@ final class GameEngine: NSObject, ObservableObject {
 
     // MARK: - Kill clips
 
-    /// Everything the shooter's viewfinder held for the last ~5 s, frozen the
+    /// Everything the shooter's viewfinder held for the last ~4 s, frozen the
     /// moment the kill confirms. Held locally; shipped to spectators after
     /// the match so replays never contend with live traffic.
     private var pendingKillClips: [KillClip] = []
@@ -773,9 +774,9 @@ final class GameEngine: NSObject, ObservableObject {
             id: UUID(), killer: myName, victim: victim, capturedAt: now,
             frames: snapshot.frames, overlays: snapshot.overlays,
             sounds: sounds, markers: markers))
-        // ~16 MB of stills per clip — six pending is ~100 MB, the most a
-        // phone mid-match should be asked to hold.
-        if pendingKillClips.count > 6 { pendingKillClips.removeFirst() }
+        // ~18 MB of stills per clip (4 s at 30 fps) — five pending is ~90 MB,
+        // the most a phone mid-match should be asked to hold.
+        if pendingKillClips.count > 5 { pendingKillClips.removeFirst() }
     }
 
     /// Spectator: encode a reviewed clip to MP4 and push it to the public

@@ -34,10 +34,11 @@ struct MenuView: View {
             if let notice = engine.hostEndedNotice {
                 Label(notice, systemImage: "flag.checkered")
                     .font(.app(.footnote))
-                    .foregroundStyle(.cyan)
-                    .padding(12)
-                    .background(.cyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal, 24)
+                    .foregroundStyle(Color.ltnAccent)
+                    .padding(Space.md)
+                    .background(Color.ltnAccent.opacity(Alpha.surface),
+                                in: RoundedRectangle(cornerRadius: Radius.md))
+                    .padding(.horizontal, Space.xl)
             }
 
             if !isMac, let warning = engine.uwbWarning {
