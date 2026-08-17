@@ -21,8 +21,10 @@ struct MiniMapView: View {
     private static let halfAngle: CGFloat = .pi / 3
 
     /// Meters at the fan's rim — a display scale for the blips and range
-    /// rings, not a gameplay limit; shots land at any distance.
-    private static let displayRange: CGFloat = 15
+    /// rings, not a gameplay limit; shots land at any distance. The solo
+    /// range keeps every target inside 5 m, so it gets a tighter scale rather
+    /// than a knot of blips sitting on the apex.
+    private var displayRange: CGFloat { engine.trainingRange == nil ? 15 : 8 }
 
     /// One entry per human, newest reading wins — a rejoin mints a new wire
     /// name, and two blips for one person would be worse than none. Cloaked
@@ -43,7 +45,7 @@ struct MiniMapView: View {
                 let apex = CGPoint(x: size.width / 2, y: size.height - 8)   // room for the self dot
                 let radius = min(apex.y - 12,                               // label headroom above the rim
                                  (size.width / 2 - 2) / sin(Self.halfAngle))
-                let maxRange = Self.displayRange
+                let maxRange = displayRange
 
                 // The fan itself is the widget's surface — ltnBackground at
                 // Alpha.strong, the scrim weight that keeps everything on it
@@ -54,6 +56,10 @@ struct MiniMapView: View {
                 // Under the player blips: a drop and a person at the same
                 // spot should read as the person.
                 drawConsumables(ctx: ctx, apex: apex, radius: radius, maxRange: maxRange)
+                if let range = engine.trainingRange {
+                    drawTrainingTargets(ctx: ctx, apex: apex, radius: radius,
+                                        maxRange: maxRange, range: range)
+                }
 
                 for player in livePeers {
                     // Stale blips lie about where someone is — drop them.
@@ -140,35 +146,81 @@ struct MiniMapView: View {
                                  radius: CGFloat, maxRange: CGFloat) {
         guard !engine.consumables.isEmpty,
               let camera = engine.camera.session.currentFrame?.camera else { return }
-        let transform = camera.transform
-        let origin = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
         for drop in engine.consumables {
-            let offset = drop.position - origin
-            let distance = simd_length(simd_float2(offset.x, offset.z))
-            let scaled = min(CGFloat(distance) / maxRange, 1.0) * radius
-            // World → camera → NI device frame (portrait: +X right, -Z out
-            // the back) — the same frame peer bearings arrive in.
-            let inCamera = transform.inverse * simd_float4(offset, 0)
-            let inDevice = simd_quatf(angle: -.pi / 2, axis: simd_float3(0, 0, 1))
-                .act(simd_float3(inCamera.x, inCamera.y, inCamera.z))
-            let angle = CGFloat(atan2(inDevice.x, -inDevice.z))
-            if abs(angle) <= Self.halfAngle {
-                let point = CGPoint(x: apex.x + sin(angle) * scaled,
-                                    y: apex.y - cos(angle) * scaled)
-                let chip = Path(ellipseIn: CGRect(x: point.x - 7, y: point.y - 7,
-                                                  width: 14, height: 14))
-                ctx.fill(chip, with: .color(.ltnBackground.opacity(Alpha.heavy)))
-                let blip = ctx.resolve(Image(art: drop.kind.art))
-                ctx.draw(blip, in: CGRect(x: point.x - 6, y: point.y - 6,
-                                          width: 12, height: 12))
-            } else {
+            let placed = place(drop.position, camera: camera.transform,
+                               apex: apex, radius: radius, maxRange: maxRange)
+            guard let point = placed.point else {
                 var arc = Path()
-                arc.addArc(center: apex, radius: scaled,
+                arc.addArc(center: apex, radius: placed.radius,
                            startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
                 ctx.stroke(arc, with: .color(.ltnPowerup.opacity(Alpha.strong)),
                            style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
+                continue
             }
+            let chip = Path(ellipseIn: CGRect(x: point.x - 7, y: point.y - 7,
+                                              width: 14, height: 14))
+            ctx.fill(chip, with: .color(.ltnBackground.opacity(Alpha.heavy)))
+            let blip = ctx.resolve(Image(art: drop.kind.art))
+            ctx.draw(blip, in: CGRect(x: point.x - 6, y: point.y - 6,
+                                      width: 12, height: 12))
         }
+    }
+
+    /// The solo range's own targets. Every one of these is a local ARKit
+    /// anchor, so unlike a UWB peer it always has a bearing — this is the
+    /// only thing on the HUD that says which way to turn for a drone that
+    /// spawned outside the viewfinder's ~±16°, which is most of them.
+    ///
+    /// Drones fill, console orbs stay hollow, so the two never rely on hue to
+    /// tell them apart; a locked drone takes the same green the peer blips use.
+    private func drawTrainingTargets(ctx: GraphicsContext, apex: CGPoint, radius: CGFloat,
+                                     maxRange: CGFloat, range: TrainingRange) {
+        guard let camera = engine.camera.session.currentFrame?.camera else { return }
+        let transform = camera.transform
+        for orb in range.orbs {
+            let placed = place(orb.position, camera: transform,
+                               apex: apex, radius: radius, maxRange: maxRange)
+            guard let point = placed.point else { continue }
+            let ring = Path(ellipseIn: CGRect(x: point.x - 4, y: point.y - 4, width: 8, height: 8))
+            ctx.stroke(ring, with: .color(.ltnPrimary), lineWidth: 1.5)
+        }
+        for drone in range.drones {
+            let locked = engine.aimedTarget == drone.id
+            let placed = place(drone.position, camera: transform,
+                               apex: apex, radius: radius, maxRange: maxRange)
+            guard let point = placed.point else {
+                // Behind you: the distance is real, the direction is off the
+                // fan. Dotted, in the target color, so it reads as "turn
+                // around", not as a peer.
+                var arc = Path()
+                arc.addArc(center: apex, radius: placed.radius,
+                           startAngle: .degrees(-150), endAngle: .degrees(-30), clockwise: false)
+                ctx.stroke(arc, with: .color(.ltnDanger.opacity(Alpha.strong)),
+                           style: StrokeStyle(lineWidth: 1, dash: [1.5, 3]))
+                continue
+            }
+            let dot = Path(ellipseIn: CGRect(x: point.x - 5, y: point.y - 5, width: 10, height: 10))
+            ctx.fill(dot, with: .color(locked ? .ltnPrimary : .ltnDanger))
+        }
+    }
+
+    /// World anchor → a point on the fan, or nil with just a radius when the
+    /// bearing falls outside it. World → camera → NI device frame (portrait:
+    /// +X right, -Z out the back) — the same frame peer bearings arrive in, so
+    /// blips from every source land on one geometry.
+    private func place(_ world: simd_float3, camera transform: simd_float4x4, apex: CGPoint,
+                       radius: CGFloat, maxRange: CGFloat) -> (point: CGPoint?, radius: CGFloat) {
+        let origin = simd_float3(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+        let offset = world - origin
+        let distance = simd_length(simd_float2(offset.x, offset.z))
+        let scaled = min(CGFloat(distance) / maxRange, 1.0) * radius
+        let inCamera = transform.inverse * simd_float4(offset, 0)
+        let inDevice = simd_quatf(angle: -.pi / 2, axis: simd_float3(0, 0, 1))
+            .act(simd_float3(inCamera.x, inCamera.y, inCamera.z))
+        let angle = CGFloat(atan2(inDevice.x, -inDevice.z))
+        guard abs(angle) <= Self.halfAngle else { return (nil, scaled) }
+        return (CGPoint(x: apex.x + sin(angle) * scaled,
+                        y: apex.y - cos(angle) * scaled), scaled)
     }
 
     /// Someone at this range, somewhere off the fan. Pure geometry: the arc's

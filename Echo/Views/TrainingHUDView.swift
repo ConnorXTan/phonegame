@@ -10,6 +10,9 @@ struct TrainingHUDView: View {
     @ObservedObject var range: TrainingRange
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Matches the match HUD's map so the drill and the game read the same.
+    @ScaledMetric(relativeTo: .largeTitle) private var miniMapWidth: CGFloat = 150
+
     var body: some View {
         ZStack {
             CameraFeedView(camera: engine.camera)
@@ -21,6 +24,16 @@ struct TrainingHUDView: View {
                 topBar
                 if range.state == .placing, engine.camera.isRunning {
                     placingHint
+                }
+                // The drill's situational awareness: a drone can spawn up to
+                // 32° off the console line and the viewfinder only covers
+                // about ±16°, so the map is how the player knows a target is
+                // up and which way to flick for it.
+                HStack {
+                    MiniMapView()
+                        .frame(width: miniMapWidth, height: miniMapWidth * MiniMapView.aspect)
+                        .padding(.leading, Space.xs)
+                    Spacer()
                 }
                 Spacer()
                 FireControl()
@@ -80,6 +93,11 @@ struct TrainingHUDView: View {
             ScopeReticle(locked: engine.aimedTarget != nil)
             HitMarkerView(marker: engine.hitMarker)
         }
+        // The boresight projects to the center of the *full* screen, which is
+        // where the world overlay draws. Left inside the safe area the reticle
+        // centers ~12pt lower than that on a Dynamic Island phone, so the dot
+        // and the thing the cone is actually measured from disagree.
+        .ignoresSafeArea()
         .allowsHitTesting(false)
         .accessibilityElement()
         .accessibilityLabel("Aim")

@@ -175,6 +175,16 @@ final class HapticsManager {
         }
     }
 
+    /// A training drone ran its clock out and left. Pickup's rising pair,
+    /// inverted — a soft falling double-tap, so a target leaving is felt
+    /// rather than silently swapped for the next one.
+    func playTargetLost() {
+        play([transient(0, intensity: 0.5, sharpness: 0.5),
+              transient(0.09, intensity: 0.3, sharpness: 0.2)]) {
+            self.impactLight.impactOccurred(intensity: 0.4)
+        }
+    }
+
     /// Time's up: three slowing thumps, like a final buzzer.
     func playMatchEnd() {
         play([transient(0, intensity: 1.0, sharpness: 0.5),

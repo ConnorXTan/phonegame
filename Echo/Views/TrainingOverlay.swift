@@ -16,13 +16,19 @@ struct TrainingOverlay: View {
     var body: some View {
         GeometryReader { geo in
             TimelineView(.animation) { context in
-                if let frame = camera.session.currentFrame, geo.size != .zero {
-                    let projector = Projector(frame: frame, viewport: geo.size)
-                    orbLayer(projector, at: context.date)
-                    counterPanel(projector)
-                    droneLayer(projector, at: context.date)
-                    killBurst(projector, at: context.date)
+                // Explicit ZStack: every child positions itself in absolute
+                // screen coordinates, which only holds while each one is
+                // handed the full viewport to resolve `.position` against.
+                ZStack {
+                    if let frame = camera.session.currentFrame, geo.size != .zero {
+                        let projector = Projector(frame: frame, viewport: geo.size)
+                        orbLayer(projector, at: context.date)
+                        counterPanel(projector)
+                        droneLayer(projector, at: context.date)
+                        killBurst(projector, at: context.date)
+                    }
                 }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
         }
         .ignoresSafeArea()
@@ -40,16 +46,21 @@ struct TrainingOverlay: View {
             if let point = projector.point(orb.position),
                let radius = projector.screenLength(TrainingRange.orbRadius, at: orb.position) {
                 let diameter = min(max(radius * 2, 24), 96)   // legible floor, sane ceiling
-                OrbSprite(color: orbColor(orb), diameter: diameter,
-                          pulse: reduceMotion ? 0 : pulsePhase(at: date))
-                    .position(point)
-                Text(orb.label)
-                    .font(.appBold(.caption2))
-                    .foregroundStyle(Color.ltnText)
-                    .padding(.horizontal, Space.xs)
-                    .padding(.vertical, Space.xxs)
-                    .background(Color.ltnBackground.opacity(Alpha.heavy), in: Capsule())
-                    .position(x: point.x, y: point.y + diameter / 2 + 14)   // clears the halo
+                ZStack {
+                    OrbSprite(color: orbColor(orb), diameter: diameter,
+                              pulse: reduceMotion ? 0 : pulsePhase(at: date))
+                    Text(orb.label)
+                        .font(.appBold(.caption2))
+                        .foregroundStyle(Color.ltnText)
+                        .padding(.horizontal, Space.xs)
+                        .padding(.vertical, Space.xxs)
+                        .background(Color.ltnBackground.opacity(Alpha.heavy), in: Capsule())
+                        // Clear of the halo (0.85 × diameter), and derived from
+                        // the same diameter as the sprite so the label rides
+                        // with the orb instead of drifting against it.
+                        .offset(y: diameter * 0.85 + 12)
+                }
+                .position(point)
             }
         }
     }
@@ -118,26 +129,33 @@ struct TrainingOverlay: View {
 
     @ViewBuilder
     private func droneLayer(_ projector: Projector, at date: Date) -> some View {
-        if let drone = range.drone,
-           let point = projector.point(drone.position),
-           let radius = projector.screenLength(TrainingRange.droneRadius, at: drone.position) {
-            let diameter = min(max(radius * 2, 36), 130)
-            // Pop-in: the sprite grows to size over its first quarter second,
-            // driven statelessly off spawn age so TimelineView redraws stay
-            // cheap. Reduce Motion keeps it full-size and fades instead.
-            let age = drone.age(at: date)
-            let pop = reduceMotion ? 1 : min(1, 0.4 + (age / 0.25) * 0.6)
-            DroneSprite(diameter: diameter,
-                        remaining: drone.remainingFraction(at: date))
-                .scaleEffect(pop)
+        ForEach(range.drones) { drone in
+            if let point = projector.point(drone.position),
+               let radius = projector.screenLength(TrainingRange.droneRadius, at: drone.position) {
+                let diameter = min(max(radius * 2, 40), 104)
+                // Pop-in: the sprite grows to size over its first quarter
+                // second, driven statelessly off spawn age so TimelineView
+                // redraws stay cheap. Reduce Motion keeps it full-size and
+                // fades instead.
+                let age = drone.age(at: date)
+                let pop = reduceMotion ? 1 : min(1, 0.4 + (age / 0.25) * 0.6)
+                ZStack {
+                    DroneSprite(diameter: diameter,
+                                remaining: drone.remainingFraction(at: date))
+                        .scaleEffect(pop)
+                    // Four hearts, fixed geometry like the enemy tags — chrome
+                    // read at a distance over a moving feed. Tight against the
+                    // ring: the drone glyph fills most of the disc, so a gap
+                    // measured off the disc's edge reads as a bar floating in
+                    // space next to the target rather than belonging to it.
+                    HeartBar(fraction: CGFloat(drone.hp) / CGFloat(TrainingDrone.maxHP),
+                             total: TrainingDrone.maxHP, size: 11)
+                        .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 2, y: 1)
+                        .offset(y: -(diameter / 2 + 9))
+                }
                 .opacity(min(1, age / 0.15))
                 .position(point)
-            // Four hearts, fixed geometry like the enemy tags — chrome read
-            // at a distance over a moving feed.
-            HeartBar(fraction: CGFloat(drone.hp) / CGFloat(TrainingDrone.maxHP),
-                     total: TrainingDrone.maxHP, size: 11)
-                .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 2, y: 1)
-                .position(x: point.x, y: point.y - diameter / 2 - 16)
+            }
         }
     }
 
@@ -177,13 +195,25 @@ private struct Projector {
     }
 
     /// On-screen length of a world-space distance at `world` — projects the
-    /// point and a gravity-up offset twin, so sprites size with perspective
-    /// under whatever FoV the camera actually has.
+    /// point and an offset twin, so sprites size with perspective under
+    /// whatever FoV the camera actually has.
+    ///
+    /// The offset runs along the *camera's* up axis, not gravity's. A
+    /// gravity-up twin foreshortens with pitch: tilt the phone 40° down and
+    /// the same sphere measures 23% smaller, point it at the floor and the
+    /// length collapses to nothing. Anything sized or offset by this — sprite
+    /// diameters, the label below an orb, the hearts above a drone — then
+    /// slides and breathes as the player tilts, which reads as the targets
+    /// drifting vertically in the world. The camera's own up axis is always
+    /// perpendicular to the view direction, so the measurement depends on
+    /// distance alone.
     func screenLength(_ meters: Float, at world: simd_float3) -> CGFloat? {
-        let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
+        let transform = frame.camera.transform
+        let inCamera = transform.inverse * simd_float4(world, 1)
         guard inCamera.z < 0 else { return nil }
+        let up = simd_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
         let a = frame.camera.projectPoint(world, orientation: .portrait, viewportSize: viewport)
-        let b = frame.camera.projectPoint(world + simd_float3(0, meters, 0),
+        let b = frame.camera.projectPoint(world + up * meters,
                                           orientation: .portrait, viewportSize: viewport)
         return hypot(a.x - b.x, a.y - b.y)
     }
@@ -235,8 +265,12 @@ private struct DroneSprite: View {
         ZStack {
             Circle()
                 .fill(Color.ltnBackground.opacity(Alpha.strong))
+            // The track is what makes the body's edge readable once the clock
+            // has drained — at Alpha.subtle a nearly-escaped drone lost its
+            // outline entirely, leaving a small glyph with the health bar
+            // apparently floating clear of it.
             Circle()
-                .stroke(Color.ltnText.opacity(Alpha.subtle), lineWidth: ringWidth)
+                .stroke(Color.ltnText.opacity(Alpha.muted), lineWidth: ringWidth)
             Circle()
                 .trim(from: 0, to: max(0, min(1, remaining)))
                 .stroke(Color.ltnDanger,
@@ -246,7 +280,7 @@ private struct DroneSprite: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(Color.ltnDanger)
-                .frame(width: diameter * 0.52, height: diameter * 0.52)
+                .frame(width: diameter * 0.64, height: diameter * 0.64)
         }
         .frame(width: diameter, height: diameter)
     }

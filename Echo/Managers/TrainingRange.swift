@@ -31,6 +31,9 @@ struct TrainingDrone: Identifiable {
 
     let id: String
     let position: simd_float3
+    /// Signed bearing off the console line at spawn, kept so the next spawn
+    /// can be placed clear of every live drone.
+    let azimuth: Float
     var hp: Int = TrainingDrone.maxHP
     let spawnedAt: Date
     let expiresAt: Date
@@ -76,11 +79,19 @@ enum TrainingShotOutcome {
     case orbHit
 }
 
+/// Something a `tick` produced that deserves feedback. The range never reaches
+/// for haptics itself — it reports, GameEngine plays.
+enum TrainingEvent: Equatable {
+    /// At least one drone ran out its clock and left.
+    case droneEscaped
+    case runFinished
+}
+
 /// Solo drill state: a console of glowing orbs anchored ~2 m ahead of where
-/// the player entered, and 30 drones that pop up one at a time in a frontal
-/// arc, each with 4 HP and a difficulty-set escape clock. Everything is
-/// local — no network, no UWB; ARKit's world frame is the only anchor, so
-/// even a phone without a U2 chip can drill here.
+/// the player entered, and 30 drones that pop up in a frontal arc — up to
+/// three at a time, each with 4 HP and a difficulty-set escape clock.
+/// Everything is local — no network, no UWB; ARKit's world frame is the only
+/// anchor, so even a phone without a U2 chip can drill here.
 ///
 /// Owned by GameEngine while `phase == .training`. GameEngine's aim timer
 /// drives `tick`, its `fire()` routes trigger pulls into `registerShot`, and
@@ -97,7 +108,7 @@ final class TrainingRange: ObservableObject {
     }
 
     @Published private(set) var state: State = .placing
-    @Published private(set) var drone: TrainingDrone?
+    @Published private(set) var drones: [TrainingDrone] = []
     @Published private(set) var orbs: [TrainingOrb] = []
     @Published private(set) var difficulty: TrainingDifficulty = .medium
     @Published private(set) var kills = 0
@@ -110,7 +121,22 @@ final class TrainingRange: ObservableObject {
     /// Wall-clock length of the last finished run.
     private(set) var runDuration: TimeInterval = 0
 
+    /// Whatever the reticle is currently holding, so the lock can be sticky
+    /// (see `releaseSlack`) and so the trigger resolves against the same
+    /// target the player can see is lit.
+    private(set) var lockedID: String?
+
     static let dronesPerRun = 30
+    /// How many drones can be up at once. One-at-a-time made a missed drone
+    /// feel like the range had stalled — nothing on screen, nothing on the
+    /// map, and no way to tell a gap from a bug.
+    static let maxConcurrentDrones = 3
+
+    /// The range runs its own bookkeeping and lock test entirely on this
+    /// phone, so it ticks three times faster than the networked path (which
+    /// is paced by ~5 Hz UWB readings). At 10 Hz the reticle lit up as much
+    /// as 100 ms after the drone was already centered.
+    static let tickInterval: TimeInterval = 1.0 / 30
 
     var accuracy: Double? {
         shots > 0 ? Double(hits) / Double(shots) : nil
@@ -142,38 +168,67 @@ final class TrainingRange: ObservableObject {
     private var lastAzimuth: Float = 0
     private var nextSpawnAt: Date?
     private var runStartedAt: Date?
+    /// When tracking last became good — placement waits out a settle window.
+    private var trackingNormalSince: Date?
 
     /// A beat after the start orb to turn from the console to the arc.
     private static let firstSpawnDelay: TimeInterval = 1.0
-    /// Breather between drones so the kill (or escape) reads before the flick.
-    private static let interSpawnGap: TimeInterval = 0.4
+    /// Steady drip while the arc is under its concurrency cap.
+    private static let interSpawnGap: TimeInterval = 1.1
+    /// Top-up after a kill or an escape — short enough that clearing fast
+    /// keeps targets coming fast, long enough that the replacement doesn't
+    /// appear inside the hit marker.
+    private static let refillGap: TimeInterval = 0.35
+    /// ARKit reports `.normal` well before its pose stops being refined.
+    /// Anchoring on the first good frame leaves the console visibly sliding
+    /// for a second or two afterwards.
+    private static let placementSettleTime: TimeInterval = 0.8
 
-    // MARK: - Tick (driven by GameEngine's aim timer, ~10 Hz)
+    // MARK: - Tick (driven by GameEngine's aim timer, ~30 Hz)
 
-    func tick(session: ARSession, at now: Date) {
+    @discardableResult
+    func tick(session: ARSession, at now: Date) -> [TrainingEvent] {
         guard consoleCenter != nil else {
-            tryPlaceConsole(session: session)
-            return
+            tryPlaceConsole(session: session, at: now)
+            return []
         }
-        guard state == .running else { return }
-        if let current = drone, current.expiresAt <= now {
-            drone = nil   // escaped
-            scheduleNextSpawn(from: now)
+        guard state == .running else { return [] }
+        var events: [TrainingEvent] = []
+        if drones.contains(where: { $0.expiresAt <= now }) {
+            drones.removeAll { $0.expiresAt <= now }
+            events.append(.droneEscaped)
+            scheduleRefill(from: now)
         }
-        guard drone == nil else { return }
         if spawnedCount >= Self.dronesPerRun {
-            finishRun(at: now)
-        } else if let due = nextSpawnAt, now >= due {
+            // The run ends when the last drone is down or gone, not when the
+            // thirtieth spawns — otherwise the tail of the arc vanishes
+            // mid-flick.
+            if drones.isEmpty {
+                finishRun(at: now)
+                // The buzzer covers the last drone leaving; firing both cues
+                // on the same tick just muddies each other.
+                return [.runFinished]
+            }
+            return events
+        }
+        if drones.count < Self.maxConcurrentDrones, let due = nextSpawnAt, now >= due {
             spawnDrone(at: now)
         }
+        return events
     }
 
     /// Anchor the console once ARKit is tracking: ~2 m out along the
     /// gravity-leveled view axis, a touch below eye line so orbs never sit
     /// on top of the drone arc behind them.
-    private func tryPlaceConsole(session: ARSession) {
+    private func tryPlaceConsole(session: ARSession, at now: Date) {
         guard let frame = session.currentFrame,
-              case .normal = frame.camera.trackingState else { return }
+              case .normal = frame.camera.trackingState else {
+            trackingNormalSince = nil
+            return
+        }
+        let settledSince = trackingNormalSince ?? now
+        trackingNormalSince = settledSince
+        guard now.timeIntervalSince(settledSince) >= Self.placementSettleTime else { return }
         let t = frame.camera.transform
         let camera = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
         let look = -simd_float3(t.columns.2.x, t.columns.2.y, t.columns.2.z)
@@ -190,19 +245,46 @@ final class TrainingRange: ObservableObject {
 
     // MARK: - Shooting
 
-    /// The most-centered shootable inside the aim cone — the virtual twin of
-    /// GameEngine.resolveShot, minus the radio.
+    /// Radians of slack on the release cone, as a multiple of the acquire
+    /// cone. Without it the lock chatters on and off at the boundary: the
+    /// reticle flickers, and every flip re-fires the lock haptic — which
+    /// shakes the very phone the aim is measured from.
+    private static let releaseSlack: Float = 1.3
+
+    /// Every shootable in the world right now, drones first.
+    private var shootables: [(id: String, position: simd_float3)] {
+        drones.map { ($0.id, $0.position) } + orbs.map { ($0.id, $0.position) }
+    }
+
+    /// The most-centered shootable inside the aim cone, sticky to whatever is
+    /// already held — the virtual twin of GameEngine.resolveShot, minus the
+    /// radio.
     func aimedTargetID(camera transform: simd_float4x4?, coneRadians: Float) -> String? {
         guard let transform else { return nil }
         var best: (id: String, angle: Float)?
-        func consider(_ id: String, _ position: simd_float3) {
-            guard let angle = Self.angleOffBoresight(to: position, camera: transform),
-                  angle < coneRadians else { return }
-            if best == nil || angle < best!.angle { best = (id, angle) }
+        var heldAngle: Float?
+        for target in shootables {
+            guard let angle = Self.angleOffBoresight(to: target.position, camera: transform)
+            else { continue }
+            if target.id == lockedID { heldAngle = angle }
+            guard angle < coneRadians else { continue }
+            if best == nil || angle < best!.angle { best = (target.id, angle) }
         }
-        if let drone { consider(drone.id, drone.position) }
-        for orb in orbs { consider(orb.id, orb.position) }
-        return best?.id
+        if let best { return best.id }
+        // Nothing inside the acquire cone: hold the current lock as long as
+        // it's still inside the wider release cone.
+        if let heldAngle, heldAngle < coneRadians * Self.releaseSlack { return lockedID }
+        return nil
+    }
+
+    /// `aimedTargetID` plus the bookkeeping its hysteresis needs. Both the
+    /// reticle and the trigger go through here, so what the player sees lit
+    /// is what the shot resolves against.
+    @discardableResult
+    func refreshLock(camera transform: simd_float4x4?, coneRadians: Float) -> String? {
+        let id = aimedTargetID(camera: transform, coneRadians: coneRadians)
+        lockedID = id
+        return id
     }
 
     /// Resolve one trigger pull. Cooldown, ammo, and reload gating live in
@@ -210,21 +292,19 @@ final class TrainingRange: ObservableObject {
     func registerShot(camera transform: simd_float4x4?, coneRadians: Float,
                       at now: Date = Date()) -> TrainingShotOutcome {
         if state == .running { shots += 1 }
-        guard let id = aimedTargetID(camera: transform, coneRadians: coneRadians) else {
+        guard let id = refreshLock(camera: transform, coneRadians: coneRadians) else {
             return .miss
         }
-        if var current = drone, current.id == id {
+        if let index = drones.firstIndex(where: { $0.id == id }) {
             hits += 1
-            current.hp -= 1
-            guard current.hp > 0 else {
-                kills += 1
-                lastKill = (current.position, now)
-                drone = nil
-                scheduleNextSpawn(from: now)
-                return .droneKill
-            }
-            drone = current
-            return .droneHit
+            drones[index].hp -= 1
+            guard drones[index].hp <= 0 else { return .droneHit }
+            kills += 1
+            lastKill = (drones[index].position, now)
+            drones.remove(at: index)
+            lockedID = nil
+            scheduleRefill(from: now)
+            return .droneKill
         }
         if let orb = orbs.first(where: { $0.id == id }), let transform {
             apply(orb.action, camera: transform, at: now)
@@ -235,7 +315,7 @@ final class TrainingRange: ObservableObject {
 
     /// VoiceOver name for whatever the reticle is locked on.
     func displayName(for id: String) -> String? {
-        if drone?.id == id { return "drone" }
+        if drones.contains(where: { $0.id == id }) { return "drone" }
         guard let orb = orbs.first(where: { $0.id == id }) else { return nil }
         switch orb.action {
         case .start(let difficulty): return "\(difficulty.rawValue) start orb"
@@ -249,33 +329,35 @@ final class TrainingRange: ObservableObject {
         switch action {
         case .start(let picked):
             difficulty = picked
-            kills = 0
-            spawnedCount = 0
-            shots = 0
-            hits = 0
-            runDuration = 0
-            lastKill = nil
+            resetCounters()
             // The arc is anchored where the player stood when they pulled
             // the start trigger — they're facing the console, so "frontal"
             // and "toward the console" agree.
             runOrigin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
             runStartedAt = now
             nextSpawnAt = now.addingTimeInterval(Self.firstSpawnDelay)
-            drone = nil
             orbs = resetOrbRow()
             state = .running
         case .reset:
             guard state == .running else { return }
-            drone = nil
-            nextSpawnAt = nil
+            resetCounters()
             runStartedAt = nil
-            kills = 0
-            spawnedCount = 0
-            shots = 0
-            hits = 0
+            nextSpawnAt = nil
             orbs = difficultyOrbs()
             state = .idle
         }
+    }
+
+    private func resetCounters() {
+        kills = 0
+        spawnedCount = 0
+        shots = 0
+        hits = 0
+        runDuration = 0
+        lastKill = nil
+        lastAzimuth = 0
+        drones = []
+        lockedID = nil
     }
 
     private func finishRun(at now: Date) {
@@ -286,38 +368,56 @@ final class TrainingRange: ObservableObject {
         state = .finished
     }
 
-    private func scheduleNextSpawn(from now: Date) {
-        nextSpawnAt = now.addingTimeInterval(Self.interSpawnGap)
+    private func scheduleRefill(from now: Date) {
+        nextSpawnAt = now.addingTimeInterval(Self.refillGap)
     }
 
     private func spawnDrone(at now: Date) {
         spawnedCount += 1
-        drone = TrainingDrone(
+        let spawn = nextSpawnPlacement()
+        lastAzimuth = spawn.azimuth
+        drones.append(TrainingDrone(
             id: "drone-\(spawnedCount)",
-            position: nextSpawnPosition(),
+            position: spawn.position,
+            azimuth: spawn.azimuth,
             spawnedAt: now,
-            expiresAt: now.addingTimeInterval(difficulty.droneLifetime))
-        nextSpawnAt = nil
+            expiresAt: now.addingTimeInterval(difficulty.droneLifetime)))
+        nextSpawnAt = now.addingTimeInterval(Self.interSpawnGap)
     }
 
-    /// Frontal arc, Valorant-style: azimuths within ±75° of the console line
-    /// but outside ±12° — the RESET orb sits dead ahead, and a drone behind
-    /// it could otherwise hand the shot to the orb and abort the run. Each
-    /// spawn lands at least 25° from the last so every drone demands a real
-    /// flick; 2.5–5 m out, in the hand-height band around the shooter.
-    private func nextSpawnPosition() -> simd_float3 {
-        var azimuth: Float = 0
-        for _ in 0..<8 {
-            let magnitude = Float.random(in: (12 * .pi / 180)...(75 * .pi / 180))
-            azimuth = magnitude * (Bool.random() ? 1 : -1)
-            if abs(azimuth - lastAzimuth) >= 25 * .pi / 180 { break }
+    /// Frontal arc: azimuths within ±32° of the console line but outside ±10°
+    /// — the RESET orb sits dead ahead, and a drone behind it could otherwise
+    /// hand the shot to the orb and abort the run.
+    ///
+    /// The outer limit is the important number. A portrait viewfinder sees
+    /// only about ±16°, so the old ±75° arc put roughly nine of every ten
+    /// drones somewhere off the side of the screen with nothing on the HUD to
+    /// say which way to turn — the range read as if it had stopped spawning.
+    /// ±32° is at most one quick flick past the edge of the frame, and the
+    /// minimap covers the rest.
+    private static let arcInner: Float = 10 * .pi / 180
+    private static let arcOuter: Float = 32 * .pi / 180
+    /// Minimum bearing gap from every live drone (and the one just before
+    /// them), so no two sprites overlap and every spawn is still a real flick.
+    private static let minSeparation: Float = 15 * .pi / 180
+
+    /// 2.5–4.5 m out, in the hand-height band around the shooter.
+    private func nextSpawnPlacement() -> (position: simd_float3, azimuth: Float) {
+        let taken = drones.map(\.azimuth) + [lastAzimuth]
+        var azimuth = Self.randomAzimuth()
+        for _ in 0..<12 {
+            if taken.allSatisfy({ abs(azimuth - $0) >= Self.minSeparation }) { break }
+            azimuth = Self.randomAzimuth()
         }
-        lastAzimuth = azimuth
         let direction = simd_quatf(angle: azimuth, axis: simd_float3(0, 1, 0))
             .act(consoleForward)
-        let distance = Float.random(in: 2.5...5)
+        let distance = Float.random(in: 2.5...4.5)
         let lift = Float.random(in: -0.4...0.3)
-        return runOrigin + direction * distance + simd_float3(0, lift, 0)
+        return (runOrigin + direction * distance + simd_float3(0, lift, 0), azimuth)
+    }
+
+    private static func randomAzimuth() -> Float {
+        Float.random(in: arcInner...arcOuter) * (Bool.random() ? 1 : -1)
     }
 
     private func difficultyOrbs() -> [TrainingOrb] {

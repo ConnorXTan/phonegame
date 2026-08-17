@@ -629,7 +629,7 @@ final class GameEngine: NSObject, ObservableObject {
         phase = .training
         haptics.prepare()
         SoundManager.shared.prepare()
-        startAimTimer()
+        startAimTimer(interval: TrainingRange.tickInterval)
         UIApplication.shared.isIdleTimerDisabled = true   // drills outlast auto-lock
     }
 
@@ -1282,9 +1282,12 @@ final class GameEngine: NSObject, ObservableObject {
 
     // MARK: - Aim indicator
 
-    private func startAimTimer() {
+    /// 10 Hz is paced by UWB: readings land at ~5 Hz, so polling faster only
+    /// re-reads the same reading. The training range has no radio in the loop
+    /// and passes its own, faster interval.
+    private func startAimTimer(interval: TimeInterval = 0.1) {
         aimTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             self?.updateAimedTarget()
         }
         RunLoop.main.add(timer, forMode: .common)   // keeps ticking during scroll tracking
@@ -1294,11 +1297,16 @@ final class GameEngine: NSObject, ObservableObject {
     private func updateAimedTarget() {
         tickConsumables()
         if phase == .training {
-            // The range rides the same 10 Hz tick: spawn/expiry bookkeeping
-            // first, then the lock indicator off the same cone test the
-            // trigger uses.
-            trainingRange?.tick(session: camera.session, at: Date())
-            let target = trainingRange?.aimedTargetID(
+            // The range rides the same tick: spawn/expiry bookkeeping first,
+            // then the lock indicator off the same cone test the trigger uses.
+            guard let range = trainingRange else { return }
+            for event in range.tick(session: camera.session, at: Date()) {
+                switch event {
+                case .droneEscaped: haptics.playTargetLost()
+                case .runFinished: haptics.playMatchEnd()
+                }
+            }
+            let target = range.refreshLock(
                 camera: camera.session.currentFrame?.camera.transform,
                 coneRadians: settings.aimConeRadians)
             if target != aimedTarget {
