@@ -610,8 +610,15 @@ final class GameEngine: NSObject, ObservableObject {
     /// Solo practice against virtual drones — no lobby, no network, no UWB.
     /// ARKit alone anchors the targets, so even a phone without a U2 chip
     /// can drill here.
-    func enterTraining() {
+    ///
+    /// The loadout is picked on the way in rather than inherited: the drill's
+    /// whole point is rehearsing a weapon's cadence, magazine and reload, and
+    /// `selectRole` can't serve here because it's lobby-scoped and broadcasts.
+    /// Drone HP stays flat at four taps for every role (see TrainingDrone), so
+    /// a run is comparable across loadouts.
+    func enterTraining(as role: PlayerRole) {
         guard phase == .menu else { return }
+        myRole = role
         hostEndedNotice = nil
         lobbyNotice = nil
         // The menu's browse-only warm-up has nobody to find on the range —
@@ -654,8 +661,9 @@ final class GameEngine: NSObject, ObservableObject {
         lastFireTime = now
         ammo -= 1
         let outcome = range.registerShot(
-            camera: camera.session.currentFrame?.camera.transform,
-            coneRadians: settings.aimConeRadians)
+            frame: camera.session.currentFrame,
+            coneRadians: settings.aimConeRadians,
+            damage: myRole.damage)
         haptics.playFire()
         switch outcome {
         case .droneHit: confirmHit()
@@ -859,6 +867,15 @@ final class GameEngine: NSObject, ObservableObject {
     func startReload() {
         guard phase == .playing || phase == .training,
               isAlive, !isReloading, ammo < myRole.magazineSize else { return }
+        // The range reloads instantly. A drone's escape clock runs whether or
+        // not the player is holding a loaded weapon, so a 3–4.5 s reload spends
+        // most of a HARD drone's life doing nothing the drill is meant to
+        // train — and on the deep-magazine loadouts it never came up at all,
+        // which made the wait a tax on Heavy alone rather than a skill.
+        if phase == .training {
+            finishReload()
+            return
+        }
         reloadTotal = currentReloadDuration
         reloadRemaining = reloadTotal
         haptics.playReloadStart()
@@ -1307,7 +1324,7 @@ final class GameEngine: NSObject, ObservableObject {
                 }
             }
             let target = range.refreshLock(
-                camera: camera.session.currentFrame?.camera.transform,
+                frame: camera.session.currentFrame,
                 coneRadians: settings.aimConeRadians)
             if target != aimedTarget {
                 aimedTarget = target

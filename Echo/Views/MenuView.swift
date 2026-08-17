@@ -9,6 +9,7 @@ struct MenuView: View {
     @ScaledMetric(relativeTo: .body) private var buttonGlyph: CGFloat = 20
 
     @State private var showManageGallery = false
+    @State private var showTrainingSetup = false
 
     private var nameEmpty: Bool {
         engine.playerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -110,14 +111,18 @@ struct MenuView: View {
 
                 // Solo drills need no lobby, no call sign — and no UWB, so
                 // it stays enabled even when the warning above is showing.
+                // The sheet picks the loadout on the way in.
                 Button {
-                    engine.enterTraining()
+                    showTrainingSetup = true
                 } label: {
                     Label("Training Range", systemImage: "target")
                         .frame(maxWidth: 260)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+                .sheet(isPresented: $showTrainingSetup) {
+                    TrainingSetupView(role: engine.myRole)
+                }
             }
 
             if isMac {

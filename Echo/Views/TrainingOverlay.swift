@@ -20,8 +20,8 @@ struct TrainingOverlay: View {
                 // screen coordinates, which only holds while each one is
                 // handed the full viewport to resolve `.position` against.
                 ZStack {
-                    if let frame = camera.session.currentFrame, geo.size != .zero {
-                        let projector = Projector(frame: frame, viewport: geo.size)
+                    if let projector = CameraProjector(frame: camera.session.currentFrame,
+                                                       viewport: geo.size) {
                         orbLayer(projector, at: context.date)
                         counterPanel(projector)
                         droneLayer(projector, at: context.date)
@@ -30,6 +30,10 @@ struct TrainingOverlay: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
+            // The aim test resolves against this exact viewport, so the range
+            // has to be told what it is — otherwise the hit test and the
+            // sprites are measuring different rectangles.
+            .onChange(of: geo.size, initial: true) { _, size in range.setViewport(size) }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
@@ -41,9 +45,9 @@ struct TrainingOverlay: View {
     // MARK: - Orbs
 
     @ViewBuilder
-    private func orbLayer(_ projector: Projector, at date: Date) -> some View {
+    private func orbLayer(_ projector: CameraProjector, at date: Date) -> some View {
         ForEach(range.orbs) { orb in
-            if let point = projector.point(orb.position),
+            if let point = projector.visiblePoint(orb.position),
                let radius = projector.screenLength(TrainingRange.orbRadius, at: orb.position) {
                 let diameter = min(max(radius * 2, 24), 96)   // legible floor, sane ceiling
                 ZStack {
@@ -83,9 +87,9 @@ struct TrainingOverlay: View {
     // MARK: - Counter
 
     @ViewBuilder
-    private func counterPanel(_ projector: Projector) -> some View {
+    private func counterPanel(_ projector: CameraProjector) -> some View {
         if let center = range.consoleCenter,
-           let point = projector.point(center + simd_float3(0, TrainingRange.counterLift, 0)) {
+           let point = projector.visiblePoint(center + simd_float3(0, TrainingRange.counterLift, 0)) {
             VStack(spacing: Space.xxs) {
                 Text("\(range.kills) / \(TrainingRange.dronesPerRun)")
                     .font(.appBold(.title2).monospacedDigit())
@@ -128,9 +132,9 @@ struct TrainingOverlay: View {
     // MARK: - Drone
 
     @ViewBuilder
-    private func droneLayer(_ projector: Projector, at date: Date) -> some View {
+    private func droneLayer(_ projector: CameraProjector, at date: Date) -> some View {
         ForEach(range.drones) { drone in
-            if let point = projector.point(drone.position),
+            if let point = projector.visiblePoint(drone.position),
                let radius = projector.screenLength(TrainingRange.droneRadius, at: drone.position) {
                 let diameter = min(max(radius * 2, 40), 104)
                 // Pop-in: the sprite grows to size over its first quarter
@@ -143,13 +147,18 @@ struct TrainingOverlay: View {
                     DroneSprite(diameter: diameter,
                                 remaining: drone.remainingFraction(at: date))
                         .scaleEffect(pop)
-                    // Four hearts, fixed geometry like the enemy tags — chrome
-                    // read at a distance over a moving feed. Tight against the
-                    // ring: the drone glyph fills most of the disc, so a gap
-                    // measured off the disc's edge reads as a bar floating in
-                    // space next to the target rather than belonging to it.
+                    // Eight hearts, sized to fit the body rather than fixed
+                    // like the enemy tags: eight slots at the tags' 11pt span
+                    // 102pt, which is nearly twice the width of a drone at the
+                    // far end of the arc, and a gauge that dwarfs its target
+                    // stops reading as belonging to it. Floored at 8pt so it
+                    // stays legible over a moving feed. Tight against the ring
+                    // for the same reason — the glyph fills most of the disc,
+                    // so a gap measured off the disc's edge reads as a bar
+                    // floating in space beside the drone.
                     HeartBar(fraction: CGFloat(drone.hp) / CGFloat(TrainingDrone.maxHP),
-                             total: TrainingDrone.maxHP, size: 11)
+                             total: TrainingDrone.maxHP,
+                             size: min(11, max(8, (diameter - 14) / 8)))
                         .shadow(color: Color.ltnBackground.opacity(Alpha.strong), radius: 2, y: 1)
                         .offset(y: -(diameter / 2 + 9))
                 }
@@ -162,10 +171,10 @@ struct TrainingOverlay: View {
     /// Expanding ring where the last drone died. Brief and stateless — age
     /// drives the geometry, so it needs no transition bookkeeping.
     @ViewBuilder
-    private func killBurst(_ projector: Projector, at date: Date) -> some View {
+    private func killBurst(_ projector: CameraProjector, at date: Date) -> some View {
         if let kill = range.lastKill,
            case let age = date.timeIntervalSince(kill.at), age < 0.45,
-           let point = projector.point(kill.position) {
+           let point = projector.visiblePoint(kill.position) {
             let progress = age / 0.45
             Circle()
                 .stroke(Color.ltnDanger, lineWidth: 3)
@@ -173,49 +182,6 @@ struct TrainingOverlay: View {
                 .opacity(1 - progress)
                 .position(point)
         }
-    }
-}
-
-/// Screen-space projection through one ARFrame, shared by every element so
-/// a single frame's pose positions the whole layer consistently.
-private struct Projector {
-    let frame: ARFrame
-    let viewport: CGSize
-
-    /// Screen point for a world position, or nil when it's behind the lens
-    /// (mirrored ghost) or far off screen.
-    func point(_ world: simd_float3) -> CGPoint? {
-        let inCamera = frame.camera.transform.inverse * simd_float4(world, 1)
-        guard inCamera.z < 0 else { return nil }
-        let point = frame.camera.projectPoint(
-            world, orientation: .portrait, viewportSize: viewport)
-        guard point.x > -80, point.x < viewport.width + 80,
-              point.y > -80, point.y < viewport.height + 80 else { return nil }
-        return point
-    }
-
-    /// On-screen length of a world-space distance at `world` — projects the
-    /// point and an offset twin, so sprites size with perspective under
-    /// whatever FoV the camera actually has.
-    ///
-    /// The offset runs along the *camera's* up axis, not gravity's. A
-    /// gravity-up twin foreshortens with pitch: tilt the phone 40° down and
-    /// the same sphere measures 23% smaller, point it at the floor and the
-    /// length collapses to nothing. Anything sized or offset by this — sprite
-    /// diameters, the label below an orb, the hearts above a drone — then
-    /// slides and breathes as the player tilts, which reads as the targets
-    /// drifting vertically in the world. The camera's own up axis is always
-    /// perpendicular to the view direction, so the measurement depends on
-    /// distance alone.
-    func screenLength(_ meters: Float, at world: simd_float3) -> CGFloat? {
-        let transform = frame.camera.transform
-        let inCamera = transform.inverse * simd_float4(world, 1)
-        guard inCamera.z < 0 else { return nil }
-        let up = simd_float3(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z)
-        let a = frame.camera.projectPoint(world, orientation: .portrait, viewportSize: viewport)
-        let b = frame.camera.projectPoint(world + up * meters,
-                                          orientation: .portrait, viewportSize: viewport)
-        return hypot(a.x - b.x, a.y - b.y)
     }
 }
 

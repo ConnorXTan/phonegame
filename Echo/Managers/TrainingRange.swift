@@ -11,9 +11,9 @@ enum TrainingDifficulty: String, CaseIterable, Identifiable {
     /// Chip-style label on the orb (2–3 words max, so uppercase is fine).
     var label: String { rawValue.uppercased() }
 
-    /// How long each drone stays up before it escapes. Four hearts at one
-    /// heart per hit means four taps — even HARD leaves room to flick,
-    /// settle, and land them all at Regular's half-second cadence.
+    /// How long each drone stays up before it escapes. Every loadout clears a
+    /// drone in at most 2 s of trigger time (see `TrainingDrone.maxHP`), so
+    /// even HARD leaves room to find it, settle, and land the burst.
     var droneLifetime: TimeInterval {
         switch self {
         case .easy: return 8
@@ -21,13 +21,29 @@ enum TrainingDifficulty: String, CaseIterable, Identifiable {
         case .hard: return 4
         }
     }
+
+    /// Half-width of the spawn arc off the console line. The second difficulty
+    /// axis: lifetime sets how long you have, this sets how far you have to go
+    /// to get there. A portrait viewfinder sees about ±16°, so EASY spawns
+    /// mostly at the frame's edge while HARD is reliably a flick past it —
+    /// still inside the minimap's ±60° fan, so it's always findable.
+    var arcHalfWidth: Float {
+        switch self {
+        case .easy: return 26 * .pi / 180
+        case .medium: return 34 * .pi / 180
+        case .hard: return 45 * .pi / 180
+        }
+    }
 }
 
-/// One pop-up target. Flat one heart per hit regardless of loadout — the
-/// range drills flicking and tracking, not damage math — so every drone is
-/// exactly four taps.
+/// One pop-up target. Hits remove the shooter's own `role.damage`, the same
+/// as a player, so 8 HP costs Light 8 taps, Regular 4 and Heavy 3 — roughly
+/// 0.7 s, 1.5 s and 2.0 s of trigger time. Flat HP per hit would have been
+/// simpler but made the drill unplayable on the slow loadouts: 8 taps at
+/// Heavy's one-second cadence is 7 s against a 4 s clock, and its 5-round
+/// magazine can't even hold the burst.
 struct TrainingDrone: Identifiable {
-    static let maxHP = 4
+    static let maxHP = 8
 
     let id: String
     let position: simd_float3
@@ -129,8 +145,10 @@ final class TrainingRange: ObservableObject {
     static let dronesPerRun = 30
     /// How many drones can be up at once. One-at-a-time made a missed drone
     /// feel like the range had stalled — nothing on screen, nothing on the
-    /// map, and no way to tell a gap from a bug.
-    static let maxConcurrentDrones = 3
+    /// map, and no way to tell a gap from a bug. Two keeps that guarantee
+    /// while leaving the drill about the target you're on rather than about
+    /// triaging a crowd.
+    static let maxConcurrentDrones = 2
 
     /// The range runs its own bookkeeping and lock test entirely on this
     /// phone, so it ticks three times faster than the networked path (which
@@ -150,15 +168,34 @@ final class TrainingRange: ObservableObject {
     /// Player → console at placement; the spawn arc is centered on it.
     private var consoleForward = simd_float3(0, 0, -1)
 
+    /// The viewport the world layer is drawn into, republished by
+    /// TrainingOverlay on every layout pass. `aimedTargetID` resolves in this
+    /// same space, so it has to be the size the sprites were projected into.
+    private(set) var viewport: CGSize = .zero
+
+    func setViewport(_ size: CGSize) { viewport = size }
+
     /// How far ahead the console anchors.
     static let consoleDistance: Float = 2.2
-    /// Orb row pitch — far enough apart that the 9° aim cone at 2.2 m
-    /// (radius ≈ 0.35 m) can't cover two orbs at once.
-    static let orbSpacing: Float = 0.8
+    /// How far below the phone the orb row sits — about 20° down at the
+    /// console's 2.2 m, so it's something you glance down at and it never
+    /// shares a band with the drone arc behind it.
+    static let consoleDrop: Float = 0.8
+    /// Orb row pitch. 0.8 m kept the aim cone from covering two orbs at once
+    /// back when the cone was an angle off the camera axis — but it also put
+    /// the outer orbs 20° off the console line, and a portrait viewfinder only
+    /// sees about ±16°, so EASY and HARD sat off the sides of the screen and
+    /// had to be panned to one at a time. At 0.45 m the whole row reads at
+    /// once, and the screen-space aim test still leaves ~140 pt between
+    /// neighbours — wider than the cone's radius, so the nearer orb to the
+    /// crosshair wins cleanly.
+    static let orbSpacing: Float = 0.45
     /// Orb sphere radius; the overlay sizes sprites off this.
     static let orbRadius: Float = 0.07
-    /// The counter panel floats this far above the orb row.
-    static let counterLift: Float = 0.5
+    /// The counter panel floats this far above the orb row: high enough to
+    /// clear the reticle at the center of the screen, low enough to still read
+    /// as part of the console rather than as free-floating chrome.
+    static let counterLift: Float = 0.45
     /// Drone body radius, for perspective sizing in the overlay.
     static let droneRadius: Float = 0.18
 
@@ -238,42 +275,56 @@ final class TrainingRange: ObservableObject {
         consoleForward = simd_normalize(flat)
         consoleRight = simd_normalize(simd_cross(consoleForward, simd_float3(0, 1, 0)))
         consoleCenter = camera + consoleForward * Self.consoleDistance
-            + simd_float3(0, -0.25, 0)
+            + simd_float3(0, -Self.consoleDrop, 0)
         orbs = difficultyOrbs()
         state = .idle
     }
 
     // MARK: - Shooting
 
-    /// Radians of slack on the release cone, as a multiple of the acquire
-    /// cone. Without it the lock chatters on and off at the boundary: the
-    /// reticle flickers, and every flip re-fires the lock haptic — which
-    /// shakes the very phone the aim is measured from.
-    private static let releaseSlack: Float = 1.3
+    /// Slack on the release radius, as a multiple of the acquire radius.
+    /// Without it the lock chatters on and off at the boundary: the reticle
+    /// flickers, and every flip re-fires the lock haptic — which shakes the
+    /// very phone the aim is measured from.
+    private static let releaseSlack: CGFloat = 1.3
 
     /// Every shootable in the world right now, drones first.
     private var shootables: [(id: String, position: simd_float3)] {
         drones.map { ($0.id, $0.position) } + orbs.map { ($0.id, $0.position) }
     }
 
-    /// The most-centered shootable inside the aim cone, sticky to whatever is
-    /// already held — the virtual twin of GameEngine.resolveShot, minus the
-    /// radio.
-    func aimedTargetID(camera transform: simd_float4x4?, coneRadians: Float) -> String? {
-        guard let transform else { return nil }
-        var best: (id: String, angle: Float)?
-        var heldAngle: Float?
+    /// The shootable nearest the crosshair, sticky to whatever is already held.
+    ///
+    /// Resolved in **screen space**, not as a 3D angle off the camera's view
+    /// axis. Both are defensible in isolation, but only this one is guaranteed
+    /// to agree with the picture: the sprite is drawn by projecting the anchor
+    /// through this same frame and viewport, so measuring that same projection
+    /// against the reticle's own position means whatever the player has the
+    /// crosshair on is what the trigger resolves against. The angular test can
+    /// sit a constant off the projection, and did — it's what left the console
+    /// orbs needing to be aimed at from well below where they were drawn, and
+    /// put the drones outside the cone entirely at every point on screen the
+    /// player could see them.
+    ///
+    /// The networked path still resolves angularly, and has to: a UWB bearing
+    /// is an angle, with no anchor to project.
+    func aimedTargetID(frame: ARFrame?, coneRadians: Float) -> String? {
+        guard let projector = CameraProjector(frame: frame, viewport: viewport) else { return nil }
+        let aim = projector.aimPoint
+        let radius = projector.coneRadius(coneRadians)
+        var best: (id: String, distance: CGFloat)?
+        var heldDistance: CGFloat?
         for target in shootables {
-            guard let angle = Self.angleOffBoresight(to: target.position, camera: transform)
-            else { continue }
-            if target.id == lockedID { heldAngle = angle }
-            guard angle < coneRadians else { continue }
-            if best == nil || angle < best!.angle { best = (target.id, angle) }
+            guard let point = projector.project(target.position) else { continue }
+            let distance = hypot(point.x - aim.x, point.y - aim.y)
+            if target.id == lockedID { heldDistance = distance }
+            guard distance < radius else { continue }
+            if best == nil || distance < best!.distance { best = (target.id, distance) }
         }
         if let best { return best.id }
-        // Nothing inside the acquire cone: hold the current lock as long as
-        // it's still inside the wider release cone.
-        if let heldAngle, heldAngle < coneRadians * Self.releaseSlack { return lockedID }
+        // Nothing inside the acquire radius: hold the current lock as long as
+        // it's still inside the wider release radius.
+        if let heldDistance, heldDistance < radius * Self.releaseSlack { return lockedID }
         return nil
     }
 
@@ -281,23 +332,25 @@ final class TrainingRange: ObservableObject {
     /// reticle and the trigger go through here, so what the player sees lit
     /// is what the shot resolves against.
     @discardableResult
-    func refreshLock(camera transform: simd_float4x4?, coneRadians: Float) -> String? {
-        let id = aimedTargetID(camera: transform, coneRadians: coneRadians)
+    func refreshLock(frame: ARFrame?, coneRadians: Float) -> String? {
+        let id = aimedTargetID(frame: frame, coneRadians: coneRadians)
         lockedID = id
         return id
     }
 
     /// Resolve one trigger pull. Cooldown, ammo, and reload gating live in
     /// GameEngine; by the time this runs, a round is definitely leaving.
-    func registerShot(camera transform: simd_float4x4?, coneRadians: Float,
+    /// `damage` is the shooter's own `role.damage` — passed in rather than
+    /// looked up, so the range stays ignorant of the loadout tables.
+    func registerShot(frame: ARFrame?, coneRadians: Float, damage: Int,
                       at now: Date = Date()) -> TrainingShotOutcome {
         if state == .running { shots += 1 }
-        guard let id = refreshLock(camera: transform, coneRadians: coneRadians) else {
+        guard let id = refreshLock(frame: frame, coneRadians: coneRadians) else {
             return .miss
         }
         if let index = drones.firstIndex(where: { $0.id == id }) {
             hits += 1
-            drones[index].hp -= 1
+            drones[index].hp -= max(1, damage)
             guard drones[index].hp <= 0 else { return .droneHit }
             kills += 1
             lastKill = (drones[index].position, now)
@@ -306,7 +359,8 @@ final class TrainingRange: ObservableObject {
             scheduleRefill(from: now)
             return .droneKill
         }
-        if let orb = orbs.first(where: { $0.id == id }), let transform {
+        if let orb = orbs.first(where: { $0.id == id }),
+           let transform = frame?.camera.transform {
             apply(orb.action, camera: transform, at: now)
             return .orbHit
         }
@@ -385,29 +439,24 @@ final class TrainingRange: ObservableObject {
         nextSpawnAt = now.addingTimeInterval(Self.interSpawnGap)
     }
 
-    /// Frontal arc: azimuths within ±32° of the console line but outside ±10°
-    /// — the RESET orb sits dead ahead, and a drone behind it could otherwise
-    /// hand the shot to the orb and abort the run.
-    ///
-    /// The outer limit is the important number. A portrait viewfinder sees
-    /// only about ±16°, so the old ±75° arc put roughly nine of every ten
-    /// drones somewhere off the side of the screen with nothing on the HUD to
-    /// say which way to turn — the range read as if it had stopped spawning.
-    /// ±32° is at most one quick flick past the edge of the frame, and the
-    /// minimap covers the rest.
+    /// Inner edge of the spawn arc. The RESET orb sits dead ahead, and a drone
+    /// behind it could otherwise hand the shot to the orb and abort the run.
+    /// The outer edge is the difficulty knob — see `arcHalfWidth`.
     private static let arcInner: Float = 10 * .pi / 180
-    private static let arcOuter: Float = 32 * .pi / 180
     /// Minimum bearing gap from every live drone (and the one just before
     /// them), so no two sprites overlap and every spawn is still a real flick.
-    private static let minSeparation: Float = 15 * .pi / 180
+    /// Held at 12° because EASY's arc is only 16° wide per side: at 15° a live
+    /// pair can leave no legal azimuth at all, and the placement loop then
+    /// exhausts its tries and stacks the new drone on a neighbour anyway.
+    private static let minSeparation: Float = 12 * .pi / 180
 
     /// 2.5–4.5 m out, in the hand-height band around the shooter.
     private func nextSpawnPlacement() -> (position: simd_float3, azimuth: Float) {
         let taken = drones.map(\.azimuth) + [lastAzimuth]
-        var azimuth = Self.randomAzimuth()
+        var azimuth = randomAzimuth()
         for _ in 0..<12 {
             if taken.allSatisfy({ abs(azimuth - $0) >= Self.minSeparation }) { break }
-            azimuth = Self.randomAzimuth()
+            azimuth = randomAzimuth()
         }
         let direction = simd_quatf(angle: azimuth, axis: simd_float3(0, 1, 0))
             .act(consoleForward)
@@ -416,8 +465,8 @@ final class TrainingRange: ObservableObject {
         return (runOrigin + direction * distance + simd_float3(0, lift, 0), azimuth)
     }
 
-    private static func randomAzimuth() -> Float {
-        Float.random(in: arcInner...arcOuter) * (Bool.random() ? 1 : -1)
+    private func randomAzimuth() -> Float {
+        Float.random(in: Self.arcInner...difficulty.arcHalfWidth) * (Bool.random() ? 1 : -1)
     }
 
     private func difficultyOrbs() -> [TrainingOrb] {
@@ -433,17 +482,5 @@ final class TrainingRange: ObservableObject {
     private func resetOrbRow() -> [TrainingOrb] {
         guard let center = consoleCenter else { return [] }
         return [TrainingOrb(id: "orb-reset", action: .reset, position: center)]
-    }
-
-    /// Radians between the camera's view axis (straight out the back of the
-    /// phone) and the ray to `point` — the virtual twin of
-    /// RangingReading.angleOffBoresight. ARKit's camera looks down its -Z.
-    static func angleOffBoresight(to point: simd_float3, camera t: simd_float4x4) -> Float? {
-        let origin = simd_float3(t.columns.3.x, t.columns.3.y, t.columns.3.z)
-        let boresight = -simd_float3(t.columns.2.x, t.columns.2.y, t.columns.2.z)
-        let offset = point - origin
-        let distance = simd_length(offset)
-        guard distance > 0.2 else { return nil }   // standing inside it — no aim solution
-        return acos(max(-1, min(1, simd_dot(boresight, offset / distance))))
     }
 }
